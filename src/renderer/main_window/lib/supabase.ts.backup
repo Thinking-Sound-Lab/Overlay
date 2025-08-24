@@ -1,0 +1,203 @@
+import { createClient } from '@supabase/supabase-js';
+
+// These will be loaded from environment variables
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+console.log('Supabase config:', {
+  url: supabaseUrl,
+  keyLength: supabaseAnonKey?.length,
+  hasUrl: !!supabaseUrl,
+  hasKey: !!supabaseAnonKey
+});
+
+// Check if environment variables are properly configured
+if (!supabaseUrl || !supabaseAnonKey || 
+    supabaseUrl === 'your-supabase-url' || 
+    supabaseAnonKey === 'your-supabase-anon-key') {
+  console.error('Supabase configuration missing. Please check your environment variables.');
+}
+
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+);
+
+// Database types
+export interface User {
+  id: string;
+  email: string;
+  created_at: string;
+  subscription_tier: 'free' | 'pro';
+}
+
+export interface TranscriptEntry {
+  id: string;
+  user_id: string;
+  text: string;
+  original_text?: string;
+  language: string;
+  target_language?: string;
+  was_translated: boolean;
+  confidence?: number;
+  word_count: number;
+  wpm: number;
+  created_at: string;
+  metadata?: Record<string, any>;
+}
+
+export interface UserSettings {
+  user_id: string;
+  settings: {
+    outputMode?: 'auto-insert' | 'clipboard' | 'both';
+    openaiApiKey?: string;
+    useAI?: boolean;
+    language?: string;
+    enableTranslation?: boolean;
+    targetLanguage?: string;
+  };
+  updated_at: string;
+}
+
+// Authentication helpers
+export const auth = {
+  signUp: async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    return { data, error };
+  },
+
+  signIn: async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { data, error };
+  },
+
+  signOut: async () => {
+    const { error } = await supabase.auth.signOut();
+    return { error };
+  },
+
+  getCurrentUser: async () => {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      return { user, error };
+    } catch (err) {
+      console.error('getCurrentUser error:', err);
+      return { user: null as null, error: err };
+    }
+  },
+
+  onAuthStateChange: (callback: (user: any) => void) => {
+    try {
+      return supabase.auth.onAuthStateChange((event, session) => {
+        callback(session?.user || null);
+      });
+    } catch (err) {
+      console.error('onAuthStateChange error:', err);
+      // Return a fake subscription that does nothing
+      return { 
+        data: { 
+          subscription: { 
+            unsubscribe: () => console.log('No subscription to unsubscribe from') 
+          } 
+        } 
+      };
+    }
+  },
+};
+
+// Database operations
+export const db = {
+  // Transcript operations
+  saveTranscript: async (transcript: Omit<TranscriptEntry, 'id' | 'created_at'>) => {
+    const { data, error } = await supabase
+      .from('transcripts')
+      .insert([transcript])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  getTranscripts: async (userId: string, limit = 50) => {
+    const { data, error } = await supabase
+      .from('transcripts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    return { data, error };
+  },
+
+  // User settings operations
+  saveUserSettings: async (userId: string, settings: UserSettings['settings']) => {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .upsert([
+        {
+          user_id: userId,
+          settings,
+          updated_at: new Date().toISOString(),
+        }
+      ])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  getUserSettings: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    return { data, error };
+  },
+
+  // User stats
+  getUserStats: async (userId: string) => {
+    const { data: transcripts, error } = await supabase
+      .from('transcripts')
+      .select('word_count, wpm, created_at')
+      .eq('user_id', userId);
+
+    if (error) return { data: null as null, error };
+
+    const totalWordCount = transcripts?.reduce((sum, t) => sum + t.word_count, 0) || 0;
+    const averageWPM = transcripts?.length 
+      ? transcripts.reduce((sum, t) => sum + t.wpm, 0) / transcripts.length 
+      : 0;
+    const totalRecordings = transcripts?.length || 0;
+
+    // Calculate streak days
+    const today = new Date().toDateString();
+    const dates = transcripts?.map(t => new Date(t.created_at).toDateString()) || [];
+    const uniqueDates = Array.from(new Set(dates)).sort().reverse();
+    
+    let streakDays = 0;
+    let currentDate = new Date();
+    
+    for (const dateStr of uniqueDates) {
+      if (dateStr === currentDate.toDateString()) {
+        streakDays++;
+        currentDate.setDate(currentDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    return {
+      data: {
+        totalWordCount,
+        averageWPM,
+        totalRecordings,
+        streakDays,
+      },
+      error: null as null
+    };
+  },
+};

@@ -1,0 +1,276 @@
+/* Base */
+body,
+html {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  box-sizing: border-box;
+}
+
+.window-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recording-container {
+  width: 40px;
+  height: 7px;
+  border-radius: 12px;
+  transition:
+    transform 0.22s cubic-bezier(0.32, 0.94, 0.6, 1.16),
+    width 0.22s cubic-bezier(0.32, 0.94, 0.6, 1.16),
+    height 0.22s cubic-bezier(0.32, 0.94, 0.6, 1.16),
+    background-color 0.22s cubic-bezier(0.32, 0.94, 0.6, 1.16);
+  overflow: visible;
+  background: rgba(0, 0, 0, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0.5;
+  transform-origin: bottom center;
+  border: 1px solid whitesmoke;
+  position: relative;
+}
+
+.recording-container.hovered,
+.recording-container:focus-within,
+.recording-container.recording {
+  width: 100px;
+  height: 37px;
+  border-radius: 999px;
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+.recording-container.processing {
+  width: 120px;
+  height: 40px;
+  border-radius: 999px;
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+/* .recording-container.processing {
+  width: 140px;
+  height: 47px;
+  border-radius: 999px;
+  opacity: 1;
+  transform: scaleY(1);
+  border: 1px solid rgba(245, 245, 245, 0.3);
+} */
+
+/* .processing-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+} */
+
+.processing-dot {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+/* 
+.processing-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0.8;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 0.8;
+    transform: translateY(0);
+  }
+} */
+
+/* Processing animation */
+.processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+.processing-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.processing-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  opacity: 0.6;
+  animation: blink 1.4s infinite ease-in-out;
+}
+
+.processing-stage {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 9px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0.8;
+  animation: fadeIn 0.3s ease-in-out;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 0.8;
+    transform: translateY(0);
+  }
+}
+
+.processing-dot span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  opacity: 0.6;
+  animation: blink 1.4s infinite ease-in-out;
+}
+
+.processing-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.processing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.processing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.processing-dot span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.processing-dot span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.processing-dot span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Idle dots */
+.dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  opacity: 0.6;
+}
+
+/* Recording wave */
+.wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 30px;
+  width: 100%;
+  padding: 0 10px;
+}
+
+.wave span {
+  display: block;
+  width: 3px;
+  min-height: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 3px;
+  /* animation: wave 1s ease-in-out infinite; */
+  transition: height 0.2s ease-in-out;
+  transform-origin: bottom;
+}
+
+/* Remove the static wave animation since we're using dynamic heights */
+.wave span:nth-child(1),
+.wave span:nth-child(2),
+.wave span:nth-child(3),
+.wave span:nth-child(4),
+.wave span:nth-child(5),
+.wave span:nth-child(6),
+.wave span:nth-child(7),
+.wave span:nth-child(8) {
+  animation: none; /* Remove static animation */
+}
+
+@keyframes wave {
+  0% {
+    height: 6px;
+    opacity: 0.6;
+  }
+  100% {
+    height: 6px;
+    opacity: 0.6;
+  }
+  50% {
+    height: 12px;
+    opacity: 1;
+  }
+}
+
+/* State accent (optional subtle glow while recording) */
+.recording-container.recording::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: 999px;
+  pointer-events: none;
+}

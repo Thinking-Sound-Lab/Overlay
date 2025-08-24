@@ -1,0 +1,497 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  width: 250px;
+  background-color: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.sidebar-header {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-icon {
+  font-size: 20px;
+}
+
+.app-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.pro-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Navigation */
+.sidebar-nav {
+  flex: 1;
+  padding: 20px 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: #6b7280;
+  transition: all 0.2s ease;
+  gap: 12px;
+}
+
+.nav-item:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.nav-item.active {
+  background-color: #eff6ff;
+  color: #2563eb;
+  border-right: 3px solid #2563eb;
+}
+
+.nav-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.nav-arrow {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 0 20px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 20px;
+}
+
+.trial-info {
+  background: linear-gradient(135deg, #f0f4f8 0%, #e8f4f8 100%);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.trial-text {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.trial-days {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.trial-upgrade {
+  font-size: 12px;
+  color: #4b5563;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.explore-pro-btn {
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.explore-pro-btn:hover {
+  background-color: #1d4ed8;
+}
+
+.bottom-nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #6b7280;
+  gap: 8px;
+  transition: color 0.2s ease;
+}
+
+.bottom-nav-item:hover {
+  color: #374151;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  padding: 40px 48px;
+  overflow-y: auto;
+  background-color: #ffffff;
+}
+
+.content-header {
+  margin-bottom: 32px;
+}
+
+.content-header h1 {
+  font-size: 32px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 16px;
+}
+
+.stats {
+  display: flex;
+  gap: 24px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.stat-icon {
+  font-size: 16px;
+}
+
+/* Voice Dictation Card */
+.voice-dictation-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 32px;
+  border-radius: 16px;
+  margin-bottom: 32px;
+}
+
+.voice-dictation-card h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.voice-dictation-card p {
+  font-size: 16px;
+  margin-bottom: 16px;
+  opacity: 0.9;
+}
+
+.voice-dictation-card code {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+}
+
+.explore-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.explore-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Recent Activity */
+.recent-activity h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 24px;
+}
+
+.activity-section {
+  margin-bottom: 24px;
+}
+
+.activity-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.activity-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.activity-item {
+  display: flex;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.activity-item .time {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.activity-item .text {
+  font-size: 14px;
+  color: #374151;
+  flex: 1;
+}
+
+/* Settings Sections */
+.settings-section {
+  margin-bottom: 32px;
+}
+
+.settings-section h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 16px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.action-button {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+}
+
+.action-button:hover {
+  background: #f9fafb;
+}
+
+.action-button.recording {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.action-button.secondary {
+  background: #f3f4f6;
+}
+
+.setting-group {
+  margin-bottom: 20px;
+}
+
+.setting-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.setting-group select,
+.setting-group input {
+  width: 100%;
+  max-width: 300px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+}
+
+.setting-group small {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.save-button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.save-button:hover {
+  background: #1d4ed8;
+}
+
+.save-button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.message.success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.message.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .main-content {
+    padding: 24px;
+  }
+
+  .content-header h1 {
+    font-size: 24px;
+  }
+
+  .stats {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
