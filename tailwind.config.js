@@ -56,6 +56,26 @@ module.exports = {
       fontFamily: {
         'inter': ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
+      animation: {
+        'blink': 'blink 1.4s infinite ease-in-out',
+        'fade-in': 'fadeIn 0.3s ease-in-out',
+      },
+      keyframes: {
+        blink: {
+          '0%, 80%, 100%': { opacity: '0.2' },
+          '40%': { opacity: '1' },
+        },
+        fadeIn: {
+          'from': { 
+            opacity: '0', 
+            transform: 'translateY(5px)' 
+          },
+          'to': { 
+            opacity: '0.8', 
+            transform: 'translateY(0)' 
+          },
+        },
+      },
     },
   },
   plugins: [],

@@ -136,9 +136,26 @@ export class APIHandlers {
     }
 
     try {
+      console.log('APIHandlers: Handling Google sign-in request...');
       const result = await this.apiManager.supabase.signInWithGoogle();
-      return this.createResponse(result);
+      
+      if (result.data?.url) {
+        console.log('APIHandlers: Opening Google OAuth URL in external browser...');
+        // Import shell dynamically to open OAuth URL in browser
+        const { shell } = require('electron');
+        await shell.openExternal(result.data.url);
+        
+        // Return success indicating OAuth was initiated
+        return this.createResponse({ 
+          success: true, 
+          message: 'Google OAuth initiated - please complete authentication in your browser' 
+        });
+      } else {
+        console.error('APIHandlers: No OAuth URL received from Supabase');
+        return this.createResponse(null, new Error('Failed to initiate Google OAuth'));
+      }
     } catch (error) {
+      console.error('APIHandlers: Google sign-in error:', error);
       return this.createResponse(null, error);
     }
   }

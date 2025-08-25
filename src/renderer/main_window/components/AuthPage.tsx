@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { auth } from '../lib/api_client';
-import { LogIn, UserPlus, Eye, EyeOff } from 'lucide-react';
+import React, { useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Button } from "./ui/button";
+import { auth } from "../lib/api_client";
+import { LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
 
 interface AuthPageProps {
   onAuthSuccess: (user: any) => void;
@@ -10,17 +16,17 @@ interface AuthPageProps {
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setIsLoading(true);
 
     try {
@@ -30,81 +36,85 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       } else {
         // For signup, name is required
         if (!name.trim()) {
-          setError('Name is required for signup');
+          setError("Name is required for signup");
           return;
         }
         result = await auth.signUp(email, password, name.trim());
       }
 
       if (!result.success) {
-        setError(result.error || 'Authentication failed');
+        setError(result.error || "Authentication failed");
       } else if (result.data?.data?.user) {
-        console.log('AuthPage: Auth successful, calling onAuthSuccess with user:', result.data.data.user);
+        console.log(
+          "AuthPage: Auth successful, calling onAuthSuccess with user:",
+          result.data.data.user
+        );
         onAuthSuccess(result.data.data.user);
       } else {
-        console.error('AuthPage: Auth response structure:', result);
-        setError('Authentication successful but user data not received');
+        console.error("AuthPage: Auth response structure:", result);
+        setError("Authentication successful but user data not received");
       }
     } catch (err) {
-      console.error('Auth error:', err);
-      setError('An unexpected error occurred');
+      console.error("Auth error:", err);
+      setError("An unexpected error occurred");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setError('');
+    setError("");
     setIsGoogleLoading(true);
-    
+
     try {
       const result = await auth.signInWithGoogle();
-      
+
       if (!result.success) {
-        setError(result.error || 'Google authentication failed');
+        setError(result.error || "Google authentication failed");
       } else {
         // Google OAuth will redirect externally, handle success in main process
-        console.log('Google OAuth initiated');
+        console.log("Google OAuth initiated");
       }
     } catch (err) {
-      console.error('Google auth error:', err);
-      setError('An unexpected error occurred during Google sign in');
+      console.error("Google auth error:", err);
+      setError("An unexpected error occurred during Google sign in");
     } finally {
       setIsGoogleLoading(false);
     }
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8 bg-gray-50 relative">
+    <div className="flex-1 flex items-center justify-center p-8 bg-gray-50 relative h-full">
       {/* Draggable area at top */}
-      <div 
+      {/* <div
         className="absolute top-0 left-0 right-0 h-8 z-10"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
-      <Card 
+      /> */}
+      <Card
         className="w-full max-w-md relative z-20"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-3xl">🎯</span>
             <span className="text-2xl font-bold text-gray-900">Overlay</span>
           </div>
           <CardTitle className="text-xl">
-            {isLogin ? 'Welcome back' : 'Create your account'}
+            {isLogin ? "Welcome back" : "Create your account"}
           </CardTitle>
           <CardDescription>
-            {isLogin 
-              ? 'Sign in to access your transcripts and settings'
-              : 'Get started with AI-powered voice dictation'
-            }
+            {isLogin
+              ? "Sign in to access your transcripts and settings"
+              : "Get started with AI-powered voice dictation"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="name"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Full Name
                 </label>
                 <input
@@ -120,7 +130,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               </div>
             )}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Email
               </label>
               <input
@@ -135,13 +148,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Password
               </label>
               <div className="relative">
                 <input
                   id="password"
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -149,7 +165,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                   placeholder="••••••••"
                   disabled={isLoading}
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
@@ -160,7 +176,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                   ) : (
                     <Eye className="h-4 w-4" />
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -170,15 +186,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               </div>
             )}
 
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading}
-            >
+            <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <span className="flex items-center gap-2">
                   <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                  {isLogin ? 'Signing in...' : 'Creating account...'}
+                  {isLogin ? "Signing in..." : "Creating account..."}
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
@@ -207,7 +219,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
             </div>
           </div>
 
-          <Button 
+          <Button
             type="button"
             variant="outline"
             onClick={handleGoogleSignIn}
@@ -249,18 +261,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               type="button"
               onClick={() => {
                 setIsLogin(!isLogin);
-                setError('');
-                setEmail('');
-                setPassword('');
-                setName('');
+                setError("");
+                setEmail("");
+                setPassword("");
+                setName("");
               }}
               className="text-sm text-blue-600 hover:text-blue-800"
               disabled={isLoading}
             >
-              {isLogin 
-                ? "Don't have an account? Sign up" 
-                : "Already have an account? Sign in"
-              }
+              {isLogin
+                ? "Don't have an account? Sign up"
+                : "Already have an account? Sign in"}
             </button>
           </div>
         </CardContent>

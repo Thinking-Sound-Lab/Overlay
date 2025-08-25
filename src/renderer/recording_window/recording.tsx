@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import "./index.css";
 import startSound from "../../../assets/sounds/start.wav";
 import stopSound from "../../../assets/sounds/stop.wav";
 
@@ -45,7 +44,7 @@ export const RecordingWindow: React.FC = () => {
     startSoundRef.current = new Audio(startSound);
     stopSoundRef.current = new Audio(stopSound);
 
-    if (startSoundRef.current) startSoundRef.current.volume = 0.2;
+    if (startSoundRef.current) startSoundRef.current.volume = 0.4;
     if (stopSoundRef.current) stopSoundRef.current.volume = 0.2;
 
     return () => {
@@ -72,45 +71,97 @@ export const RecordingWindow: React.FC = () => {
       return;
     }
 
-    if (!analyserRef.current) {
-      return;
-    }
-
     let animationId: number;
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
 
-    const updateLevels = () => {
-      if (!analyserRef.current || !isRecording) return;
-
-      analyserRef.current.getByteFrequencyData(dataArray);
-
-      // Calculate RMS (Root Mean Square) for better audio level detection
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
+    // Wait a short time for analyser to be ready
+    const startVisualization = () => {
+      if (!analyserRef.current) {
+        console.log("⚠️ Analyser not ready yet, retrying...");
+        setTimeout(startVisualization, 100);
+        return;
       }
-      const rms = Math.sqrt(sum / dataArray.length);
-      const normalizedLevel = Math.min(rms / 100, 1); // Normalize to 0-1
 
-      setLevels((prevLevels) => {
-        const baseHeight = 4;
-        const maxHeight = 22;
-        const multipliers = [0.7, 0.9, 1.1, 1.3, 1.2, 1.0, 0.8, 0.6];
+      console.log(
+        "🎵 Starting waveform visualization with analyser:",
+        !!analyserRef.current
+      );
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      console.log(
+        "📊 Frequency bin count:",
+        analyserRef.current.frequencyBinCount
+      );
 
-        const newLevels = multipliers.map(multiplier => {
-          const randomVariation = 0.8 + Math.random() * 0.4;
-          const height = baseHeight + (normalizedLevel * (maxHeight - baseHeight) * multiplier * randomVariation);
-          return Math.max(baseHeight, Math.min(maxHeight, height));
+      const updateLevels = () => {
+        if (!analyserRef.current || !isRecording) {
+          console.log(
+            "❌ Stopping animation - analyser:",
+            !!analyserRef.current,
+            "recording:",
+            isRecording
+          );
+          return;
+        }
+
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        // Debug: Log first few values to verify data flow
+        if (Math.random() < 0.01) {
+          // Log occasionally
+          console.log(
+            "🎶 Audio data sample:",
+            Array.from(dataArray.slice(0, 8))
+          );
+        }
+
+        // Calculate RMS (Root Mean Square) for better audio level detection
+        let sum = 0;
+        let nonZeroCount = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i] * dataArray[i];
+          if (dataArray[i] > 0) nonZeroCount++;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const normalizedLevel = Math.min(rms / 128, 1); // Normalize to 0-1 (128 is max for Uint8Array)
+
+        // Debug: Log audio levels occasionally
+        if (Math.random() < 0.01) {
+          console.log(
+            "📈 Audio levels - RMS:",
+            rms.toFixed(2),
+            "Normalized:",
+            normalizedLevel.toFixed(3),
+            "Non-zero samples:",
+            nonZeroCount
+          );
+        }
+
+        setLevels((prevLevels) => {
+          const baseHeight = 4;
+          const maxHeight = 22;
+          const multipliers = [0.7, 0.9, 1.1, 1.3, 1.2, 1.0, 0.8, 0.6];
+
+          const newLevels = multipliers.map((multiplier) => {
+            const randomVariation = 0.8 + Math.random() * 0.4;
+            const height =
+              baseHeight +
+              normalizedLevel *
+                (maxHeight - baseHeight) *
+                multiplier *
+                randomVariation;
+            return Math.max(baseHeight, Math.min(maxHeight, height));
+          });
+
+          // Smooth transition for more natural animation
+          return prevLevels.map((prev, i) => prev * 0.7 + newLevels[i] * 0.3);
         });
 
-        // Smooth transition for more natural animation
-        return prevLevels.map((prev, i) => prev * 0.7 + newLevels[i] * 0.3);
-      });
+        animationId = requestAnimationFrame(updateLevels);
+      };
 
-      animationId = requestAnimationFrame(updateLevels);
+      updateLevels();
     };
 
-    animationId = requestAnimationFrame(updateLevels);
+    startVisualization();
 
     return () => {
       if (animationId) {
@@ -143,10 +194,16 @@ export const RecordingWindow: React.FC = () => {
 
       // Create analyzer for visualization
       const analyser = micAudioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 512; // Increased for better frequency resolution
+      analyser.smoothingTimeConstant = 0.3; // Reduced for more responsive visualization
+      analyser.minDecibels = -90;
+      analyser.maxDecibels = -10;
+
+      console.log("🎙️ Audio context state:", micAudioContext.state);
+      console.log("🎙️ Audio context sample rate:", micAudioContext.sampleRate);
 
       const micSource = micAudioContext.createMediaStreamSource(stream);
+      console.log("📡 Media stream source created");
 
       const micProcessor = micAudioContext.createScriptProcessor(
         BUFFER_SIZE,
@@ -154,13 +211,24 @@ export const RecordingWindow: React.FC = () => {
         1
       );
 
-      // Connect analyzer to source
+      // Connect audio nodes: source -> analyser -> processor -> destination
       micSource.connect(analyser);
-      micSource.connect(micProcessor);
+      analyser.connect(micProcessor); // Connect analyser to processor for data flow
       micProcessor.connect(micAudioContext.destination);
+
+      // Set analyser reference AFTER all connections are made
       analyserRef.current = analyser;
 
+      console.log(
+        "✅ Audio chain connected: source -> analyser -> processor -> destination"
+      );
       console.log("✅ Analyser setup complete:", !!analyserRef.current);
+      console.log(
+        "🔊 FFT size:",
+        analyser.fftSize,
+        "Frequency bins:",
+        analyser.frequencyBinCount
+      );
 
       const audioBuffer: number[] = [];
       const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
@@ -241,7 +309,7 @@ export const RecordingWindow: React.FC = () => {
 
     const handleProcessingStage = (event: any) => {
       const stage = event.detail;
-      setProcessingStage(typeof stage === 'string' ? stage : stage.toString());
+      setProcessingStage(typeof stage === "string" ? stage : stage.toString());
       setIsProcessing(true);
       setWindowState("processing"); // Ensure window stays expanded
     };
@@ -262,71 +330,89 @@ export const RecordingWindow: React.FC = () => {
     };
   }, [isRecording, isProcessing]);
 
-  const expanded = hovered || isRecording || isProcessing || windowState === "processing";
+  const expanded =
+    hovered || isRecording || isProcessing || windowState === "processing";
 
-  const getContainerClass = () => {
-    let stateClass = "";
-    
-    if (isRecording) {
-      stateClass = "recording";
-    } else if (isProcessing || windowState === "processing") {
-      stateClass = "processing";
+  const getBaseContainerClasses = () => {
+    return `
+      relative overflow-hidden
+      bg-black
+      flex items-center justify-center
+      transition-all duration-200 ease-[cubic-bezier(0.25,0.8,0.25,1)]
+      transform-gpu
+    `;
+  };
+
+  const getBorderClasses = () => {
+    if (isRecording || isProcessing || windowState === "processing") {
+      return "border border-gray-100/60"; // Reduced opacity for expanded states
     } else if (hovered) {
-      stateClass = "hovered";
+      return "border border-gray-100/60"; // Reduced opacity for hover
+    } else {
+      return "border border-white/90"; // More visible border for compact
     }
-    
-    return [
-      "recording-container",
-      stateClass,
-      isRecording ? "recording" : "",
-      hovered ? "hovered" : "",
-      isProcessing ? "processing" : "",
-    ].join(" ");
+  };
+
+  const getStateClasses = () => {
+    if (isRecording) {
+      return "w-full h-full rounded-3xl opacity-100"; // Smoother transition
+    } else if (isProcessing || windowState === "processing") {
+      return "w-full h-full rounded-3xl opacity-100"; // Smoother transition
+    } else if (hovered) {
+      return "w-full h-full rounded-3xl opacity-100"; // Smoother transition
+    } else {
+      return "w-[43px] h-full rounded-xl opacity-80";
+    }
   };
 
   return (
-    <div className="window-container">
+    <div className="w-screen h-screen flex items-center justify-center">
       <div
-        className={getContainerClass()}
-        onMouseEnter={() => {
+        className={`
+          ${getBaseContainerClasses()}
+          ${getBorderClasses()}
+          ${getStateClasses()}
+        `}
+        onMouseEnter={async () => {
           setHovered(true);
-          window.electronAPI.windowHoverEnter();
+          // Direct window control - expand window immediately
+          await (window.electronAPI as any).expandRecordingWindow();
+          //   (window.electronAPI as any).windowHoverEnter();
         }}
-        onMouseLeave={() => {
+        onMouseLeave={async () => {
           setHovered(false);
-          window.electronAPI.windowHoverLeave();
+          // Direct window control - compact window immediately
+          await (window.electronAPI as any).compactRecordingWindow();
+          //   (window.electronAPI as any).windowHoverLeave();
         }}
       >
         {expanded && !isRecording && !isProcessing && (
-          <div className="dots">
-            <span />
-            <span />
-            <span />
+          <div className="flex gap-1 items-center justify-center">
+            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
+            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
+            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
           </div>
         )}
         {isRecording && (
-          <div className="wave">
+          <div className="flex items-center justify-center gap-0.5 h-full w-full px-2">
             {levels.map((h, i) => (
               <span
                 key={i}
+                className="block w-0.5 min-h-1 bg-white/90 rounded-full transition-all duration-150 ease-out"
                 style={{
                   height: `${Math.round(h)}px`,
-                  transition: "height 0.15s ease-out",
                 }}
               />
             ))}
           </div>
         )}
         {isProcessing && (
-          <div className="processing">
-            <div className="processing-dots">
-              <span></span>
-              <span></span>
-              <span></span>
+          <div className="flex items-center justify-center w-full h-full">
+            <div className="flex gap-1 items-center justify-center">
+              <span className="w-1 h-1 rounded-full bg-white/85 opacity-60 animate-blink [animation-delay:0s]" />
+              <span className="w-1 h-1 rounded-full bg-white/85 opacity-60 animate-blink [animation-delay:0.2s]" />
+              <span className="w-1 h-1 rounded-full bg-white/85 opacity-60 animate-blink [animation-delay:0.4s]" />
             </div>
-            {processingStage && (
-              <div className="processing-stage">{processingStage}</div>
-            )}
           </div>
         )}
       </div>

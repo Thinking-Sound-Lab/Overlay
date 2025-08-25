@@ -17,14 +17,26 @@ export const Layout: React.FC<LayoutProps> = ({
   children,
 }) => {
   return (
-    <div className="h-screen bg-gray-50 font-inter flex flex-col overflow-hidden">
+    <div className="h-screen bg-gray-100 font-inter flex flex-col overflow-hidden">
       {/* Top Navigation Bar */}
       <div
-        className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200"
+        className="flex items-center justify-between px-6 py-4 bg-gray-100"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
+        {/* Three dots icon for close, minimize, maximize */}
+        {/* <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon">
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Settings className="h-4 w-4" />
+          </Button>
+        </div> */}
+
         <div className="flex items-center gap-1">
-          <span className="text-2xl">🎯</span>
           <span className="text-xl font-bold text-gray-900">Overlay</span>
           <Badge className="ml-2 bg-blue-500 text-white">PRO</Badge>
         </div>
@@ -36,6 +48,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <Button
               variant={activeView === "settings" ? "default" : "ghost"}
               size="icon"
+              className="hover:bg-gray-200 hover:rounded-xl"
               onClick={() => setActiveView("settings")}
             >
               <Settings className="h-4 w-4" />
@@ -45,6 +58,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <Button
               variant={activeView === "profile" ? "default" : "ghost"}
               size="icon"
+              className="hover:bg-gray-200 hover:rounded-xl"
               onClick={() => setActiveView("profile")}
             >
               <User className="h-4 w-4" />
@@ -55,11 +69,11 @@ export const Layout: React.FC<LayoutProps> = ({
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-52 bg-white border-r border-gray-200 flex flex-col">
+        <div className="w-52 bg-gray-100 flex flex-col">
           <nav className="flex-1 px-4 py-6 space-y-2">
             <Button
               variant={activeView === "home" ? "default" : "ghost"}
-              className={`w-full justify-start gap-3 hover:bg-gray-100 hover:rounded-lg hover:text-gray-900 ${activeView === "home" ? "bg-gray-100 rounded-md text-gray-900" : ""}`}
+              className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "home" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
               onClick={() => setActiveView("home")}
             >
               <Home className="h-5 w-5" />
@@ -68,7 +82,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
             <Button
               variant={activeView === "dictionary" ? "default" : "ghost"}
-              className={`w-full justify-start gap-3 hover:bg-gray-100 hover:rounded-md hover:text-gray-900 ${activeView === "dictionary" ? "bg-gray-100 rounded-md text-gray-900" : ""}`}
+              className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "dictionary" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
               onClick={() => setActiveView("dictionary")}
             >
               <BookOpen className="h-5 w-5" />
@@ -77,10 +91,10 @@ export const Layout: React.FC<LayoutProps> = ({
           </nav>
 
           {/* Bottom buttons */}
-          <div className="px-4 py-4 border-t border-gray-200 space-y-2">
+          <div className="px-4 py-4 space-y-2">
             <Button
               variant={activeView === "help" ? "default" : "ghost"}
-              className={`w-full justify-start gap-3 hover:bg-gray-100 hover:rounded-md hover:text-gray-900 ${activeView === "help" ? "bg-gray-100 rounded-md text-gray-900" : ""}`}
+              className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "help" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
               onClick={() => setActiveView("help")}
             >
               <HelpCircle className="h-5 w-5" />
@@ -89,7 +103,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
             <Button
               variant={activeView === "referral" ? "default" : "ghost"}
-              className={`w-full justify-start gap-3 hover:bg-gray-100 hover:rounded-md hover:text-gray-900 ${activeView === "referral" ? "bg-gray-100 rounded-md text-gray-900" : ""}`}
+              className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "referral" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
               onClick={() => setActiveView("referral")}
             >
               <Gift className="h-5 w-5" />
@@ -99,7 +113,9 @@ export const Layout: React.FC<LayoutProps> = ({
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-y-auto bg-white">{children}</div>
+        <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl my-4 mr-4">
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -3,14 +3,15 @@ import { AuthPage } from "./AuthPage";
 import { PermissionsPage } from "./PermissionsPage";
 import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
-import { useAuth } from "../hooks/useAuth";
 import { analytics, auth } from "../lib/api_client";
+import { Button } from "./ui/button";
 
 type OnboardingStep = "auth" | "permissions" | "guide";
 
 export const OnboardingFlow: React.FC = () => {
-  const { state, setUser, setAuthenticated } = useAppContext();
-  const { user, isAuthenticated, completeOnboarding } = useAuth();
+  const { state, setUser, setAuthenticated, completeOnboarding } =
+    useAppContext();
+  const { user, isAuthenticated } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -138,13 +139,31 @@ export const OnboardingFlow: React.FC = () => {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
 
+      {/* Step Indicator */}
+      <div className="">
+        <div className="bg-white px-4 py-2 flex justify-center">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-medium">
+              Step {["auth", "permissions", "guide"].indexOf(currentStep) + 1}{" "}
+              of 3
+            </span>
+            <span>•</span>
+            <span>
+              {currentStep === "auth" && "Authentication"}
+              {currentStep === "permissions" && "Permissions"}
+              {currentStep === "guide" && "Quick Guide"}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Progress Bar */}
-      <div className="h-1 bg-gray-200">
+      {/* <div className="h-1 bg-gray-200">
         <div
           className="h-1 bg-blue-600 transition-all duration-300"
           style={{ width: `${getStepProgress()}%` }}
         />
-      </div>
+      </div> */}
 
       {/* Step Content */}
       <div className="flex-1">
@@ -159,24 +178,6 @@ export const OnboardingFlow: React.FC = () => {
         {currentStep === "guide" && (
           <GuidePage onGuideComplete={handleGuideComplete} />
         )}
-      </div>
-
-      {/* Step Indicator */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2">
-        <div className="bg-white rounded-full px-4 py-2 shadow-lg border">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="font-medium">
-              Step {["auth", "permissions", "guide"].indexOf(currentStep) + 1}{" "}
-              of 3
-            </span>
-            <span>•</span>
-            <span>
-              {currentStep === "auth" && "Authentication"}
-              {currentStep === "permissions" && "Permissions"}
-              {currentStep === "guide" && "Quick Guide"}
-            </span>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -41,12 +41,16 @@ export class TranslationService {
       let detectedSourceLanguage = sourceLanguage;
       if (!sourceLanguage || sourceLanguage === "auto") {
         detectedSourceLanguage = await this.enhancedLanguageDetection(text);
-        console.log(`[Translation] Enhanced detection result: ${detectedSourceLanguage}`);
+        console.log(
+          `[Translation] Enhanced detection result: ${detectedSourceLanguage}`
+        );
       }
 
       // Step 2: Check if translation is actually needed
       if (detectedSourceLanguage === targetLanguage) {
-        console.log(`[Translation] Source and target language are the same, skipping translation`);
+        console.log(
+          `[Translation] Source and target language are the same, skipping translation`
+        );
         return {
           translatedText: text,
           sourceLanguage: detectedSourceLanguage,
@@ -73,9 +77,13 @@ export class TranslationService {
         targetLanguage
       );
 
-      console.log(`[Translation] Final result: "${validatedResult.translatedText}"`);
+      console.log(
+        `[Translation] Final result: "${validatedResult.translatedText}"`
+      );
       console.log(`[Translation] Confidence: ${validatedResult.confidence}`);
-      console.log(`[Translation] Word count ratio: ${validatedResult.wordCountRatio}`);
+      console.log(
+        `[Translation] Word count ratio: ${validatedResult.wordCountRatio}`
+      );
 
       return validatedResult;
     } catch (error) {
@@ -121,16 +129,24 @@ IMPORTANT: Return only the 2-letter code, nothing else.`,
 
       const detectedLanguage =
         response.choices[0].message.content?.trim().toLowerCase() || "en";
-      
+
       // Validate the detected language code
-      if (detectedLanguage.length === 2 && /^[a-z]{2}$/.test(detectedLanguage)) {
+      if (
+        detectedLanguage.length === 2 &&
+        /^[a-z]{2}$/.test(detectedLanguage)
+      ) {
         return detectedLanguage;
       }
-      
-      console.warn(`[Translation] Invalid language code detected: ${detectedLanguage}, defaulting to 'en'`);
+
+      console.warn(
+        `[Translation] Invalid language code detected: ${detectedLanguage}, defaulting to 'en'`
+      );
       return "en";
     } catch (error) {
-      console.error("[Translation] Error in enhanced language detection:", error);
+      console.error(
+        "[Translation] Error in enhanced language detection:",
+        error
+      );
       return "en"; // Default fallback
     }
   }
@@ -186,10 +202,12 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
         temperature: 0.2, // Low temperature for consistency
       });
 
-      const translatedText = response.choices[0].message.content?.trim() || text;
-      
+      const translatedText =
+        response.choices[0].message.content?.trim() || text;
+
       // Calculate confidence based on response completeness
-      const confidence = response.choices[0].finish_reason === "stop" ? 0.95 : 0.7;
+      const confidence =
+        response.choices[0].finish_reason === "stop" ? 0.95 : 0.7;
 
       return { translatedText, confidence };
     } catch (error) {
@@ -206,18 +224,25 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
   ): Promise<TranslationResult> {
     const originalWords = this.countWords(originalText);
     const translatedWords = this.countWords(translation.translatedText);
-    
-    console.log(`[Translation] Word count analysis: Original="${originalText}" (${originalWords} words) -> Translated="${translation.translatedText}" (${translatedWords} words)`);
-    
+
+    console.log(
+      `[Translation] Word count analysis: Original="${originalText}" (${originalWords} words) -> Translated="${translation.translatedText}" (${translatedWords} words)`
+    );
+
     // Prevent division by zero - if original has no words, set ratio to 1.0
-    const wordCountRatio = originalWords === 0 ? 1.0 : translatedWords / originalWords;
-    
-    console.log(`[Translation] Word count ratio: ${wordCountRatio} ${originalWords === 0 ? '(division by zero prevented)' : ''}`);
+    const wordCountRatio =
+      originalWords === 0 ? 1.0 : translatedWords / originalWords;
+
+    console.log(
+      `[Translation] Word count ratio: ${wordCountRatio} ${originalWords === 0 ? "(division by zero prevented)" : ""}`
+    );
 
     // Check if word count deviation is excessive (>50% change) and we have meaningful text
     if (originalWords > 0 && (wordCountRatio < 0.5 || wordCountRatio > 2.0)) {
-      console.warn(`[Translation] Excessive word count change: ${originalWords} -> ${translatedWords} (ratio: ${wordCountRatio.toFixed(2)})`);
-      
+      console.warn(
+        `[Translation] Excessive word count change: ${originalWords} -> ${translatedWords} (ratio: ${wordCountRatio.toFixed(2)})`
+      );
+
       // Attempt word count correction
       const correctedTranslation = await this.correctWordCount(
         originalText,
@@ -229,14 +254,18 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
 
       // Calculate corrected word count ratio, preventing division by zero
       const correctedWords = this.countWords(correctedTranslation.text);
-      const correctedRatio = originalWords === 0 ? 1.0 : correctedWords / originalWords;
-      
+      const correctedRatio =
+        originalWords === 0 ? 1.0 : correctedWords / originalWords;
+
       return {
         translatedText: correctedTranslation.text,
         sourceLanguage,
         targetLanguage,
         originalText,
-        confidence: Math.min(translation.confidence, correctedTranslation.confidence),
+        confidence: Math.min(
+          translation.confidence,
+          correctedTranslation.confidence
+        ),
         wordCountRatio: correctedRatio,
         detectedLanguage: sourceLanguage,
       };
@@ -292,15 +321,18 @@ OUTPUT: Return only the adjusted translation, nothing else.`;
           },
           {
             role: "user",
-            content: "Please adjust the translation to match the target word count while preserving all meaning.",
+            content:
+              "Please adjust the translation to match the target word count while preserving all meaning.",
           },
         ],
         max_tokens: Math.max(500, targetWordCount * 2),
         temperature: 0.1,
       });
 
-      const correctedText = response.choices[0].message.content?.trim() || translatedText;
-      const confidence = response.choices[0].finish_reason === "stop" ? 0.8 : 0.6;
+      const correctedText =
+        response.choices[0].message.content?.trim() || translatedText;
+      const confidence =
+        response.choices[0].finish_reason === "stop" ? 0.8 : 0.6;
 
       return { text: correctedText, confidence };
     } catch (error) {
@@ -311,30 +343,35 @@ OUTPUT: Return only the adjusted translation, nothing else.`;
 
   private countWords(text: string): number {
     // Handle null, undefined, or empty strings
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!text || typeof text !== "string" || !text.trim()) {
       return 0;
     }
-    
+
     try {
       // Handle different languages appropriately
-      const cleanText = text.trim().replace(/[^\w\s\u00C0-\u024F\u1E00-\u1EFF\u0100-\u017F\u0400-\u04FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, ' ');
-      
+      const cleanText = text
+        .trim()
+        .replace(
+          /[^\w\s\u00C0-\u024F\u1E00-\u1EFF\u0100-\u017F\u0400-\u04FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g,
+          " "
+        );
+
       // For CJK characters, count each character as a word
       const cjkRegex = /[\u4E00-\u9FAF\u3040-\u309F\u30A0-\u30FF]/g;
       const cjkMatches = cleanText.match(cjkRegex);
       const cjkCount = cjkMatches ? cjkMatches.length : 0;
-      
+
       // For other languages, split by spaces
-      const nonCjkText = cleanText.replace(cjkRegex, ' ');
+      const nonCjkText = cleanText.replace(cjkRegex, " ");
       const wordMatches = nonCjkText.match(/\S+/g);
       const wordCount = wordMatches ? wordMatches.length : 0;
-      
+
       const totalWords = cjkCount + wordCount;
-      
+
       // Ensure we never return negative numbers or NaN
       return isNaN(totalWords) || totalWords < 0 ? 0 : totalWords;
     } catch (error) {
-      console.error('[Translation] Error counting words:', error);
+      console.error("[Translation] Error counting words:", error);
       return 0; // Fallback to 0 on any error
     }
   }
@@ -422,7 +459,7 @@ OUTPUT: Return only the adjusted translation, nothing else.`;
   async detectLanguage(text: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini-transcribe",
+        model: "gpt-4.1",
         messages: [
           {
             role: "system",

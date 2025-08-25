@@ -4,11 +4,9 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { User, LogOut, Trash2, AlertTriangle, Calendar, Trophy, Target, TrendingUp } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
-import { useAuth } from "../hooks/useAuth";
 
 export const ProfilePage: React.FC = () => {
-  const { state, resetAppState } = useAppContext();
-  const { signOut } = useAuth();
+  const { state, resetAppState, signOut } = useAppContext();
   const { user, userProfile, userStats, isLoading } = state;
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);

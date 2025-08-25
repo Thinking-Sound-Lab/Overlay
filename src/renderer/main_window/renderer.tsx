@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import React from "react";
-import "./styles/globals.css";
+import "../../shared/styles/index.css";
 
 // Import the main app component
 let App: React.ComponentType = () => {

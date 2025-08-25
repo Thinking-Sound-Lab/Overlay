@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("audio-recorded", data),
   windowHoverEnter: () => ipcRenderer.invoke("window-hover-enter"),
   windowHoverLeave: () => ipcRenderer.invoke("window-hover-leave"),
+  
+  // Direct window control methods
+  expandRecordingWindow: () => ipcRenderer.invoke("expand-recording-window"),
+  compactRecordingWindow: () => ipcRenderer.invoke("compact-recording-window"),
 
   // Authentication handlers
   onAuthenticationComplete: (user: any) =>

@@ -256,9 +256,9 @@ class STTService {
       }
     } catch (error) {
       console.error("[STT] Error in post-processing:", error);
-
-      // Fallback: insert original transcript if processing fails
-      this.insertTextWithRobot(transcript);
+      
+      // No fallback insertion - let user re-record if needed
+      // This prevents duplicate text insertion and "Object has been destroyed" errors
     }
   }
 

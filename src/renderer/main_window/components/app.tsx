@@ -8,22 +8,56 @@ import { HelpPage } from "./HelpPage";
 import { ReferralPage } from "./ReferralPage";
 import { DictionaryPage } from "./DictionaryPage";
 import { AppProvider, useAppContext } from "../contexts/AppContext";
-import { useAuth } from "../hooks/useAuth";
-import { useAuthInit } from "../hooks/useAuthInit";
 
 const AppContent: React.FC = () => {
   const { state, setActiveView } = useAppContext();
-  const { isAuthenticated, hasCompletedOnboarding, isLoading } = useAuth();
+  const {
+    isAuthenticated,
+    hasCompletedOnboarding,
+    isLoading,
+    isInitializing,
+    isUserDataLoading,
+    user,
+  } = state;
 
-  // Initialize auth only once at the app level
-  useAuthInit();
+  // Determine if we should show loading screen
+  const shouldShowLoading = isLoading || isInitializing || isUserDataLoading;
 
-  if (isLoading) {
+  // Determine loading message based on state
+  let loadingMessage = "Loading...";
+  if (isInitializing) {
+    loadingMessage = "Initializing...";
+  } else if (isUserDataLoading) {
+    loadingMessage = "Loading user data...";
+  }
+
+  console.log("AppContent: Rendering with state:", {
+    isLoading,
+    isInitializing,
+    isUserDataLoading,
+    shouldShowLoading,
+    isAuthenticated,
+    hasCompletedOnboarding,
+    user: user?.email || null,
+    willShowOnboarding: !isAuthenticated || !hasCompletedOnboarding,
+    willShowMainApp:
+      isAuthenticated && hasCompletedOnboarding && !shouldShowLoading,
+    loadingMessage,
+    timestamp: new Date().toISOString(),
+  });
+
+  if (shouldShowLoading) {
+    console.log(
+      "AppContent: Showing loading screen with message:",
+      loadingMessage
+    );
     return (
       <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <div className="w-64 bg-gray-200 rounded-full h-2 mb-4">
+            <div className="bg-gray-500 h-2 rounded-full animate-pulse w-3/4"></div>
+          </div>
+          <p className="text-gray-600">{loadingMessage}</p>
         </div>
       </div>
     );
@@ -31,10 +65,16 @@ const AppContent: React.FC = () => {
 
   // Show onboarding flow if user is not authenticated or hasn't completed onboarding
   if (!isAuthenticated || !hasCompletedOnboarding) {
+    console.log("AppContent: Showing onboarding flow", {
+      reason: !isAuthenticated
+        ? "not authenticated"
+        : "onboarding not completed",
+    });
     return <OnboardingFlow />;
   }
 
   // Show main app with layout
+  console.log("AppContent: Showing main app layout");
   return (
     <Layout activeView={state.activeView} setActiveView={setActiveView}>
       {state.activeView === "home" && <HomePage />}

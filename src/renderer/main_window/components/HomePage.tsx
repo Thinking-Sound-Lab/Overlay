@@ -20,13 +20,6 @@ import {
 } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 
-interface UserStats {
-  totalWordCount: number;
-  averageWPM: number;
-  totalRecordings: number;
-  streakDays: number;
-}
-
 interface TranscriptEntry {
   id: string;
   text: string;
@@ -45,7 +38,7 @@ interface TranscriptEntry {
 export const HomePage: React.FC = () => {
   const { state } = useAppContext();
   const { user, userProfile, userStats, transcripts } = state;
-  const userName = userProfile?.name || user?.email?.split('@')[0] || 'User';
+  const userName = userProfile?.name || user?.email?.split("@")[0] || "User";
   const getLanguageName = (code: string): string => {
     const languages: Record<string, string> = {
       en: "English",
@@ -75,17 +68,26 @@ export const HomePage: React.FC = () => {
     return languages[code] || code.toUpperCase();
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: Date | string) => {
+    // Ensure we have a proper Date object
+    const dateObj = date instanceof Date ? date : new Date(date);
+
+    // Check if date is valid
+    if (isNaN(dateObj.getTime())) {
+      console.warn("Invalid date provided to formatDate:", date);
+      return "UNKNOWN DATE";
+    }
+
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    if (date.toDateString() === today.toDateString()) {
+    if (dateObj.toDateString() === today.toDateString()) {
       return "TODAY";
-    } else if (date.toDateString() === yesterday.toDateString()) {
+    } else if (dateObj.toDateString() === yesterday.toDateString()) {
       return "YESTERDAY";
     } else {
-      return date
+      return dateObj
         .toLocaleDateString("en-US", {
           month: "long",
           day: "numeric",
@@ -95,8 +97,17 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
+  const formatTime = (date: Date | string) => {
+    // Ensure we have a proper Date object
+    const dateObj = date instanceof Date ? date : new Date(date);
+
+    // Check if date is valid
+    if (isNaN(dateObj.getTime())) {
+      console.warn("Invalid date provided to formatTime:", date);
+      return "Invalid Time";
+    }
+
+    return dateObj.toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -187,8 +198,8 @@ export const HomePage: React.FC = () => {
               <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-4 pl-4">
                 {dateKey}
               </h4>
-              <Card>
-                <CardContent className="p-0">
+              <Card className="rounded-xl">
+                <CardContent className="p-0 ">
                   {transcriptList.map((transcript, index) => (
                     <div
                       key={transcript.id}
@@ -198,16 +209,20 @@ export const HomePage: React.FC = () => {
                         <div className="text-xs font-medium text-gray-900">
                           {formatTime(transcript.timestamp)}
                         </div>
-                        {transcript.wasTranslated && (
+                        {/* {transcript.wasTranslated && (
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-md">
                               <Languages className="h-3 w-3" />
                               <span className="text-xs font-medium">
-                                {getLanguageName(transcript.sourceLanguage || "")}
+                                {getLanguageName(
+                                  transcript.sourceLanguage || ""
+                                )}
                               </span>
                               <ArrowRight className="h-3 w-3" />
                               <span className="text-xs font-medium">
-                                {getLanguageName(transcript.targetLanguage || "")}
+                                {getLanguageName(
+                                  transcript.targetLanguage || ""
+                                )}
                               </span>
                             </div>
                             {transcript.confidence !== undefined && (
@@ -220,12 +235,15 @@ export const HomePage: React.FC = () => {
                                   <Info className="h-3 w-3 text-red-600" />
                                 )}
                                 <span className="text-xs text-gray-500">
-                                  {Math.round((transcript.confidence || 0) * 100)}%
+                                  {Math.round(
+                                    (transcript.confidence || 0) * 100
+                                  )}
+                                  %
                                 </span>
                               </div>
                             )}
                           </div>
-                        )}
+                        )} */}
                       </div>
 
                       {transcript.wasTranslated && transcript.originalText && (
@@ -258,17 +276,22 @@ export const HomePage: React.FC = () => {
                         <Badge variant="outline" className="text-xs">
                           {transcript.wpm.toFixed(1)} WPM
                         </Badge>
-                        {transcript.wasTranslated && transcript.wordCountRatio !== undefined && (
-                          <Badge variant="outline" className={`text-xs ${
-                            Math.abs(transcript.wordCountRatio - 1) <= 0.2 
-                              ? "text-green-700 border-green-300" 
-                              : Math.abs(transcript.wordCountRatio - 1) <= 0.5
-                              ? "text-yellow-700 border-yellow-300"
-                              : "text-red-700 border-red-300"
-                          }`}>
-                            Ratio: {transcript.wordCountRatio.toFixed(2)}
-                          </Badge>
-                        )}
+                        {/* {transcript.wasTranslated &&
+                          transcript.wordCountRatio !== undefined && (
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${
+                                Math.abs(transcript.wordCountRatio - 1) <= 0.2
+                                  ? "text-green-700 border-green-300"
+                                  : Math.abs(transcript.wordCountRatio - 1) <=
+                                      0.5
+                                    ? "text-yellow-700 border-yellow-300"
+                                    : "text-red-700 border-red-300"
+                              }`}
+                            >
+                              Ratio: {transcript.wordCountRatio.toFixed(2)}
+                            </Badge>
+                          )} */}
                       </div>
                     </div>
                   ))}

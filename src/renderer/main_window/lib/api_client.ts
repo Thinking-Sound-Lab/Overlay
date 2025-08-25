@@ -8,9 +8,31 @@ export interface IPCResponse<T = any> {
 }
 
 export class APIClient {
+  // Helper method to wait for electronAPI to be available
+  private static async waitForElectronAPI(
+    maxRetries = 10,
+    delayMs = 100
+  ): Promise<void> {
+    let retries = 0;
+    while (retries < maxRetries) {
+      if (
+        typeof window !== "undefined" &&
+        window.electronAPI &&
+        window.electronAPI.auth &&
+        window.electronAPI.db
+      ) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      retries++;
+    }
+    throw new Error("electronAPI is not available after waiting");
+  }
+
   // Authentication methods
   static async signIn(email: string, password: string): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.signIn(email, password);
       return response;
     } catch (error) {
@@ -21,6 +43,7 @@ export class APIClient {
 
   static async signInWithGoogle(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.signInWithGoogle();
       return response;
     } catch (error) {
@@ -29,9 +52,18 @@ export class APIClient {
     }
   }
 
-  static async signUp(email: string, password: string, name?: string): Promise<IPCResponse> {
+  static async signUp(
+    email: string,
+    password: string,
+    name?: string
+  ): Promise<IPCResponse> {
     try {
-      const response = await window.electronAPI.auth.signUp(email, password, name);
+      await APIClient.waitForElectronAPI();
+      const response = await window.electronAPI.auth.signUp(
+        email,
+        password,
+        name
+      );
       return response;
     } catch (error) {
       console.error("APIClient: Sign up error:", error);
@@ -41,6 +73,7 @@ export class APIClient {
 
   static async signOut(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.signOut();
       return response;
     } catch (error) {
@@ -51,6 +84,7 @@ export class APIClient {
 
   static async getCurrentUser(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.getCurrentUser();
       return response;
     } catch (error) {
@@ -61,6 +95,7 @@ export class APIClient {
 
   static async getUserProfile(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.getUserProfile();
       return response;
     } catch (error) {
@@ -71,6 +106,7 @@ export class APIClient {
 
   static async completeOnboarding(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.auth.completeOnboarding();
       return response;
     } catch (error) {
@@ -92,6 +128,7 @@ export class APIClient {
 
   static async getTranscripts(limit?: number): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.db.getTranscripts(limit);
       return response;
     } catch (error) {
@@ -112,6 +149,7 @@ export class APIClient {
 
   static async getUserSettings(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.db.getUserSettings();
       return response;
     } catch (error) {
@@ -122,6 +160,7 @@ export class APIClient {
 
   static async getUserStats(): Promise<IPCResponse> {
     try {
+      await APIClient.waitForElectronAPI();
       const response = await window.electronAPI.db.getUserStats();
       return response;
     } catch (error) {

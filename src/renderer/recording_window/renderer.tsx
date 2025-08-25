@@ -1,7 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { RecordingWindow } from "./recording";
-// import "./index.css";
+import "../../shared/styles/globals.css";
 
 console.log("Recording window renderer starting...");
 

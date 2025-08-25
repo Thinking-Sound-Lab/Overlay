@@ -49,6 +49,8 @@ export class SupabaseService {
   private currentSession: Session | null = null;
   private sessionStore: Store;
   private onAuthStateChangeCallback?: (user: User | null) => void;
+  private sessionRestorationPromise: Promise<void> | null = null;
+  private isSessionRestored: boolean = false;
 
   constructor() {
     // Import centralized config
@@ -76,14 +78,17 @@ export class SupabaseService {
       },
     });
 
-    // Try to restore session on startup
-    this.restoreSession();
+    // Try to restore session on startup and track completion
+    this.sessionRestorationPromise = this.restoreSession();
   }
 
   private async restoreSession() {
     try {
+      console.log("SupabaseService: Starting session restoration...");
       const storedSession = this.sessionStore.get("session") as Session | null;
+      
       if (storedSession) {
+        console.log("SupabaseService: Found stored session, attempting to restore...");
         const { data, error } = await this.supabase.auth.setSession({
           access_token: storedSession.access_token,
           refresh_token: storedSession.refresh_token,
@@ -93,18 +98,24 @@ export class SupabaseService {
           this.currentSession = data.session;
           this.currentUser = data.user;
           console.log(
-            "SupabaseService: Session restored for user:",
+            "SupabaseService: Session restored successfully for user:",
             data.user.email
           );
           this.notifyAuthStateChange(data.user);
         } else {
           // Clear invalid session
+          console.log("SupabaseService: Stored session is invalid, clearing...", error?.message);
           this.clearStoredSession();
         }
+      } else {
+        console.log("SupabaseService: No stored session found");
       }
     } catch (error) {
       console.error("SupabaseService: Failed to restore session:", error);
       this.clearStoredSession();
+    } finally {
+      this.isSessionRestored = true;
+      console.log("SupabaseService: Session restoration completed. User authenticated:", !!this.currentUser);
     }
   }
 
@@ -113,6 +124,25 @@ export class SupabaseService {
     this.sessionStore.set("user", user);
     this.currentSession = session;
     this.currentUser = user;
+  }
+
+  // Public method for OAuth callback handling
+  public async exchangeCodeForSession(code: string) {
+    try {
+      console.log("SupabaseService: Exchanging OAuth code for session...");
+      const { data, error } = await this.supabase.auth.exchangeCodeForSession(code);
+      
+      if (data.session && data.user && !error) {
+        console.log("SupabaseService: OAuth session exchange successful for user:", data.user.email);
+        this.storeSession(data.session, data.user);
+        this.notifyAuthStateChange(data.user);
+      }
+      
+      return { data, error };
+    } catch (error) {
+      console.error("SupabaseService: Error exchanging code for session:", error);
+      return { data: null as any, error };
+    }
   }
 
   private clearStoredSession() {
@@ -208,12 +238,23 @@ export class SupabaseService {
 
   async signInWithGoogle() {
     try {
+      console.log("SupabaseService: Initiating Google OAuth with custom protocol...");
+      
       const { data, error } = await this.supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo:
-            "https://sjafkjkpqejxzbyvmbax.supabase.co/auth/v1/callback",
+          redirectTo: "overlay://oauth/callback",
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
         },
+      });
+
+      console.log("SupabaseService: Google OAuth initiation result:", { 
+        success: !!data.url, 
+        hasError: !!error,
+        errorMessage: error?.message 
       });
 
       return { data, error };
@@ -327,6 +368,19 @@ export class SupabaseService {
 
   getCurrentSession() {
     return this.currentSession;
+  }
+
+  // Check if session restoration has completed
+  isSessionRestorationComplete() {
+    return this.isSessionRestored;
+  }
+
+  // Wait for session restoration to complete
+  async waitForSessionRestoration() {
+    if (this.sessionRestorationPromise) {
+      await this.sessionRestorationPromise;
+    }
+    return this.isSessionRestored;
   }
 
   async getUserProfile() {
