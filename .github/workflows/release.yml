@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  release:
+    name: Release ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: overlay-linux
+            artifact_path: |
+              out/make/deb/**/*
+              out/make/rpm/**/*
+          - os: windows-latest
+            platform: win32
+            artifact_name: overlay-windows
+            artifact_path: |
+              out/make/squirrel.windows/**/*
+          - os: macos-latest
+            platform: darwin
+            artifact_name: overlay-macos
+            artifact_path: |
+              out/make/zip/darwin/**/*
+              out/make/*.dmg
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update version from tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          npm version $VERSION --no-git-tag-version
+        shell: bash
+
+      - name: Update version from input
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          VERSION=${VERSION#v}
+          npm version $VERSION --no-git-tag-version
+        shell: bash
+
+      # Windows Release Build
+      - name: Build and publish Windows
+        if: matrix.platform == 'win32'
+        run: |
+          npm run make:win
+        env:
+          # PRODUCTION CODE SIGNING (commented for testing)
+          # Uncomment these lines and set secrets for production releases
+          # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
+          # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
+
+      # macOS Release Build  
+      - name: Build and publish macOS
+        if: matrix.platform == 'darwin'
+        run: |
+          npm run make:mac
+        env:
+          # PRODUCTION CODE SIGNING (commented for testing)
+          # Uncomment these lines and set secrets for production releases
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+          # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          CI: true
+
+      # Linux Release Build
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: |
+          npm run make
+        env:
+          CI: true
+
+      # Upload release artifacts
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 90
+
+  # Create GitHub Release
+  create-release:
+    needs: release
+    runs-on: ubuntu-latest
+    if: always() && (needs.release.result == 'success')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: release-artifacts
+
+      - name: Display artifact structure
+        run: ls -la release-artifacts/
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=${{ github.event.inputs.version }}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Overlay ${{ steps.version.outputs.version }}
+            
+            ### 📦 Downloads
+            
+            - **Windows**: Download `OverlaySetup.exe` from the assets below
+            - **macOS**: Download the `.dmg` file from the assets below  
+            - **Linux**: Download `.deb` or `.rpm` files from the assets below
+            
+            ### ⚠️ Security Note
+            
+            **Current builds are unsigned for testing purposes.**
+            
+            - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway"
+            - **macOS**: You may need to allow the app in System Preferences → Privacy & Security
+            - **Linux**: No issues expected
+            
+            ### 🚀 Production Ready
+            
+            For production deployment with code signing:
+            1. Configure certificates in repository secrets
+            2. Uncomment signing configuration in workflows
+            3. Re-run the release workflow
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ github.event.before }}...v${{ steps.version.outputs.tag }}
+          files: |
+            release-artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Deployment notification
+  notify-deployment:
+    needs: [release, create-release]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Build Status | Release Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------------|----------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows  | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the draft release in GitHub Releases" >> $GITHUB_STEP_SUMMARY
+          echo "2. Test the unsigned builds on target platforms" >> $GITHUB_STEP_SUMMARY
+          echo "3. For production: configure code signing and re-release" >> $GITHUB_STEP_SUMMARY
+          echo "4. Publish the release when ready" >> $GITHUB_STEP_SUMMARY

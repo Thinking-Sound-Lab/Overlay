@@ -1,4 +1,5 @@
 import React from "react";
+import { NavigationBar } from "./NavigationBar";
 import { Layout } from "./Layout";
 import { HomePage } from "./HomePage";
 import { OnboardingFlow } from "./OnboardingFlow";
@@ -52,12 +53,15 @@ const AppContent: React.FC = () => {
       loadingMessage
     );
     return (
-      <div className="h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-64 bg-gray-200 rounded-full h-2 mb-4">
-            <div className="bg-gray-500 h-2 rounded-full animate-pulse w-3/4"></div>
+      <div className="h-screen bg-gray-50 flex flex-col">
+        <NavigationBar showAuthButtons={false} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-64 bg-gray-200 rounded-full h-2 mb-4">
+              <div className="bg-gray-500 h-2 rounded-full animate-pulse w-3/4"></div>
+            </div>
+            <p className="text-gray-600">{loadingMessage}</p>
           </div>
-          <p className="text-gray-600">{loadingMessage}</p>
         </div>
       </div>
     );
@@ -70,20 +74,36 @@ const AppContent: React.FC = () => {
         ? "not authenticated"
         : "onboarding not completed",
     });
-    return <OnboardingFlow />;
+    return (
+      <div className="h-screen flex flex-col">
+        <NavigationBar showAuthButtons={false} />
+        <div className="flex-1 overflow-hidden">
+          <OnboardingFlow />
+        </div>
+      </div>
+    );
   }
 
   // Show main app with layout
   console.log("AppContent: Showing main app layout");
   return (
-    <Layout activeView={state.activeView} setActiveView={setActiveView}>
-      {state.activeView === "home" && <HomePage />}
-      {state.activeView === "settings" && <SettingsPage />}
-      {state.activeView === "profile" && <ProfilePage />}
-      {state.activeView === "help" && <HelpPage />}
-      {state.activeView === "referral" && <ReferralPage />}
-      {state.activeView === "dictionary" && <DictionaryPage />}
-    </Layout>
+    <div className="h-screen flex flex-col">
+      <NavigationBar 
+        showAuthButtons={true}
+        activeView={state.activeView}
+        onViewChange={setActiveView}
+      />
+      <div className="flex-1 overflow-hidden">
+        <Layout activeView={state.activeView} setActiveView={setActiveView}>
+          {state.activeView === "home" && <HomePage />}
+          {state.activeView === "settings" && <SettingsPage />}
+          {state.activeView === "profile" && <ProfilePage />}
+          {state.activeView === "help" && <HelpPage />}
+          {state.activeView === "referral" && <ReferralPage />}
+          {state.activeView === "dictionary" && <DictionaryPage />}
+        </Layout>
+      </div>
+    </div>
   );
 };
 

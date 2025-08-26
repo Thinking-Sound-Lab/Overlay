@@ -1,0 +1,129 @@
+name: Build Multi-Platform
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win32
+          - os: macos-latest
+            platform: darwin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint code
+        run: npm run lint
+
+      # Windows Build
+      - name: Build Windows
+        if: matrix.platform == 'win32'
+        run: |
+          npm run make:win
+        env:
+          # Code signing disabled for CI builds (testing)
+          # For production: set WINDOWS_CERTIFICATE_FILE and WINDOWS_CERTIFICATE_PASSWORD secrets
+          # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
+          # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
+
+      # macOS Build
+      - name: Build macOS
+        if: matrix.platform == 'darwin'
+        run: |
+          npm run make:mac
+        env:
+          # Code signing disabled for CI builds (testing)
+          # For production: set Apple Developer secrets
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+          # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          CI: true
+
+      # Linux Build
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: |
+          npm run make
+        env:
+          CI: true
+
+      # Upload build artifacts
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@v3
+        with:
+          name: overlay-windows
+          path: |
+            out/make/squirrel.windows/**/*
+          retention-days: 30
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'darwin'
+        uses: actions/upload-artifact@v3
+        with:
+          name: overlay-macos
+          path: |
+            out/make/zip/darwin/**/*
+            out/make/*.dmg
+          retention-days: 30
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v3
+        with:
+          name: overlay-linux
+          path: |
+            out/make/deb/**/*
+            out/make/rpm/**/*
+          retention-days: 30
+
+  # Build summary
+  build-summary:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows  | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Notes for Production" >> $GITHUB_STEP_SUMMARY
+          echo "- Code signing is currently disabled for testing" >> $GITHUB_STEP_SUMMARY
+          echo "- To enable production builds:" >> $GITHUB_STEP_SUMMARY
+          echo "  - Set certificate secrets in repository settings" >> $GITHUB_STEP_SUMMARY
+          echo "  - Uncomment code signing environment variables" >> $GITHUB_STEP_SUMMARY
+          echo "  - Update forge.config.ts and package.json signing config" >> $GITHUB_STEP_SUMMARY

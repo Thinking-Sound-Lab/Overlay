@@ -45,16 +45,8 @@ try {
 
 console.log("Renderer: Starting...");
 
-// Initialize analytics safely using new API client
-try {
-  console.log("Renderer: Tracking app launch via main process...");
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { analytics } = require("./lib/api_client");
-  analytics.trackAppLaunched();
-  console.log("Renderer: Analytics tracking initiated successfully");
-} catch (error) {
-  console.error("Renderer: Analytics tracking failed:", error);
-}
+// Analytics will be initialized after authentication is complete
+console.log("Renderer: Deferring app launch tracking until user authentication completes...");
 
 // Create root element
 const container = document.getElementById("root");

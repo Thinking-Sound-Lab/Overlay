@@ -126,21 +126,24 @@ export class SupabaseService {
     this.currentUser = user;
   }
 
-  // Public method for OAuth callback handling
-  public async exchangeCodeForSession(code: string) {
+  // Public method for OAuth token-based session creation (implicit flow)
+  public async setSessionWithTokens(accessToken: string, refreshToken: string) {
     try {
-      console.log("SupabaseService: Exchanging OAuth code for session...");
-      const { data, error } = await this.supabase.auth.exchangeCodeForSession(code);
+      console.log("SupabaseService: Creating session with OAuth tokens...");
+      const { data, error } = await this.supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
       
       if (data.session && data.user && !error) {
-        console.log("SupabaseService: OAuth session exchange successful for user:", data.user.email);
+        console.log("SupabaseService: OAuth token session creation successful for user:", data.user.email);
         this.storeSession(data.session, data.user);
         this.notifyAuthStateChange(data.user);
       }
       
       return { data, error };
     } catch (error) {
-      console.error("SupabaseService: Error exchanging code for session:", error);
+      console.error("SupabaseService: Error creating session with tokens:", error);
       return { data: null as any, error };
     }
   }
@@ -243,7 +246,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: "overlay://oauth/callback",
+          redirectTo: "http://localhost:8080/oauth-success",
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -580,23 +583,81 @@ export class SupabaseService {
         : 0;
       const totalRecordings = transcripts?.length || 0;
 
-      // Calculate streak days
-      const today = new Date().toDateString();
-      const dates =
-        transcripts?.map((t) => new Date(t.created_at).toDateString()) || [];
-      const uniqueDates = Array.from(new Set(dates)).sort().reverse();
-
+      // Calculate streak days with robust error handling
       let streakDays = 0;
-      let currentDate = new Date();
-
-      for (const dateStr of uniqueDates) {
-        if (dateStr === currentDate.toDateString()) {
-          streakDays++;
-          currentDate.setDate(currentDate.getDate() - 1);
+      try {
+        if (!transcripts || transcripts.length === 0) {
+          console.log('SupabaseService: No transcripts found for streak calculation');
+          streakDays = 0;
         } else {
-          break;
+          // Extract and validate dates
+          const dates = transcripts
+            .map((t) => {
+              if (!t.created_at) {
+                console.warn('SupabaseService: Transcript missing created_at field');
+                return null;
+              }
+              try {
+                return new Date(t.created_at).toDateString();
+              } catch (error) {
+                console.warn('SupabaseService: Invalid date in transcript:', t.created_at);
+                return null;
+              }
+            })
+            .filter((date): date is string => date !== null);
+
+          if (dates.length === 0) {
+            console.warn('SupabaseService: No valid dates found in transcripts');
+            streakDays = 0;
+          } else {
+            const uniqueDates = Array.from(new Set(dates)).sort().reverse();
+            console.log(`SupabaseService: Calculating streak from ${uniqueDates.length} unique dates:`, uniqueDates);
+
+            const today = new Date().toDateString();
+            
+            // Check if there's activity today or yesterday to maintain streak
+            const hasActivityToday = uniqueDates.includes(today);
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const hasActivityYesterday = uniqueDates.includes(yesterday.toDateString());
+            
+            console.log('SupabaseService: Activity check - Today:', hasActivityToday, 'Yesterday:', hasActivityYesterday);
+            
+            // Only count streak if there's recent activity (today or yesterday)
+            if (hasActivityToday || hasActivityYesterday) {
+              let checkDate = new Date();
+              
+              // If no activity today, start checking from yesterday
+              if (!hasActivityToday && hasActivityYesterday) {
+                checkDate.setDate(checkDate.getDate() - 1);
+              }
+              
+              // Count consecutive days
+              for (const dateStr of uniqueDates) {
+                const expectedDateStr = checkDate.toDateString();
+                if (dateStr === expectedDateStr) {
+                  streakDays++;
+                  console.log(`SupabaseService: Streak day ${streakDays} - ${dateStr}`);
+                  // Move to previous day for next iteration (create new Date object to avoid mutation)
+                  checkDate = new Date(checkDate);
+                  checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                  // Gap found, stop counting
+                  console.log(`SupabaseService: Streak broken at ${dateStr}, expected ${expectedDateStr}`);
+                  break;
+                }
+              }
+            } else {
+              console.log('SupabaseService: No recent activity, streak reset to 0');
+            }
+          }
         }
+      } catch (error) {
+        console.error('SupabaseService: Error calculating streak days:', error);
+        streakDays = 0;
       }
+
+      console.log(`SupabaseService: Final streak calculation result: ${streakDays} days`);
 
       return {
         data: {

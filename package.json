@@ -8,7 +8,17 @@
     "start": "cross-env NODE_ENV=development electron-forge start",
     "package": "cross-env NODE_ENV=production electron-forge package",
     "make": "cross-env NODE_ENV=production electron-forge make",
+    "make:win": "cross-env NODE_ENV=production electron-forge make --platform=win32",
+    "make:win64": "cross-env NODE_ENV=production electron-forge make --platform=win32 --arch=x64",
+    "make:win32": "cross-env NODE_ENV=production electron-forge make --platform=win32 --arch=ia32",
+    "make:mac": "cross-env NODE_ENV=production electron-forge make --platform=darwin",
+    "make:mac-x64": "cross-env NODE_ENV=production electron-forge make --platform=darwin --arch=x64",
+    "make:mac-arm64": "cross-env NODE_ENV=production electron-forge make --platform=darwin --arch=arm64",
+    "package:win": "cross-env NODE_ENV=production electron-forge package --platform=win32",
+    "package:mac": "cross-env NODE_ENV=production electron-forge package --platform=darwin",
     "publish": "cross-env NODE_ENV=production electron-forge publish",
+    "publish:win": "cross-env NODE_ENV=production electron-forge publish --platform=win32",
+    "publish:mac": "cross-env NODE_ENV=production electron-forge publish --platform=darwin",
     "lint": "eslint --ext .ts,.tsx ."
   },
   "keywords": [
@@ -22,19 +32,53 @@
     "email": "abhishekucskumar@gmail.com"
   },
   "build": {
+    "appId": "com.overlay.app",
+    "productName": "Overlay",
+    "copyright": "Copyright © 2025 Abhishekucs",
     "mac": {
       "hardenedRuntime": true,
-      "entitlements": "entitlements.mac.plist",
+      "entitlements": "entitlements.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "This app requires microphone access to capture audio for dictation.",
         "NSSystemAdministrationUsageDescription": "This app requires system access to insert text into other applications."
+      },
+      "_comment": "Code signing disabled for unsigned testing builds. For production, uncomment and configure identity and provisioningProfile",
+      "_codeSign": {
+        "identity": "${env.APPLE_IDENTITY}",
+        "provisioningProfile": "${env.APPLE_PROVISIONING_PROFILE}"
+      },
+      "_notarize": {
+        "teamId": "${env.APPLE_TEAM_ID}",
+        "appleId": "${env.APPLE_ID}",
+        "appleIdPassword": "${env.APPLE_APP_PASSWORD}"
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "squirrel",
+          "arch": ["x64", "ia32"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "publisherName": "Overlay",
+      "_comment": "verifyUpdateCodeSignature set to false for unsigned testing builds. Set to true for production with code signing.",
+      "verifyUpdateCodeSignature": false
+    },
+    "squirrelWindows": {
+      "iconUrl": "https://overlay.app/icon.ico",
+      "loadingGif": "assets/install-spinner.gif",
+      "msi": true,
+      "remoteReleases": "${env.WINDOWS_UPDATE_SERVER_URL}"
     }
   },
   "license": "MIT",
   "devDependencies": {
     "@electron-forge/cli": "^7.8.3",
     "@electron-forge/maker-deb": "^7.8.3",
+    "@electron-forge/maker-dmg": "^7.8.3",
     "@electron-forge/maker-rpm": "^7.8.3",
     "@electron-forge/maker-squirrel": "^7.8.3",
     "@electron-forge/maker-zip": "^7.8.3",

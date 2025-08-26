@@ -13,6 +13,16 @@ import {
 } from "electron";
 import Store from "electron-store";
 import { autoUpdater } from "electron-updater";
+
+// Handle Squirrel events on Windows (must be early in the main process)
+if (process.platform === "win32") {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const squirrelStartup = require("electron-squirrel-startup");
+  if (squirrelStartup) {
+    console.log("[Squirrel] Squirrel event detected, quitting...");
+    app.quit();
+  }
+}
 import STTService from "./services/stt_service";
 import { updateGlobalMetrics, GlobalMetrics } from "./helpers/speech_analytics";
 import { WindowAnimator } from "./helpers/windowAnimator";
@@ -58,6 +68,38 @@ let processingStage = "";
 autoUpdater.checkForUpdatesAndNotify =
   autoUpdater.checkForUpdatesAndNotify.bind(autoUpdater);
 autoUpdater.autoDownload = false; // Don't auto-download, let user choose
+
+// Platform-specific configuration
+if (process.platform === "win32") {
+  // Windows Squirrel configuration
+  autoUpdater.setFeedURL({
+    provider: "generic",
+    url:
+      process.env.WINDOWS_UPDATE_SERVER_URL ||
+      "https://overlay.app/updates/win32",
+    channel: process.env.UPDATE_CHANNEL || "latest",
+  });
+
+  // Windows-specific updater settings
+  autoUpdater.forceDevUpdateConfig = process.env.NODE_ENV === "development";
+
+  console.log("[AutoUpdater] Windows Squirrel configuration:", {
+    url:
+      process.env.WINDOWS_UPDATE_SERVER_URL ||
+      "https://overlay.app/updates/win32",
+    channel: process.env.UPDATE_CHANNEL || "latest",
+    platform: "win32",
+  });
+} else if (process.platform === "darwin") {
+  // macOS configuration (existing)
+  if (process.env.UPDATE_SERVER_URL) {
+    autoUpdater.setFeedURL({
+      provider: "generic",
+      url: process.env.UPDATE_SERVER_URL,
+      channel: process.env.UPDATE_CHANNEL || "latest",
+    });
+  }
+}
 
 // Auto-updater event handlers
 autoUpdater.on("checking-for-update", () => {
@@ -106,10 +148,8 @@ let lastActivityDate: string | null = null;
 
 const store = new Store({
   defaults: {
-    openaiApiKey: "",
     language: "auto",
     outputMode: "clipboard",
-    hotkey: "option+space",
     enableTranslation: false,
     targetLanguage: "en",
   },
@@ -285,14 +325,10 @@ const handleMetricsUpdate = (
     metrics.wordsPerMinute
   );
 
-  // Update streak if this is first activity today
+  // Update last activity date for local tracking
+  // Note: Streak calculation is handled by database service for consistency
   const today = new Date().toDateString();
   if (lastActivityDate !== today) {
-    if (lastActivityDate === new Date(Date.now() - 86400000).toDateString()) {
-      speechMetrics.streakDays += 1;
-    } else if (lastActivityDate && lastActivityDate !== today) {
-      speechMetrics.streakDays = 0;
-    }
     lastActivityDate = today;
   }
 
@@ -361,14 +397,37 @@ const handleMetricsUpdate = (
 // STT Service will be initialized after external API manager is ready
 let sttService: STTService;
 
+// Track the last language setting to detect changes
+let lastLanguageSetting: string | null = null;
+
 // Update STT service with current settings
-const updateSTTSettings = () => {
+const updateSTTSettings = async () => {
+  const currentLanguage = (store.get("language") as string) || "auto";
   const currentSettings = {
     enableTranslation: store.get("enableTranslation"),
     targetLanguage: store.get("targetLanguage"),
     useAI: store.get("useAI"),
   };
+
+  // Check if language setting has changed
+  if (lastLanguageSetting !== null && lastLanguageSetting !== currentLanguage) {
+    console.log(
+      `[Main] Language setting changed from ${lastLanguageSetting} to ${currentLanguage}, reinitializing STT service`
+    );
+
+    // Clear any cached language state
+    console.log(
+      "[Main] Clearing language cache and reinitializing STT service"
+    );
+
+    await sttService.reinitialize(currentLanguage);
+  }
+
+  // Update settings
   sttService.updateSettings(currentSettings);
+
+  // Update tracked language
+  lastLanguageSetting = currentLanguage;
 };
 
 // ----------- Window & Tray Functions -----------
@@ -379,7 +438,7 @@ const createMainWindow = () => {
     height: 800,
     minHeight: 600,
     minWidth: 800,
-    titleBarStyle: "hiddenInset",
+    frame: false, // Remove native window frame for custom navigation bar
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -494,7 +553,7 @@ const createRecordingWindow = () => {
     width: WINDOW_SIZES.compact.width,
     height: WINDOW_SIZES.compact.height,
     x: Math.round((screenWidth - WINDOW_SIZES.compact.width) / 2),
-    y: screenHeight - WINDOW_SIZES.compact.height + 15,
+    y: screenHeight,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -570,6 +629,23 @@ const updateTrayMenu = () => {
       label: `Total Recordings: ${speechMetrics.totalRecordings}`,
       enabled: false,
     },
+
+    { type: "separator" },
+    {
+      label: "Share Feedback",
+      click: () => {},
+    },
+    {
+      label: "Settings",
+      click: () => {},
+    },
+
+    { type: "separator" },
+    {
+      label: "Select microphone",
+      click: () => {},
+    },
+
     { type: "separator" },
     {
       label: "Reset Statistics",
@@ -586,7 +662,15 @@ const updateTrayMenu = () => {
       },
     },
     { type: "separator" },
-    { label: "Quit", click: () => app.quit() },
+    {
+      label: `Overlay Version: ${app.getVersion()} - Up to date`,
+      click: () => {
+        autoUpdater.checkForUpdatesAndNotify();
+      },
+    },
+    { type: "separator" },
+    { label: "About Overlay", click: () => {} },
+    { label: "Quit Overlay", click: () => app.quit() },
   ]);
   tray.setContextMenu(contextMenu);
 };
@@ -714,120 +798,168 @@ const stopRecording = async () => {
 // ----------- App Lifecycle -----------
 
 // Register custom protocol for OAuth
-app.setAsDefaultProtocolClient('overlay');
+app.setAsDefaultProtocolClient("overlay");
 
 // Handle OAuth callback URLs
-app.on('open-url', (event, url) => {
+app.on("open-url", async (event, url) => {
   event.preventDefault();
-  console.log('[Main] Received OAuth callback URL:', url);
-  handleOAuthCallback(url);
+  console.log("[Main] Received OAuth callback URL:", url);
+  await handleOAuthCallback(url);
 });
 
 // Handle OAuth callback URL parsing and authentication
 const handleOAuthCallback = async (url: string) => {
   try {
     const urlObj = new URL(url);
-    
-    if (urlObj.protocol === 'overlay:' && urlObj.pathname === '/oauth/callback') {
-      console.log('[Main] Processing OAuth callback...');
-      
-      // Extract OAuth parameters from URL
-      const params = new URLSearchParams(urlObj.search);
-      const code = params.get('code');
-      const error = params.get('error');
-      const state = params.get('state');
-      
+
+    console.log("[Main] Received OAuth callback URL:", urlObj);
+
+    if (urlObj.protocol === "overlay:" && urlObj.pathname === "/callback") {
+      console.log("[Main] Processing OAuth callback...");
+
+      // Extract OAuth parameters from hash fragment (implicit flow)
+      if (!urlObj.hash) {
+        console.error(
+          "[Main] OAuth callback missing hash fragment with tokens"
+        );
+        mainWindow?.webContents.send("auth-state-changed", {
+          user: null,
+          authenticated: false,
+          error: "OAuth callback missing required token data",
+        });
+        return;
+      }
+
+      const hashParams = new URLSearchParams(urlObj.hash.substring(1)); // Remove # prefix
+
+      // Check for OAuth errors
+      const error = hashParams.get("error");
+      const errorDescription = hashParams.get("error_description");
       if (error) {
-        console.error('[Main] OAuth error:', error);
-        mainWindow?.webContents.send('auth-state-changed', {
+        console.error("[Main] OAuth error:", { error, errorDescription });
+        mainWindow?.webContents.send("auth-state-changed", {
           user: null,
           authenticated: false,
-          error: `OAuth error: ${error}`
+          error: `OAuth error: ${error}${errorDescription ? ` - ${errorDescription}` : ""}`,
         });
         return;
       }
-      
-      if (!code) {
-        console.error('[Main] OAuth callback missing authorization code');
-        mainWindow?.webContents.send('auth-state-changed', {
+
+      // Extract tokens from hash fragment
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const tokenType = hashParams.get("token_type");
+      const expiresIn = hashParams.get("expires_in");
+
+      console.log("[Main] OAuth tokens received:", {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        tokenType: tokenType,
+        expiresIn: expiresIn,
+      });
+
+      if (!accessToken || !refreshToken) {
+        console.error("[Main] OAuth callback missing required tokens");
+        mainWindow?.webContents.send("auth-state-changed", {
           user: null,
           authenticated: false,
-          error: 'OAuth callback missing authorization code'
+          error: "OAuth callback missing access_token or refresh_token",
         });
         return;
       }
-      
-      // Exchange code for session using Supabase
-      if (externalAPIManager?.supabase) {
-        console.log('[Main] Exchanging OAuth code for session...');
-        
-        try {
-          // Use Supabase service's exchangeCodeForSession method
-          const { data, error } = await externalAPIManager.supabase.exchangeCodeForSession(code);
-          
-          if (error) {
-            console.error('[Main] Error exchanging code for session:', error);
-            mainWindow?.webContents.send('auth-state-changed', {
-              user: null,
-              authenticated: false,
-              error: `Authentication failed: ${error.message}`
-            });
-            return;
-          }
-          
-          if (data.session && data.user) {
-            console.log('[Main] OAuth authentication successful for user:', data.user.email);
-            
-            // Check onboarding status
-            let onboardingCompleted = false;
-            try {
-              const profileResult = await externalAPIManager.supabase.getUserProfile();
-              if (profileResult.data && !profileResult.error) {
-                onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
-              }
-            } catch (profileError) {
-              console.error('[Main] Error checking onboarding status:', profileError);
-            }
-            
-            // Notify renderer of successful authentication
-            mainWindow?.webContents.send('auth-state-changed', {
-              user: data.user,
-              authenticated: true,
-              onboardingCompleted: onboardingCompleted
-            });
-            
-            // Focus main window
-            if (mainWindow) {
-              mainWindow.show();
-              mainWindow.focus();
-            }
-          } else {
-            console.error('[Main] OAuth callback received but no session/user data');
-            mainWindow?.webContents.send('auth-state-changed', {
-              user: null,
-              authenticated: false,
-              error: 'Authentication completed but no user session received'
-            });
-          }
-        } catch (exchangeError) {
-          console.error('[Main] Exception during code exchange:', exchangeError);
-          mainWindow?.webContents.send('auth-state-changed', {
+
+      if (!externalAPIManager?.supabase) {
+        console.error("[Main] Supabase service not available for OAuth");
+        mainWindow?.webContents.send("auth-state-changed", {
+          user: null,
+          authenticated: false,
+          error: "Authentication service not available",
+        });
+        return;
+      }
+
+      // Create session directly with tokens from implicit flow
+      console.log("[Main] Creating Supabase session with OAuth tokens...");
+
+      try {
+        const { data, error } =
+          await externalAPIManager.supabase.setSessionWithTokens(
+            accessToken,
+            refreshToken
+          );
+
+        if (error) {
+          console.error("[Main] Error creating session with tokens:", error);
+          mainWindow?.webContents.send("auth-state-changed", {
             user: null,
             authenticated: false,
-            error: `Authentication failed: ${exchangeError.message}`
+            error: `Authentication failed: ${error.message}`,
+          });
+          return;
+        }
+
+        if (data.session && data.user) {
+          console.log(
+            "[Main] OAuth authentication successful for user:",
+            data.user.email
+          );
+
+          // Check onboarding status
+          let onboardingCompleted = false;
+          try {
+            const profileResult =
+              await externalAPIManager.supabase.getUserProfile();
+            if (profileResult.data && !profileResult.error) {
+              onboardingCompleted = Boolean(
+                profileResult.data.onboarding_completed
+              );
+            }
+          } catch (profileError) {
+            console.error(
+              "[Main] Error checking onboarding status:",
+              profileError
+            );
+          }
+
+          // Notify renderer of successful authentication
+          mainWindow?.webContents.send("auth-state-changed", {
+            user: data.user,
+            authenticated: true,
+            onboardingCompleted: onboardingCompleted,
+          });
+
+          // Focus main window
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        } else {
+          console.error("[Main] Session created but no user data received");
+          mainWindow?.webContents.send("auth-state-changed", {
+            user: null,
+            authenticated: false,
+            error: "Authentication completed but no user session received",
           });
         }
-      } else {
-        console.error('[Main] Supabase service not available for OAuth');
-        mainWindow?.webContents.send('auth-state-changed', {
+      } catch (tokenError) {
+        console.error(
+          "[Main] Exception during token session creation:",
+          tokenError
+        );
+        mainWindow?.webContents.send("auth-state-changed", {
           user: null,
           authenticated: false,
-          error: 'Authentication service not available'
+          error: `Token authentication failed: ${tokenError.message}`,
         });
       }
     }
   } catch (error) {
-    console.error('[Main] Error handling OAuth callback:', error);
+    console.error("[Main] Error handling OAuth callback:", error);
+    mainWindow?.webContents.send("auth-state-changed", {
+      user: null,
+      authenticated: false,
+      error: "Unexpected error during OAuth processing",
+    });
   }
 };
 
@@ -884,10 +1016,14 @@ app.whenReady().then(async () => {
 
   createMainWindow();
   // Note: Recording window will be created after authentication
-  await sttService.initialize(store.get("language") as string);
+  const initialLanguage = (store.get("language") as string) || "auto";
+  await sttService.initialize(initialLanguage);
+
+  // Initialize language tracking
+  lastLanguageSetting = initialLanguage;
 
   // Initialize STT service with current settings
-  updateSTTSettings();
+  await updateSTTSettings();
 
   setTimeout(() => {
     createTray();
@@ -946,13 +1082,13 @@ ipcMain.handle(
 );
 
 ipcMain.handle("get-settings", () => store.store);
-ipcMain.handle("update-settings", (event, settings) => {
+ipcMain.handle("update-settings", async (event, settings) => {
   Object.entries(settings).forEach(([key, value]) => {
     if (key !== "hotkey") store.set(key, value);
   });
 
   // Update STT service with new settings
-  updateSTTSettings();
+  await updateSTTSettings();
 
   return { success: true };
 });
@@ -981,8 +1117,8 @@ ipcMain.handle("get-statistics", async () => {
     }
   }
 
-  // Fallback to local cached stats
-  return { ...speechMetrics, streakDays: speechMetrics.streakDays };
+  // Fallback to local cached stats (streak will be 0 since not calculated locally)
+  return { ...speechMetrics, streakDays: 0 };
 });
 
 // Function to sync local speech metrics with database stats
@@ -1242,4 +1378,41 @@ ipcMain.handle("download-update", () => {
 ipcMain.handle("install-update", () => {
   autoUpdater.quitAndInstall();
   return { success: true };
+});
+
+// Window control handlers for custom navigation bar
+ipcMain.handle("window:close", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+    return { success: true };
+  }
+  return { success: false, error: "Main window not available" };
+});
+
+ipcMain.handle("window:minimize", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+    return { success: true };
+  }
+  return { success: false, error: "Main window not available" };
+});
+
+ipcMain.handle("window:maximize", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.restore();
+      return { success: true, action: "restored" };
+    } else {
+      mainWindow.maximize();
+      return { success: true, action: "maximized" };
+    }
+  }
+  return { success: false, error: "Main window not available" };
+});
+
+ipcMain.handle("window:get-maximized-state", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return { isMaximized: mainWindow.isMaximized() };
+  }
+  return { isMaximized: false };
 });

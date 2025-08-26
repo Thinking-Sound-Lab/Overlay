@@ -28,7 +28,7 @@ export const RecordingWindow: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState("");
   const [hovered, setHovered] = useState(false);
-  const [levels, setLevels] = useState<number[]>(Array(8).fill(0));
+  const [levels, setLevels] = useState<number[]>(Array(14).fill(0));
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
@@ -67,7 +67,7 @@ export const RecordingWindow: React.FC = () => {
   // Visual mic level updates - IMPROVED VERSION
   useEffect(() => {
     if (!isRecording) {
-      setLevels(Array(8).fill(4)); // Reset to minimum height
+      setLevels(Array(14).fill(4)); // Reset to minimum height
       return;
     }
 
@@ -113,7 +113,28 @@ export const RecordingWindow: React.FC = () => {
           );
         }
 
-        // Calculate RMS (Root Mean Square) for better audio level detection
+        // Enhanced frequency band separation for more realistic wave patterns
+        const binCount = dataArray.length;
+        const bandsPerBar = Math.floor(binCount / 14);
+        const frequencyBands: number[] = [];
+        
+        // Calculate average frequency for each band
+        for (let band = 0; band < 14; band++) {
+          const startBin = band * bandsPerBar;
+          const endBin = Math.min(startBin + bandsPerBar, binCount);
+          let bandSum = 0;
+          let bandCount = 0;
+          
+          for (let i = startBin; i < endBin; i++) {
+            bandSum += dataArray[i];
+            bandCount++;
+          }
+          
+          const bandAverage = bandCount > 0 ? bandSum / bandCount : 0;
+          frequencyBands.push(bandAverage / 255); // Normalize to 0-1
+        }
+        
+        // Calculate overall RMS for fallback
         let sum = 0;
         let nonZeroCount = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -121,7 +142,7 @@ export const RecordingWindow: React.FC = () => {
           if (dataArray[i] > 0) nonZeroCount++;
         }
         const rms = Math.sqrt(sum / dataArray.length);
-        const normalizedLevel = Math.min(rms / 128, 1); // Normalize to 0-1 (128 is max for Uint8Array)
+        const normalizedLevel = Math.min(rms / 128, 1);
 
         // Debug: Log audio levels occasionally
         if (Math.random() < 0.01) {
@@ -136,23 +157,31 @@ export const RecordingWindow: React.FC = () => {
         }
 
         setLevels((prevLevels) => {
-          const baseHeight = 4;
-          const maxHeight = 22;
-          const multipliers = [0.7, 0.9, 1.1, 1.3, 1.2, 1.0, 0.8, 0.6];
+          const baseHeight = 3;
+          const maxHeight = 28;
+          // Wave-like coefficients creating a natural audio waveform pattern
+          const multipliers = [0.5, 0.7, 0.9, 1.2, 1.4, 1.3, 1.5, 1.4, 1.2, 0.9, 0.8, 0.6, 0.4, 0.3];
 
-          const newLevels = multipliers.map((multiplier) => {
-            const randomVariation = 0.8 + Math.random() * 0.4;
+          const newLevels = multipliers.map((multiplier, index) => {
+            // Use frequency band data for more accurate representation
+            const bandLevel = frequencyBands[index] || normalizedLevel;
+            // More sophisticated random variation with wave propagation
+            const waveOffset = Math.sin(Date.now() * 0.003 + index * 0.5) * 0.1;
+            const randomVariation = 0.8 + Math.random() * 0.4 + waveOffset;
+            
+            // Combine band-specific data with overall level and multiplier
+            const combinedLevel = (bandLevel * 0.7 + normalizedLevel * 0.3);
             const height =
               baseHeight +
-              normalizedLevel *
+              combinedLevel *
                 (maxHeight - baseHeight) *
                 multiplier *
                 randomVariation;
             return Math.max(baseHeight, Math.min(maxHeight, height));
           });
 
-          // Smooth transition for more natural animation
-          return prevLevels.map((prev, i) => prev * 0.7 + newLevels[i] * 0.3);
+          // Smoother transition with wave propagation effect
+          return prevLevels.map((prev, i) => prev * 0.6 + newLevels[i] * 0.4);
         });
 
         animationId = requestAnimationFrame(updateLevels);
@@ -394,13 +423,16 @@ export const RecordingWindow: React.FC = () => {
           </div>
         )}
         {isRecording && (
-          <div className="flex items-center justify-center gap-0.5 h-full w-full px-2">
+          <div className="flex items-center justify-center gap-1 h-full w-full px-3">
             {levels.map((h, i) => (
               <span
                 key={i}
-                className="block w-0.5 min-h-1 bg-white/90 rounded-full transition-all duration-150 ease-out"
+                className="block w-1 min-h-1 bg-white/95 rounded-full transition-all duration-200 ease-out shadow-sm animate-wave-pulse"
                 style={{
                   height: `${Math.round(h)}px`,
+                  opacity: 0.8 + (h / 28) * 0.2, // Dynamic opacity based on height
+                  animationDelay: `${i * 100}ms`, // Staggered animation delay for wave effect
+                  boxShadow: `0 0 ${Math.round(h / 4)}px rgba(255, 255, 255, ${0.3 + (h / 28) * 0.4})`, // Dynamic glow
                 }}
               />
             ))}

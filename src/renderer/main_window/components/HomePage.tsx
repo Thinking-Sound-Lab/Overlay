@@ -136,7 +136,7 @@ export const HomePage: React.FC = () => {
         <h1 className="text-2xl font-semibold text-gray-900">
           Welcome back, {userName}
         </h1>
-        <div className="flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-xl">
+        <div className="flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-lg">
           <div className="flex items-center gap-2">
             <Flame className="h-4 w-4 text-orange-600" />
             <span className="font-semibold text-gray-700">
@@ -257,7 +257,7 @@ export const HomePage: React.FC = () => {
                         </div>
                       )}
 
-                      <div className="font-medium mb-2 leading-relaxed">
+                      <div className=" mb-2 leading-relaxed">
                         {transcript.text}
                         {transcript.wasTranslated && (
                           <Badge

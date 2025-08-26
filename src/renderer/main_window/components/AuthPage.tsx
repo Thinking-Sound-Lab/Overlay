@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -23,6 +23,37 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Listen for auth state changes to clear Google loading state
+  useEffect(() => {
+    const handleAuthStateChanged = (event: any) => {
+      const { user, authenticated, error: authError } = event.detail;
+      
+      if (isGoogleLoading) {
+        console.log('AuthPage: Auth state changed during Google sign-in:', {
+          authenticated,
+          user: user?.email,
+          error: authError
+        });
+        
+        // Clear Google loading state
+        setIsGoogleLoading(false);
+        
+        if (authError) {
+          setError(authError);
+        } else if (authenticated && user) {
+          // Authentication successful, let parent handle it
+          onAuthSuccess(user);
+        }
+      }
+    };
+
+    window.addEventListener('auth-state-changed', handleAuthStateChanged);
+    
+    return () => {
+      window.removeEventListener('auth-state-changed', handleAuthStateChanged);
+    };
+  }, [isGoogleLoading, onAuthSuccess]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,16 +102,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
 
       if (!result.success) {
         setError(result.error || "Google authentication failed");
+        setIsGoogleLoading(false); // Clear loading on immediate error
       } else {
-        // Google OAuth will redirect externally, handle success in main process
-        console.log("Google OAuth initiated");
+        // Google OAuth will redirect externally, keep loading until auth completes
+        console.log("Google OAuth initiated - waiting for callback...");
+        // Don't clear isGoogleLoading here - it will be cleared by auth-state-changed event
       }
     } catch (err) {
       console.error("Google auth error:", err);
       setError("An unexpected error occurred during Google sign in");
-    } finally {
-      setIsGoogleLoading(false);
+      setIsGoogleLoading(false); // Clear loading on exception
     }
+    // Note: Don't use finally block to clear loading - let the auth state change event handle it
   };
 
   return (

@@ -7,7 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import type { ViewType } from "../types";
-import { auth, db } from "../lib/api_client";
+import { auth, db, analytics } from "../lib/api_client";
 
 interface User {
   id: string;
@@ -208,16 +208,20 @@ interface AppProviderProps {
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  
+  // Track if we've already sent the app launched event to avoid duplicates
+  const [appLaunchedTracked, setAppLaunchedTracked] = React.useState(false);
 
   // Simple initialization - just set loading to false after a brief moment to allow auth events to arrive
   useEffect(() => {
     console.log("AppContext: Starting up, waiting for auth state from main process...");
     
-    // Give main process a moment to send auth state, then stop loading
+    // Give main process a moment to send auth state, then stop loading and initializing
     const timer = setTimeout(() => {
-      if (state.isLoading) {
-        console.log("AppContext: No auth state received, stopping loading");
+      if (state.isLoading || state.isInitializing) {
+        console.log("AppContext: No auth state received, stopping loading and initializing");
         dispatch({ type: "SET_LOADING", payload: false });
+        dispatch({ type: "SET_INITIALIZING", payload: false });
       }
     }, 1000); // 1 second timeout
 
@@ -386,6 +390,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         willShowOnboarding: !authenticated || !onboardingCompleted,
         shouldShowHome: authenticated && onboardingCompleted,
       });
+      
+      // Track app launch event once user is authenticated (and we haven't tracked it yet)
+      if (authenticated && user && !appLaunchedTracked) {
+        console.log("AppContext: User authenticated, tracking app launch event");
+        analytics.trackAppLaunched()
+          .then(() => {
+            console.log("AppContext: App launch event tracked successfully");
+            setAppLaunchedTracked(true);
+          })
+          .catch((error) => {
+            console.error("AppContext: Failed to track app launch event:", error);
+          });
+      }
     };
 
     const handleStatisticsUpdated = (event: any) => {
@@ -478,11 +495,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       // Always clear local data regardless of signout result
       console.log("AppContext: Clearing all local app state and storage");
 
-      // Clear all app state
-      dispatch({ type: "SET_USER", payload: null });
-      dispatch({ type: "SET_AUTHENTICATED", payload: false });
-      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: false });
-
       // Clear all localStorage data completely
       localStorage.clear();
 
@@ -498,6 +510,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       } catch (idbError) {
         console.warn("AppContext: Could not clear IndexedDB:", idbError);
       }
+
+      // Use RESET_APP_STATE for comprehensive state cleanup
+      console.log("AppContext: Resetting app state before reload");
+      dispatch({ type: "RESET_APP_STATE" });
 
       if (result.success || !result.error) {
         console.log("AppContext: Signout successful, reloading app");
@@ -519,12 +535,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       console.error("AppContext: Error during signout:", error);
 
       // Even if signout fails, clear local data and reload
-      dispatch({ type: "SET_USER", payload: null });
-      dispatch({ type: "SET_AUTHENTICATED", payload: false });
-      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: false });
       localStorage.clear();
       sessionStorage.clear();
 
+      // Use RESET_APP_STATE for comprehensive state cleanup
+      dispatch({ type: "RESET_APP_STATE" });
       dispatch({
         type: "SET_ERROR",
         payload: "Sign out completed with errors",

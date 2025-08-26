@@ -1,6 +1,7 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
+import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
@@ -10,18 +11,106 @@ import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
 import { mainConfig } from "./webpack.main.config";
 import { rendererConfig } from "./webpack.renderer.config";
-import path from "path";
+
+/*
+ * WINDOWS BUILD CONFIGURATION - UNSIGNED BUILDS
+ * 
+ * Current setup is configured for unsigned testing/development builds.
+ * 
+ * IMPORTANT: For production deployment:
+ * 1. Uncomment certificate configuration in MakerSquirrel below
+ * 2. Set environment variables: WINDOWS_CERTIFICATE_FILE, WINDOWS_CERTIFICATE_PASSWORD
+ * 3. Change verifyUpdateCodeSignature to true in package.json
+ * 4. Test with actual code signing certificate
+ * 
+ * Unsigned build limitations:
+ * - Windows SmartScreen warnings for users
+ * - May be flagged by antivirus software
+ * - Not suitable for commercial distribution
+ * - Users must click "More info" -> "Run anyway" to install
+ */
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    name: "Overlay",
+    executableName: "Overlay",
+    icon: "./assets/icon", // Base name, will look for .ico on Windows, .icns on macOS
+    appBundleId: "com.overlay.app",
+    appCategoryType: "public.app-category.productivity",
+    win32metadata: {
+      CompanyName: "Overlay",
+      FileDescription: "AI-powered dictation app",
+      OriginalFilename: "Overlay.exe",
+      ProductName: "Overlay",
+      InternalName: "Overlay"
+    },
+    
+    // macOS Code Signing & Notarization (commented out for unsigned testing builds)
+    // For production: uncomment these lines and configure with your Apple Developer credentials
+    // osxSign: {
+    //   identity: process.env.APPLE_IDENTITY, // "Developer ID Application: Your Name (TEAM_ID)"
+    //   'hardened-runtime': true,
+    //   entitlements: 'entitlements.plist',
+    //   'entitlements-inherit': 'entitlements.plist',
+    //   'signature-flags': 'library'
+    // },
+    // osxNotarize: {
+    //   tool: 'notarytool',
+    //   appleId: process.env.APPLE_ID,
+    //   appleIdPassword: process.env.APPLE_APP_PASSWORD, // App-specific password
+    //   teamId: process.env.APPLE_TEAM_ID
+    // }
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
-    new MakerZIP({}, ["darwin"]),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    // Windows installer using Squirrel.Windows
+    // Currently configured for unsigned builds (testing/development)
+    new MakerSquirrel({
+      name: "overlay",
+      authors: "Abhishekucs",
+      description: "AI-powered dictation app that transcribes speech and inserts text into any application",
+      setupIcon: "./assets/icon.ico",
+      iconUrl: "https://overlay.app/icon.ico", // Update with your actual domain
+      
+      // Code signing configuration (commented out for unsigned testing builds)
+      // For production: uncomment these lines and set WINDOWS_CERTIFICATE_FILE and WINDOWS_CERTIFICATE_PASSWORD environment variables
+      // certificateFile: process.env.WINDOWS_CERTIFICATE_FILE,
+      // certificatePassword: process.env.WINDOWS_CERTIFICATE_PASSWORD,
+      
+      remoteReleases: process.env.WINDOWS_UPDATE_SERVER_URL,
+      setupExe: "OverlaySetup.exe"
+    }, ["win32"]),
+    
+    // macOS DMG installer
+    // Currently configured for unsigned builds (testing/development)
+    new MakerDMG({
+      name: "Overlay",
+      title: "Overlay",
+      icon: "./assets/icon.icns",
+      background: "./assets/dmg-background.png", // Optional: Add a background image for DMG
+      contents: [
+        { x: 448, y: 344, type: "link", path: "/Applications" },
+        { x: 192, y: 344, type: "file", path: "Overlay.app" }
+      ],
+      additionalDMGOptions: {
+        window: {
+          position: { x: 400, y: 100 },
+          size: { width: 660, height: 500 }
+        }
+      }
+      
+      // Code signing for DMG (commented out for unsigned testing builds)
+      // For production: uncomment and configure with APPLE_IDENTITY environment variable
+      // codeSign: {
+      //   identity: process.env.APPLE_IDENTITY,
+      //   'signing-flags': 'library'
+      // }
+    }, ["darwin"]),
+    
+    new MakerZIP({}, ["darwin"]), // Keep ZIP as backup/alternative for macOS
+    new MakerRpm({}, ["linux"]),
+    new MakerDeb({}, ["linux"]),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),

@@ -67,6 +67,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   downloadUpdate: () => ipcRenderer.invoke("download-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
 
+  // Window control handlers for custom navigation bar
+  windowControls: {
+    close: () => ipcRenderer.invoke("window:close"),
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    maximize: () => ipcRenderer.invoke("window:maximize"),
+    getMaximizedState: () => ipcRenderer.invoke("window:get-maximized-state")
+  },
+
   // Platform information
   platform: process.platform,
 
@@ -218,6 +226,14 @@ declare global {
       checkForUpdates: () => Promise<{ success: boolean }>;
       downloadUpdate: () => Promise<{ success: boolean }>;
       installUpdate: () => Promise<{ success: boolean }>;
+      
+      // Window control handlers for custom navigation bar
+      windowControls: {
+        close: () => Promise<{ success: boolean; error?: string }>;
+        minimize: () => Promise<{ success: boolean; error?: string }>;
+        maximize: () => Promise<{ success: boolean; action?: string; error?: string }>;
+        getMaximizedState: () => Promise<{ isMaximized: boolean }>;
+      };
       
       // Update event listeners
       onUpdateAvailable: (callback: (info: any) => void) => () => void;

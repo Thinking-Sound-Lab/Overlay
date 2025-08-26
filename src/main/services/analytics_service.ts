@@ -4,6 +4,7 @@ export class AnalyticsService {
   private posthog: PostHog | null = null;
   private currentUserId: string | null = null;
   private isInitialized = false;
+  private eventQueue: Array<{ event: string; properties?: Record<string, any> }> = [];
 
   constructor() {
     this.initialize();
@@ -60,6 +61,9 @@ export class AnalyticsService {
         },
       });
       console.log("AnalyticsService: User identified:", userId);
+      
+      // Flush any queued events now that we have a user ID
+      this.flushQueuedEvents();
     } catch (error) {
       console.error("AnalyticsService: Identify error:", error);
     }
@@ -71,10 +75,9 @@ export class AnalyticsService {
 
     const distinctId = userId || this.currentUserId;
     if (!distinctId) {
-      console.warn(
-        "AnalyticsService: No user ID available for tracking event:",
-        event
-      );
+      // Queue the event for later when user is identified
+      console.log("AnalyticsService: Queuing event until user is identified:", event);
+      this.eventQueue.push({ event, properties });
       return;
     }
 
@@ -94,6 +97,21 @@ export class AnalyticsService {
     } catch (error) {
       console.error("AnalyticsService: Track error:", error);
     }
+  }
+
+  // Flush any events that were queued before user identification
+  private flushQueuedEvents() {
+    if (this.eventQueue.length === 0) return;
+
+    console.log(`AnalyticsService: Flushing ${this.eventQueue.length} queued events`);
+    
+    for (const queuedEvent of this.eventQueue) {
+      // Re-call track with the queued event (now that we have a user ID)
+      this.track(queuedEvent.event, queuedEvent.properties);
+    }
+    
+    // Clear the queue
+    this.eventQueue = [];
   }
 
   // Authentication events

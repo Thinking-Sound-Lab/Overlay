@@ -64,6 +64,25 @@ class STTService {
     });
   }
 
+  async reinitialize(newLanguage: string) {
+    console.log(`[STT] Reinitializing with language: ${newLanguage}`);
+    
+    // Close existing session if it exists
+    if (this.sttSession) {
+      this.sttSession.close();
+      this.sttSession = null;
+    }
+    
+    // Clear any audio buffer
+    this.audioBuffer = [];
+    this.isRecording = false;
+    
+    // Initialize with new language
+    await this.initialize(newLanguage);
+    
+    console.log(`[STT] Successfully reinitialized with language: ${newLanguage}`);
+  }
+
   // This method will be called from your audio capture mechanism
   handleAudioChunk(audioData: string) {
     if (!this.isRecording) return;
@@ -148,24 +167,32 @@ class STTService {
     }
 
     console.log("[STT] Raw transcript:", transcript);
-    console.log("[STT] Detected language:", language);
+    console.log("[STT] Received language parameter:", language);
 
     try {
       let processedText = transcript;
+      let detectedLanguage = language;
+
+      // If language is "auto", use TranslationService to detect the actual language
+      if (language === "auto") {
+        console.log("[STT] Auto-detection enabled, detecting language from transcript");
+        detectedLanguage = await this.translationService.detectLanguage(transcript);
+        console.log("[STT] Detected language:", detectedLanguage);
+      }
 
       // Step 1: Translation (if enabled)
       let translationResult = null;
       if (this.settings.enableTranslation && this.settings.targetLanguage) {
-        const needsTranslation = language !== this.settings.targetLanguage;
+        const needsTranslation = detectedLanguage !== this.settings.targetLanguage;
 
         if (needsTranslation) {
           console.log(
-            `[STT] Translation enabled: ${language} -> ${this.settings.targetLanguage}`
+            `[STT] Translation enabled: ${detectedLanguage} -> ${this.settings.targetLanguage}`
           );
           translationResult = await this.translationService.translateText(
             transcript,
             this.settings.targetLanguage,
-            language
+            detectedLanguage
           );
           processedText = translationResult.translatedText;
           console.log("[STT] Translated text:", processedText);
@@ -188,7 +215,7 @@ class STTService {
       const finalLanguage =
         this.settings.enableTranslation && this.settings.targetLanguage
           ? this.settings.targetLanguage
-          : language;
+          : detectedLanguage;
 
       const correctedText = await this.correctGrammar(
         processedText,
@@ -212,19 +239,19 @@ class STTService {
         const wasTranslated =
           this.settings.enableTranslation &&
           this.settings.targetLanguage &&
-          language !== this.settings.targetLanguage &&
+          detectedLanguage !== this.settings.targetLanguage &&
           translationResult;
         const translationMeta = wasTranslated
           ? {
               wasTranslated: true,
               originalText: transcript,
-              sourceLanguage: language,
+              sourceLanguage: detectedLanguage,
               targetLanguage: this.settings.targetLanguage,
               confidence: translationResult.confidence,
               wordCountRatio: translationResult.wordCountRatio,
               detectedLanguage: translationResult.detectedLanguage,
             }
-          : { wasTranslated: false };
+          : { wasTranslated: false, detectedLanguage };
 
         this.onMetricsUpdate(metrics, transcriptData, translationMeta);
 
@@ -239,7 +266,7 @@ class STTService {
           // Track translation usage if it occurred
           if (wasTranslated && translationResult) {
             this.analyticsService.track("translation_used", {
-              source_language: language,
+              source_language: detectedLanguage,
               target_language: this.settings.targetLanguage,
               confidence: translationResult.confidence,
               word_count_ratio: translationResult.wordCountRatio,
@@ -256,7 +283,7 @@ class STTService {
       }
     } catch (error) {
       console.error("[STT] Error in post-processing:", error);
-      
+
       // No fallback insertion - let user re-record if needed
       // This prevents duplicate text insertion and "Object has been destroyed" errors
     }

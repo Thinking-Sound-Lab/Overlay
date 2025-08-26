@@ -131,12 +131,12 @@ async function transcribeWithWhisper(
       language: language === "auto" ? undefined : language,
       response_format: "json",
       temperature: 0.0, // Lower temperature for more consistent results
-      prompt: `This is the audio of a person dictating something. The audio is in ${getLanguagePrompt(language)}. If there is no speech, return empty.`,
+      prompt: `This is the audio of a person dictating something. ${language === "auto" ? "Detect the language automatically." : `The audio is in ${getLanguagePrompt(language)}.`} If there is no speech, return empty.`,
     });
 
     return {
       text: transcription.text || "",
-      language: language,
+      language: language, // Will be detected later in STT service for auto mode
     };
   } catch (error) {
     console.error("[STT] Whisper transcription error:", error);

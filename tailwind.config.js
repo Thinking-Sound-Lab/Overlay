@@ -59,6 +59,7 @@ module.exports = {
       animation: {
         'blink': 'blink 1.4s infinite ease-in-out',
         'fade-in': 'fadeIn 0.3s ease-in-out',
+        'wave-pulse': 'wavePulse 2s ease-in-out infinite',
       },
       keyframes: {
         blink: {
@@ -73,6 +74,16 @@ module.exports = {
           'to': { 
             opacity: '0.8', 
             transform: 'translateY(0)' 
+          },
+        },
+        wavePulse: {
+          '0%, 100%': { 
+            boxShadow: '0 0 5px rgba(255, 255, 255, 0.3)',
+            transform: 'scaleX(1)' 
+          },
+          '50%': { 
+            boxShadow: '0 0 10px rgba(255, 255, 255, 0.6)',
+            transform: 'scaleX(1.1)' 
           },
         },
       },
