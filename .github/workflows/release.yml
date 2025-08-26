@@ -48,6 +48,19 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
+      # Install build dependencies for native modules (robotjs, ffmpeg-static, etc.)
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 python3-dev libx11-dev libxtst-dev libxinerama-dev libx11-xcb-dev libxss-dev libgconf-2-4 libgtk-3-dev libxrandr-dev libasound2-dev
+
+      - name: Install Windows build dependencies
+        if: matrix.platform == 'win32'
+        run: |
+          npm install --global windows-build-tools || echo "Build tools already installed or alternative method needed"
+        shell: cmd
+
       - name: Install dependencies
         run: npm ci
 
