@@ -77,7 +77,7 @@ jobs:
       # Upload build artifacts
       - name: Upload Windows artifacts
         if: matrix.platform == 'win32'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: overlay-windows
           path: |
@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'darwin'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: overlay-macos
           path: |
@@ -96,7 +96,7 @@ jobs:
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: overlay-linux
           path: |
