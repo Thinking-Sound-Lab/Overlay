@@ -49,6 +49,7 @@ export class SupabaseService {
   private currentSession: Session | null = null;
   private sessionStore: Store;
   private onAuthStateChangeCallback?: (user: User | null) => void;
+  private onSessionRestorationStatusCallback?: (status: 'starting' | 'completed', user?: User | null) => void;
   private sessionRestorationPromise: Promise<void> | null = null;
   private isSessionRestored: boolean = false;
 
@@ -85,6 +86,12 @@ export class SupabaseService {
   private async restoreSession() {
     try {
       console.log("SupabaseService: Starting session restoration...");
+      
+      // Notify that restoration is starting
+      if (this.onSessionRestorationStatusCallback) {
+        this.onSessionRestorationStatusCallback('starting');
+      }
+      
       const storedSession = this.sessionStore.get("session") as Session | null;
       
       if (storedSession) {
@@ -101,7 +108,7 @@ export class SupabaseService {
             "SupabaseService: Session restored successfully for user:",
             data.user.email
           );
-          this.notifyAuthStateChange(data.user);
+          // Don't notify auth state change immediately - wait for profile data to be loaded in main process
         } else {
           // Clear invalid session
           console.log("SupabaseService: Stored session is invalid, clearing...", error?.message);
@@ -116,6 +123,11 @@ export class SupabaseService {
     } finally {
       this.isSessionRestored = true;
       console.log("SupabaseService: Session restoration completed. User authenticated:", !!this.currentUser);
+      
+      // Notify that restoration is complete (with or without user)
+      if (this.onSessionRestorationStatusCallback) {
+        this.onSessionRestorationStatusCallback('completed', this.currentUser);
+      }
     }
   }
 
@@ -164,6 +176,11 @@ export class SupabaseService {
   // Set auth state change listener
   setAuthStateChangeListener(callback: (user: User | null) => void) {
     this.onAuthStateChangeCallback = callback;
+  }
+
+  // Set session restoration status listener
+  setSessionRestorationStatusListener(callback: (status: 'starting' | 'completed', user?: User | null) => void) {
+    this.onSessionRestorationStatusCallback = callback;
   }
 
   // Authentication methods

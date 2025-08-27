@@ -2,24 +2,26 @@ name: Build Multi-Platform
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             platform: linux
+            make: make:linux
           - os: windows-latest
             platform: win32
+            make: make:win
           - os: macos-latest
             platform: darwin
+            make: make:mac
 
     steps:
       - name: Checkout code
@@ -28,83 +30,34 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
         env:
-          # Skip native compilation for CI builds - use pre-built binaries when possible
           npm_config_build_from_source: false
-          ELECTRON_SKIP_BINARY_DOWNLOAD: false
 
       - name: Lint code
         run: npm run lint
         continue-on-error: true
 
-      # Windows Build
-      - name: Build Windows
-        if: matrix.platform == 'win32'
-        run: |
-          npm run make:win
+      - name: Build for ${{ matrix.platform }}
+        run: npm run ${{ matrix.make }}
         env:
-          # Code signing disabled for CI builds (testing)
-          # For production: set WINDOWS_CERTIFICATE_FILE and WINDOWS_CERTIFICATE_PASSWORD secrets
-          # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
-          # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          CI: true
           WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
 
-      # macOS Build
-      - name: Build macOS
-        if: matrix.platform == 'darwin'
-        run: |
-          npm run make:mac
-        env:
-          # Code signing disabled for CI builds (testing)
-          # For production: set Apple Developer secrets
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
-          # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          CI: true
-
-      # Linux Build
-      - name: Build Linux
-        if: matrix.platform == 'linux'
-        run: |
-          npm run make
-        env:
-          CI: true
-
-      # Upload build artifacts
-      - name: Upload Windows artifacts
-        if: matrix.platform == 'win32'
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: overlay-windows
+          name: overlay-${{ matrix.platform }}
           path: |
-            out/make/squirrel.windows/**/*
-          retention-days: 30
-
-      - name: Upload macOS artifacts
-        if: matrix.platform == 'darwin'
-        uses: actions/upload-artifact@v4
-        with:
-          name: overlay-macos
-          path: |
-            out/make/zip/darwin/**/*
-            out/make/*.dmg
-          retention-days: 30
-
-      - name: Upload Linux artifacts
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: overlay-linux
-          path: |
-            out/make/deb/**/*
-            out/make/rpm/**/*
+            out/make/**/*.zip
+            out/make/**/*.dmg
+            out/make/**/*.exe
+            out/make/**/*.deb
+            out/make/**/*.rpm
           retention-days: 30
 
   # Build summary
@@ -112,7 +65,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Build Summary
         run: |

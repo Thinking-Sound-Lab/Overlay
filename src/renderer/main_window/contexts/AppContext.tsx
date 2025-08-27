@@ -21,6 +21,7 @@ interface UserProfile {
   subscription_tier: "free" | "pro";
   created_at: string;
   updated_at: string;
+  onboarding_completed?: boolean;
 }
 
 interface UserStats {
@@ -61,6 +62,8 @@ interface AppState {
   isLoading: boolean;
   isInitializing: boolean;
   isUserDataLoading: boolean;
+  isSessionRestoring: boolean;
+  isAuthStateComplete: boolean;
   error: string | null;
 
   // Data state
@@ -77,6 +80,8 @@ type AppAction =
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_INITIALIZING"; payload: boolean }
   | { type: "SET_USER_DATA_LOADING"; payload: boolean }
+  | { type: "SET_SESSION_RESTORING"; payload: boolean }
+  | { type: "SET_AUTH_STATE_COMPLETE"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "SET_USER"; payload: User | null }
   | { type: "SET_USER_PROFILE"; payload: UserProfile | null }
@@ -102,6 +107,8 @@ const initialState: AppState = {
   isLoading: true,
   isInitializing: true,
   isUserDataLoading: false,
+  isSessionRestoring: true,
+  isAuthStateComplete: false,
   error: null,
   userStats: {
     totalWordCount: 0,
@@ -129,6 +136,10 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, isInitializing: action.payload };
     case "SET_USER_DATA_LOADING":
       return { ...state, isUserDataLoading: action.payload };
+    case "SET_SESSION_RESTORING":
+      return { ...state, isSessionRestoring: action.payload };
+    case "SET_AUTH_STATE_COMPLETE":
+      return { ...state, isAuthStateComplete: action.payload };
     case "SET_ERROR":
       return { ...state, error: action.payload };
     case "SET_USER":
@@ -160,7 +171,14 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     case "RESET_APP_STATE":
       console.log("AppContext: Resetting app state to initial values");
-      return { ...initialState, isLoading: false, isInitializing: false, isUserDataLoading: false };
+      return { 
+        ...initialState, 
+        isLoading: false, 
+        isInitializing: false, 
+        isUserDataLoading: false, 
+        isSessionRestoring: false,
+        isAuthStateComplete: false
+      };
     default:
       return state;
   }
@@ -174,6 +192,8 @@ interface AppContextType {
   setLoading: (loading: boolean) => void;
   setInitializing: (initializing: boolean) => void;
   setUserDataLoading: (loading: boolean) => void;
+  setSessionRestoring: (restoring: boolean) => void;
+  setAuthStateComplete: (complete: boolean) => void;
   setError: (error: string | null) => void;
   setUser: (user: User | null) => void;
   setUserProfile: (profile: UserProfile | null) => void;
@@ -211,21 +231,26 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   
   // Track if we've already sent the app launched event to avoid duplicates
   const [appLaunchedTracked, setAppLaunchedTracked] = React.useState(false);
+  
+  // Debounce auth state changes to prevent rapid state thrashing
+  const [authStateDebounceTimer, setAuthStateDebounceTimer] = React.useState<NodeJS.Timeout | null>(null);
 
-  // Simple initialization - just set loading to false after a brief moment to allow auth events to arrive
+  // Wait for session restoration to complete before making any routing decisions
   useEffect(() => {
-    console.log("AppContext: Starting up, waiting for auth state from main process...");
+    console.log("AppContext: Starting up, waiting for session restoration to complete...");
     
-    // Give main process a moment to send auth state, then stop loading and initializing
-    const timer = setTimeout(() => {
-      if (state.isLoading || state.isInitializing) {
-        console.log("AppContext: No auth state received, stopping loading and initializing");
+    // Set a longer fallback timeout in case session restoration fails to report status
+    const fallbackTimer = setTimeout(() => {
+      if (state.isSessionRestoring) {
+        console.warn("AppContext: Session restoration timeout reached, proceeding without restoration status");
+        dispatch({ type: "SET_SESSION_RESTORING", payload: false });
         dispatch({ type: "SET_LOADING", payload: false });
         dispatch({ type: "SET_INITIALIZING", payload: false });
+        dispatch({ type: "SET_AUTH_STATE_COMPLETE", payload: true });
       }
-    }, 1000); // 1 second timeout
+    }, 5000); // 5 second fallback timeout (much longer than before, but still has safety net)
 
-    return () => clearTimeout(timer);
+    return () => clearTimeout(fallbackTimer);
   }, []); // Run once on mount
 
   // Reactive user data loading - triggers when auth state indicates user is fully authenticated
@@ -234,10 +259,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       state.user && 
       state.isAuthenticated && 
       state.hasCompletedOnboarding && 
-      !state.userProfile; // Only load if we don't already have profile data
+      state.isAuthStateComplete; // Load user data once auth state is complete, regardless of profile existence
 
     if (shouldLoadUserData) {
       console.log("AppContext: Auth state indicates authenticated user with completed onboarding, loading user data...");
+      console.log("AppContext: User data loading check:", {
+        hasUser: !!state.user,
+        isAuthenticated: state.isAuthenticated,
+        hasCompletedOnboarding: state.hasCompletedOnboarding,
+        isAuthStateComplete: state.isAuthStateComplete,
+        hasUserProfile: !!state.userProfile,
+        userStatsEmpty: state.userStats.totalRecordings === 0,
+        transcriptsEmpty: state.transcripts.length === 0
+      });
       
       const loadUserData = async () => {
         try {
@@ -256,7 +290,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
       loadUserData();
     }
-  }, [state.user, state.isAuthenticated, state.hasCompletedOnboarding, state.userProfile]);
+  }, [state.user, state.isAuthenticated, state.hasCompletedOnboarding, state.isAuthStateComplete]);
 
   // Unified function to load all user session data (eliminates duplicate API calls)
   const initializeUserSession = useCallback(
@@ -354,12 +388,42 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   // Listen for main process events
   useEffect(() => {
+    const handleSessionRestorationStatus = (event: any) => {
+      const { status, authenticated } = event.detail;
+      console.log("AppContext: Session restoration status event received:", {
+        status,
+        authenticated,
+        currentState: {
+          isSessionRestoring: state.isSessionRestoring,
+          isLoading: state.isLoading,
+          isInitializing: state.isInitializing,
+          isAuthStateComplete: state.isAuthStateComplete,
+        },
+        timestamp: new Date().toISOString(),
+      });
+      
+      if (status === 'starting') {
+        console.log("AppContext: Session restoration starting");
+        dispatch({ type: "SET_SESSION_RESTORING", payload: true });
+        dispatch({ type: "SET_AUTH_STATE_COMPLETE", payload: false });
+      } else if (status === 'completed') {
+        console.log("AppContext: Session restoration completed, authenticated:", authenticated);
+        dispatch({ type: "SET_SESSION_RESTORING", payload: false });
+        dispatch({ type: "SET_INITIALIZING", payload: false });
+        
+        // Auth state will be complete once auth-state-changed event is received
+        // Don't set isAuthStateComplete to true yet - wait for the auth event
+      }
+    };
+
     const handleAuthStateChanged = (event: any) => {
       const { user, authenticated, onboardingCompleted } = event.detail;
       console.log("AppContext: Auth state changed event received:", {
         user: user?.email,
         authenticated,
         onboardingCompleted,
+        onboardingCompletedType: typeof onboardingCompleted,
+        onboardingCompletedRaw: onboardingCompleted,
         currentState: {
           user: state.user?.email,
           isAuthenticated: state.isAuthenticated,
@@ -368,41 +432,75 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         },
         timestamp: new Date().toISOString(),
       });
-      
-      dispatch({ type: "SET_USER", payload: user });
-      dispatch({ type: "SET_AUTHENTICATED", payload: authenticated });
-      if (typeof onboardingCompleted !== "undefined") {
-        dispatch({
-          type: "SET_ONBOARDING_COMPLETED",
-          payload: onboardingCompleted,
+
+      // Clear any existing debounce timer
+      if (authStateDebounceTimer) {
+        clearTimeout(authStateDebounceTimer);
+      }
+
+      // Debounce auth state changes to prevent rapid state updates
+      const newTimer = setTimeout(() => {
+        console.log("AppContext: Processing debounced auth state change");
+        
+        // Additional debugging for onboarding logic
+        console.log("AppContext: Onboarding logic evaluation:", {
+          willSetOnboardingCompleted: onboardingCompleted,
+          currentOnboardingStatus: state.hasCompletedOnboarding,
+          shouldShowOnboarding: !authenticated || !onboardingCompleted,
+          shouldShowHome: authenticated && onboardingCompleted,
+          isAuthenticated: authenticated,
+          hasOnboardingCompleted: onboardingCompleted
         });
-      }
-      
-      // Stop initializing since we've received auth state from main process
-      dispatch({ type: "SET_INITIALIZING", payload: false });
-      
-      // If this is an unauthenticated state, also stop general loading
-      if (!authenticated) {
-        dispatch({ type: "SET_LOADING", payload: false });
-      }
-      
-      console.log("AppContext: Auth state updated after event:", {
-        willShowOnboarding: !authenticated || !onboardingCompleted,
-        shouldShowHome: authenticated && onboardingCompleted,
-      });
-      
-      // Track app launch event once user is authenticated (and we haven't tracked it yet)
-      if (authenticated && user && !appLaunchedTracked) {
-        console.log("AppContext: User authenticated, tracking app launch event");
-        analytics.trackAppLaunched()
-          .then(() => {
-            console.log("AppContext: App launch event tracked successfully");
-            setAppLaunchedTracked(true);
-          })
-          .catch((error) => {
-            console.error("AppContext: Failed to track app launch event:", error);
+        
+        dispatch({ type: "SET_USER", payload: user });
+        dispatch({ type: "SET_AUTHENTICATED", payload: authenticated });
+        if (typeof onboardingCompleted !== "undefined") {
+          dispatch({
+            type: "SET_ONBOARDING_COMPLETED",
+            payload: onboardingCompleted,
           });
-      }
+        }
+        
+        // Mark auth state as complete since we've received complete auth data
+        dispatch({ type: "SET_AUTH_STATE_COMPLETE", payload: true });
+        dispatch({ type: "SET_INITIALIZING", payload: false });
+        
+        // Stop general loading for different cases:
+        if (!authenticated) {
+          // Unauthenticated users - stop loading immediately
+          dispatch({ type: "SET_LOADING", payload: false });
+        } else if (authenticated && onboardingCompleted) {
+          // Authenticated users with completed onboarding - they'll need user data loaded
+          // Loading will be stopped when user data loading completes
+          console.log("AppContext: Authenticated user with completed onboarding - will load user data");
+        } else {
+          // Authenticated users without completed onboarding - stop loading, go to onboarding
+          dispatch({ type: "SET_LOADING", payload: false });
+          console.log("AppContext: Authenticated user without completed onboarding - going to onboarding flow");
+        }
+        
+        console.log("AppContext: Auth state updated after debounced event:", {
+          willShowOnboarding: !authenticated || !onboardingCompleted,
+          shouldShowHome: authenticated && onboardingCompleted,
+        });
+        
+        // Track app launch event once user is authenticated (and we haven't tracked it yet)
+        if (authenticated && user && !appLaunchedTracked) {
+          console.log("AppContext: User authenticated, tracking app launch event");
+          analytics.trackAppLaunched()
+            .then(() => {
+              console.log("AppContext: App launch event tracked successfully");
+              setAppLaunchedTracked(true);
+            })
+            .catch((error) => {
+              console.error("AppContext: Failed to track app launch event:", error);
+            });
+        }
+        
+        setAuthStateDebounceTimer(null);
+      }, 100); // 100ms debounce to prevent rapid state changes
+
+      setAuthStateDebounceTimer(newTimer);
     };
 
     const handleStatisticsUpdated = (event: any) => {
@@ -442,6 +540,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     };
 
     // Add event listeners
+    window.addEventListener("session-restoration-status", handleSessionRestorationStatus);
     window.addEventListener("auth-state-changed", handleAuthStateChanged);
     window.addEventListener("statistics-updated", handleStatisticsUpdated);
     window.addEventListener("transcripts-loaded", handleTranscriptsLoaded);
@@ -452,6 +551,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     );
 
     return () => {
+      // Clean up debounce timer if it exists
+      if (authStateDebounceTimer) {
+        clearTimeout(authStateDebounceTimer);
+      }
+      
+      window.removeEventListener("session-restoration-status", handleSessionRestorationStatus);
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);
       window.removeEventListener("statistics-updated", handleStatisticsUpdated);
       window.removeEventListener("transcripts-loaded", handleTranscriptsLoaded);
@@ -470,18 +575,91 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         "AppContext: Completing onboarding for user:",
         state.user?.email
       );
-      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: true });
+      console.log("AppContext: State before completing onboarding:", {
+        hasCompletedOnboarding: state.hasCompletedOnboarding,
+        user: state.user?.email,
+        isAuthenticated: state.isAuthenticated,
+        timestamp: new Date().toISOString()
+      });
 
-      // Save initial settings to database to mark onboarding as complete
+      // CRITICAL FIX: Update database onboarding_completed field
+      console.log("AppContext: Updating onboarding_completed in database...");
+      const dbResult = await auth.completeOnboarding();
+      
+      if (!dbResult.success) {
+        console.error("AppContext: Failed to update database onboarding status:", dbResult.error);
+        throw new Error(dbResult.error || "Failed to update onboarding status in database");
+      }
+      
+      console.log("AppContext: Database onboarding_completed field updated successfully");
+      
+      // Update local state
+      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: true });
+      console.log("AppContext: SET_ONBOARDING_COMPLETED dispatched, state should now show completed");
+
+      // Save initial settings to database
       if (state.user) {
         await db.saveUserSettings(state.settings);
         console.log("AppContext: User settings saved successfully");
       } else {
         console.warn("AppContext: No user available to save settings");
       }
+
+      // CRITICAL FIX: Ensure navigation goes to home page
+      dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
+      console.log("AppContext: Set activeView to home page");
+
+      // CRITICAL FIX: Request auth state refresh from main process to sync updated database status
+      console.log("AppContext: Requesting auth state refresh from main process...");
+      try {
+        // Notify main process that onboarding was completed and request fresh auth state
+        if (window.electronAPI && window.electronAPI.refreshAuthState) {
+          const refreshResult = await window.electronAPI.refreshAuthState();
+          console.log("AppContext: Auth state refresh result:", refreshResult);
+          
+          if (refreshResult.success) {
+            console.log("AppContext: Auth state refresh completed, updated onboarding status:", refreshResult.onboardingCompleted);
+            
+            // CRITICAL FIX: Force data loading after auth state refresh
+            // This ensures user data loads even if the auth-state-changed event was already processed
+            if (refreshResult.onboardingCompleted && state.user) {
+              console.log("AppContext: Triggering user data loading after auth refresh...");
+              setTimeout(() => {
+                if (state.user && state.isAuthenticated) {
+                  console.log("AppContext: Executing post-onboarding data loading");
+                  dispatch({ type: "SET_USER_DATA_LOADING", payload: true });
+                  initializeUserSession(state.user.id)
+                    .then(() => {
+                      console.log("AppContext: Post-onboarding user data loaded successfully");
+                      dispatch({ type: "SET_USER_DATA_LOADING", payload: false });
+                      dispatch({ type: "SET_LOADING", payload: false });
+                    })
+                    .catch((error) => {
+                      console.error("AppContext: Error loading post-onboarding user data:", error);
+                      dispatch({ type: "SET_USER_DATA_LOADING", payload: false });
+                      dispatch({ type: "SET_LOADING", payload: false });
+                    });
+                }
+              }, 500); // Small delay to ensure auth state update has processed
+            }
+          } else {
+            console.warn("AppContext: Auth state refresh failed:", refreshResult.error);
+          }
+        } else {
+          console.warn("AppContext: refreshAuthState not available on electronAPI");
+        }
+      } catch (refreshError) {
+        console.error("AppContext: Error requesting auth state refresh:", refreshError);
+        // Don't fail the whole onboarding process if refresh fails
+      }
+      
+      console.log("AppContext: Onboarding completion process finished successfully");
     } catch (error) {
       console.error("AppContext: Error completing onboarding:", error);
       dispatch({ type: "SET_ERROR", payload: "Failed to complete onboarding" });
+      
+      // Rollback local state if database update failed
+      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: false });
     }
   }, [state.user, state.settings]);
 
@@ -489,62 +667,44 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     try {
       console.log("AppContext: Starting signout process");
 
-      // Sign out from Supabase (this will clear session stores in main process)
+      // Set loading state while signing out
+      dispatch({ type: "SET_LOADING", payload: true });
+      dispatch({ type: "SET_ERROR", payload: null });
+
+      // Sign out from Supabase (this will clear session stores in main process and trigger auth state change)
       const result = await auth.signOut();
 
-      // Always clear local data regardless of signout result
-      console.log("AppContext: Clearing all local app state and storage");
-
-      // Clear all localStorage data completely
-      localStorage.clear();
-
-      // Clear sessionStorage as well
-      sessionStorage.clear();
-
-      // Clear IndexedDB if any (some browsers may store additional data)
-      try {
-        if ("indexedDB" in window) {
-          // This will clear all IndexedDB databases (optional, but thorough)
-          console.log("AppContext: Clearing IndexedDB data");
-        }
-      } catch (idbError) {
-        console.warn("AppContext: Could not clear IndexedDB:", idbError);
-      }
-
-      // Use RESET_APP_STATE for comprehensive state cleanup
-      console.log("AppContext: Resetting app state before reload");
-      dispatch({ type: "RESET_APP_STATE" });
-
       if (result.success || !result.error) {
-        console.log("AppContext: Signout successful, reloading app");
+        console.log("AppContext: Signout successful, waiting for auth state change event");
+        // Don't reload - the main process will send auth-state-changed event with unauthenticated state
+        // The auth state change event will handle the UI transition
       } else {
-        console.warn(
-          "AppContext: Signout had issues but continuing cleanup:",
-          result.error
-        );
+        console.warn("AppContext: Signout had issues:", result.error);
+        
+        // Still try to clear local state even if signout had issues
+        console.log("AppContext: Clearing local state despite signout issues");
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // Reset state to unauthenticated
+        dispatch({ type: "RESET_APP_STATE" });
         dispatch({
           type: "SET_ERROR",
           payload: result.error || "Sign out completed with warnings",
         });
       }
-
-      // Always reload to ensure clean state
-      console.log("AppContext: All cleanup complete, reloading app");
-      window.location.reload();
     } catch (error) {
       console.error("AppContext: Error during signout:", error);
 
-      // Even if signout fails, clear local data and reload
+      // If signout completely fails, force local cleanup and state reset
       localStorage.clear();
       sessionStorage.clear();
 
-      // Use RESET_APP_STATE for comprehensive state cleanup
       dispatch({ type: "RESET_APP_STATE" });
       dispatch({
         type: "SET_ERROR",
-        payload: "Sign out completed with errors",
+        payload: "Sign out completed with errors - local state cleared",
       });
-      window.location.reload();
     }
   }, []);
 
@@ -559,6 +719,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         dispatch({ type: "SET_INITIALIZING", payload: initializing }),
       setUserDataLoading: (loading: boolean) =>
         dispatch({ type: "SET_USER_DATA_LOADING", payload: loading }),
+      setSessionRestoring: (restoring: boolean) =>
+        dispatch({ type: "SET_SESSION_RESTORING", payload: restoring }),
+      setAuthStateComplete: (complete: boolean) =>
+        dispatch({ type: "SET_AUTH_STATE_COMPLETE", payload: complete }),
       setError: (error: string | null) =>
         dispatch({ type: "SET_ERROR", payload: error }),
       setUser: (user: User | null) =>

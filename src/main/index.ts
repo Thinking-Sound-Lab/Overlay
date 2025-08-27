@@ -451,91 +451,67 @@ const createMainWindow = () => {
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
-  // Send current auth state to the new renderer when it's ready
+  // Send initial session restoration status to renderer when window is ready
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log(
-      "[Main] New window loaded, waiting for session restoration to complete..."
-    );
-
-    // Wait for session restoration to complete before checking auth state
-    if (externalAPIManager?.supabase) {
-      try {
-        await externalAPIManager.supabase.waitForSessionRestoration();
-        console.log(
-          "[Main] Session restoration completed, now checking auth state"
-        );
-      } catch (error) {
-        console.error("[Main] Error waiting for session restoration:", error);
-      }
-    }
-
-    // Double-check auth state after session restoration
-    const currentUser = externalAPIManager?.supabase.getCurrentUser();
-    const userExists = !!currentUser;
-
-    console.log(
-      "[Main] Final auth check - User exists:",
-      userExists,
-      "isAuthenticated:",
-      isAuthenticated
-    );
-
-    if (userExists) {
-      // Update main process auth state to match restored session
-      isAuthenticated = true;
-
-      // Check onboarding completion status
-      let onboardingCompleted = false;
-      try {
-        console.log(
-          "[Main] Checking onboarding status for authenticated user..."
-        );
-        const profileResult =
-          await externalAPIManager.supabase.getUserProfile();
-        if (profileResult.data && !profileResult.error) {
-          onboardingCompleted = Boolean(
-            profileResult.data.onboarding_completed
-          );
-          console.log(
-            "[Main] Onboarding completed status for new window:",
-            onboardingCompleted
-          );
-        } else {
-          console.warn(
-            "[Main] Could not get profile data:",
-            profileResult.error?.message
-          );
+    console.log("[Main] New window loaded, session restoration will handle auth state");
+    
+    // Check if session restoration has already completed
+    if (externalAPIManager?.supabase.isSessionRestorationComplete()) {
+      console.log("[Main] Session restoration already completed, checking current auth state");
+      const currentUser = externalAPIManager?.supabase.getCurrentUser();
+      
+      if (currentUser) {
+        // Session restoration completed with user - trigger restoration status event
+        console.log("[Main] Triggering session restoration status for already-restored user");
+        mainWindow.webContents.send("session-restoration-status", { 
+          status: 'completed',
+          authenticated: true
+        });
+        
+        // Also send current auth state (this will be handled by the session restoration listener logic)
+        let onboardingCompleted = false;
+        try {
+          const profileResult = await externalAPIManager.supabase.getUserProfile();
+          if (profileResult.data && !profileResult.error) {
+            onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
+          } else {
+            // For existing sessions, default to completed if profile fetch fails
+            console.warn("[Main] Error checking onboarding status for existing session, defaulting to completed");
+            onboardingCompleted = true;
+          }
+        } catch (error) {
+          console.error("[Main] Error checking onboarding status for existing session:", error);
+          // For existing sessions, default to completed on errors
+          onboardingCompleted = true;
         }
-      } catch (error) {
-        console.error(
-          "[Main] Error checking onboarding status for new window:",
-          error
-        );
+        
+        mainWindow.webContents.send("auth-state-changed", {
+          user: currentUser,
+          authenticated: true,
+          onboardingCompleted: onboardingCompleted,
+        });
+        
+        // Initialize authenticated services
+        if (!recordingWindow) {
+          createRecordingWindow();
+        }
+        await syncLocalMetricsWithDatabase();
+        loadTranscriptsFromDatabase();
+      } else {
+        // Session restoration completed without user
+        console.log("[Main] Session restoration completed without user");
+        mainWindow.webContents.send("session-restoration-status", { 
+          status: 'completed',
+          authenticated: false
+        });
+        mainWindow.webContents.send("auth-state-changed", {
+          user: null,
+          authenticated: false,
+          onboardingCompleted: false,
+        });
       }
-
-      mainWindow?.webContents.send("auth-state-changed", {
-        user: currentUser,
-        authenticated: true,
-        onboardingCompleted: onboardingCompleted,
-      });
-      console.log(
-        "[Main] Sent authenticated state to new window - User:",
-        currentUser?.email,
-        "Onboarding:",
-        onboardingCompleted
-      );
-
-      // Sync local metrics with database and load transcripts now that window is ready and user is authenticated
-      await syncLocalMetricsWithDatabase();
-      loadTranscriptsFromDatabase();
     } else {
-      isAuthenticated = false;
-      mainWindow?.webContents.send("auth-state-changed", {
-        user: null,
-        authenticated: false,
-        onboardingCompleted: false,
-      });
-      console.log("[Main] Sent unauthenticated state to new window");
+      console.log("[Main] Session restoration still in progress, window will receive events when complete");
     }
   });
 
@@ -904,29 +880,60 @@ const handleOAuthCallback = async (url: string) => {
             data.user.email
           );
 
-          // Check onboarding status
+          // Check onboarding status and send complete auth state
           let onboardingCompleted = false;
           try {
+            console.log("[Main] OAuth: Checking onboarding status for user:", data.user.email);
             const profileResult =
               await externalAPIManager.supabase.getUserProfile();
+            console.log("[Main] OAuth: Profile result:", {
+              hasData: !!profileResult.data,
+              hasError: !!profileResult.error,
+              error: profileResult.error?.message,
+              profileData: profileResult.data ? {
+                id: profileResult.data.id,
+                name: profileResult.data.name,
+                onboarding_completed: profileResult.data.onboarding_completed
+              } : null,
+              timestamp: new Date().toISOString()
+            });
+            
             if (profileResult.data && !profileResult.error) {
+              // Profile exists - use the actual onboarding_completed value
               onboardingCompleted = Boolean(
                 profileResult.data.onboarding_completed
               );
+              console.log("[Main] OAuth: Existing user profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
+            } else if (profileResult.error) {
+              // Error getting profile - this means profile exists but we couldn't fetch it
+              // For existing users with profile fetch errors, default to completed (skip onboarding)
+              // This prevents existing users from being forced through onboarding due to temporary DB issues
+              console.warn("[Main] OAuth: Error fetching existing profile, defaulting to onboarding completed:", profileResult.error?.message);
+              onboardingCompleted = true; 
+            } else {
+              // No profile data and no error - this is handled by getUserProfile() calling createUserProfile()
+              // If we reach here, it means createUserProfile() was called and returned successfully
+              // New users get onboarding_completed: false from createUserProfile()
+              onboardingCompleted = Boolean(
+                profileResult.data?.onboarding_completed
+              );
+              console.log("[Main] OAuth: New user profile created, onboarding status:", onboardingCompleted);
             }
           } catch (profileError) {
             console.error(
-              "[Main] Error checking onboarding status:",
+              "[Main] OAuth: Critical error checking onboarding status:",
               profileError
             );
+            // For critical errors, default to completed to prevent existing users from being stuck
+            onboardingCompleted = true;
           }
 
-          // Notify renderer of successful authentication
-          mainWindow?.webContents.send("auth-state-changed", {
-            user: data.user,
-            authenticated: true,
-            onboardingCompleted: onboardingCompleted,
-          });
+          // Update main process state
+          isAuthenticated = true;
+
+          // Note: Don't send auth-state-changed event here anymore
+          // The auth state change listener will handle this automatically
+          console.log("[Main] OAuth: Authentication successful, auth-state-changed event will be sent by auth state listener");
 
           // Focus main window
           if (mainWindow) {
@@ -979,11 +986,150 @@ app.whenReady().then(async () => {
       externalAPIManager.analytics
     );
 
-    // Set up auth state change listener
+    // Set up session restoration status listener
+    externalAPIManager.supabase.setSessionRestorationStatusListener(async (status, user) => {
+      console.log("[Main] Session restoration status:", status, "user:", user?.email || null);
+      
+      if (status === 'starting') {
+        // Notify renderer that session restoration is starting
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("session-restoration-status", { 
+            status: 'starting' 
+          });
+        }
+      } else if (status === 'completed') {
+        // Session restoration is complete - now send complete auth state with profile data
+        if (user) {
+          isAuthenticated = true;
+          console.log("[Main] Session restored for user:", user.email);
+          
+          // Load complete auth state including profile data
+          let onboardingCompleted = false;
+          try {
+            console.log("[Main] Session restoration: Loading profile data for user:", user.email);
+            const profileResult = await externalAPIManager.supabase.getUserProfile();
+            console.log("[Main] Session restoration: Profile result:", {
+              hasData: !!profileResult.data,
+              hasError: !!profileResult.error,
+              error: profileResult.error?.message,
+              profileData: profileResult.data ? {
+                id: profileResult.data.id,
+                name: profileResult.data.name,
+                onboarding_completed: profileResult.data.onboarding_completed
+              } : null,
+              timestamp: new Date().toISOString()
+            });
+            
+            if (profileResult.data && !profileResult.error) {
+              // Profile exists - use the actual onboarding_completed value
+              onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
+              console.log("[Main] Session restoration: Existing user profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
+            } else if (profileResult.error) {
+              // Error getting profile - for session restoration, default to completed (existing user)
+              console.warn("[Main] Session restoration: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
+              onboardingCompleted = true; 
+            } else {
+              // No profile data and no error - this shouldn't happen for session restoration
+              // but if it does, default to completed for existing sessions
+              console.warn("[Main] Session restoration: No profile data returned, defaulting to onboarding completed");
+              onboardingCompleted = true;
+            }
+          } catch (error) {
+            console.error("[Main] Session restoration: Critical error checking onboarding status:", error);
+            // For session restoration errors, default to completed (existing user)
+            onboardingCompleted = true;
+          }
+
+          // Send complete auth state to renderer
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            console.log("[Main] Session restoration: Sending complete auth state to renderer");
+            mainWindow.webContents.send("auth-state-changed", {
+              user: user,
+              authenticated: true,
+              onboardingCompleted: onboardingCompleted,
+            });
+          }
+
+          // Initialize other authenticated services
+          if (!recordingWindow) {
+            createRecordingWindow();
+          }
+          await syncLocalMetricsWithDatabase();
+          loadTranscriptsFromDatabase();
+        } else {
+          // No user found after restoration - send unauthenticated state
+          isAuthenticated = false;
+          console.log("[Main] Session restoration: No user found, sending unauthenticated state");
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("auth-state-changed", {
+              user: null,
+              authenticated: false,
+              onboardingCompleted: false,
+            });
+          }
+        }
+
+        // Notify renderer that session restoration is complete
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("session-restoration-status", { 
+            status: 'completed',
+            authenticated: !!user
+          });
+        }
+      }
+    });
+
+    // Set up auth state change listener (for all authentications - email/password and provider)
     externalAPIManager.supabase.setAuthStateChangeListener(async (user) => {
       if (user) {
         isAuthenticated = true;
         console.log("[Main] User authenticated via external API:", user.email);
+
+        // CRITICAL FIX: Load complete auth state including profile data for ALL authentication methods
+        let onboardingCompleted = false;
+        try {
+          console.log("[Main] Auth state change: Loading profile data for user:", user.email);
+          const profileResult = await externalAPIManager.supabase.getUserProfile();
+          console.log("[Main] Auth state change: Profile result:", {
+            hasData: !!profileResult.data,
+            hasError: !!profileResult.error,
+            error: profileResult.error?.message,
+            profileData: profileResult.data ? {
+              id: profileResult.data.id,
+              name: profileResult.data.name,
+              onboarding_completed: profileResult.data.onboarding_completed
+            } : null,
+            timestamp: new Date().toISOString()
+          });
+          
+          if (profileResult.data && !profileResult.error) {
+            // Profile exists - use the actual onboarding_completed value
+            onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
+            console.log("[Main] Auth state change: Profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
+          } else if (profileResult.error) {
+            // Error getting profile - default to completed to prevent existing users from being stuck
+            console.warn("[Main] Auth state change: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
+            onboardingCompleted = true;
+          } else {
+            // No profile data and no error - this means createUserProfile() was called (new user)
+            onboardingCompleted = Boolean(profileResult.data?.onboarding_completed);
+            console.log("[Main] Auth state change: New user profile created, onboarding status:", onboardingCompleted);
+          }
+        } catch (profileError) {
+          console.error("[Main] Auth state change: Critical error checking onboarding status:", profileError);
+          // For critical errors, default to completed to prevent existing users from being stuck
+          onboardingCompleted = true;
+        }
+
+        // Send complete auth state to renderer (now includes profile data for all auth methods)
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          console.log("[Main] Auth state change: Sending complete auth state to renderer");
+          mainWindow.webContents.send("auth-state-changed", {
+            user: user,
+            authenticated: true,
+            onboardingCompleted: onboardingCompleted,
+          });
+        }
 
         // Create recording window now that user is authenticated
         if (!recordingWindow) {
@@ -992,8 +1138,8 @@ app.whenReady().then(async () => {
 
         // Sync local metrics with database stats now that user is authenticated
         await syncLocalMetricsWithDatabase();
+        loadTranscriptsFromDatabase();
 
-        // Note: Auth state and transcripts will be sent when window finishes loading via createMainWindow's did-finish-load handler
       } else {
         isAuthenticated = false;
         console.log("[Main] User signed out via external API");
@@ -1001,11 +1147,14 @@ app.whenReady().then(async () => {
         // Clear all user caches when user signs out
         clearUserCaches();
 
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          onboardingCompleted: false,
-        });
+        // Send sign-out state to renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("auth-state-changed", {
+            user: null,
+            authenticated: false,
+            onboardingCompleted: false,
+          });
+        }
       }
     });
 
@@ -1320,6 +1469,65 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
   }
 
   return { success: true };
+});
+
+// Auth state refresh handler - reload auth state from database after onboarding completion
+ipcMain.handle("refresh-auth-state", async (event) => {
+  console.log("[Main] Auth state refresh requested");
+  
+  if (!isAuthenticated || !externalAPIManager?.supabase.getCurrentUser()) {
+    console.error("[Main] Cannot refresh auth state - user not authenticated");
+    return { success: false, error: "User not authenticated" };
+  }
+
+  try {
+    const currentUser = externalAPIManager.supabase.getCurrentUser();
+    console.log("[Main] Refreshing auth state for user:", currentUser?.email);
+
+    // Get fresh profile data from database
+    let onboardingCompleted = false;
+    const profileResult = await externalAPIManager.supabase.getUserProfile();
+    console.log("[Main] Auth refresh: Profile result:", {
+      hasData: !!profileResult.data,
+      hasError: !!profileResult.error,
+      error: profileResult.error?.message,
+      profileData: profileResult.data ? {
+        id: profileResult.data.id,
+        name: profileResult.data.name,
+        onboarding_completed: profileResult.data.onboarding_completed
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (profileResult.data && !profileResult.error) {
+      // Profile exists - use the actual onboarding_completed value
+      onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
+      console.log("[Main] Auth refresh: Updated onboarding completed status:", onboardingCompleted);
+    } else if (profileResult.error) {
+      // Error getting profile - for auth refresh, default to completed (existing user)
+      console.warn("[Main] Auth refresh: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
+      onboardingCompleted = true;
+    } else {
+      // No profile data and no error - shouldn't happen for refresh, but default to completed
+      console.warn("[Main] Auth refresh: No profile data returned, defaulting to onboarding completed");
+      onboardingCompleted = true;
+    }
+
+    // Send refreshed auth state to renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log("[Main] Auth refresh: Sending updated auth state to renderer");
+      mainWindow.webContents.send("auth-state-changed", {
+        user: currentUser,
+        authenticated: true,
+        onboardingCompleted: onboardingCompleted,
+      });
+    }
+
+    return { success: true, onboardingCompleted };
+  } catch (error) {
+    console.error("[Main] Error refreshing auth state:", error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Recording window control handlers
