@@ -8,12 +8,20 @@ interface NavigationBarProps {
   showAuthButtons?: boolean;
   activeView?: ViewType;
   onViewChange?: (view: ViewType) => void;
+  isOnboarding?: boolean;
+  currentStep?: number;
+  totalSteps?: number;
+  stepName?: string;
 }
 
 export const NavigationBar: React.FC<NavigationBarProps> = ({
   showAuthButtons = false,
   activeView,
   onViewChange,
+  isOnboarding = false,
+  currentStep = 1,
+  totalSteps = 3,
+  stepName = "",
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -95,6 +103,21 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
           )}
         </button>
       </div>
+
+      {/* Step Indicator - Center (Only during onboarding) */}
+      {isOnboarding && (
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <span className="font-medium">
+            Step {currentStep} of {totalSteps}
+          </span>
+          {stepName && (
+            <>
+              <span>•</span>
+              <span>{stepName}</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Settings and Profile Buttons - Right Side (Conditional) */}
       {showAuthButtons && onViewChange && (

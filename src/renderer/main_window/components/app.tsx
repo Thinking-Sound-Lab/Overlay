@@ -18,16 +18,32 @@ const AppContent: React.FC = () => {
     isLoading,
     isInitializing,
     isUserDataLoading,
+    isSessionRestoring,
+    isAuthStateComplete,
     user,
   } = state;
+  
+  // Track onboarding step for NavigationBar
+  const [onboardingStep, setOnboardingStep] = React.useState(1);
+  const [onboardingStepName, setOnboardingStepName] = React.useState("Authentication");
+  
+  const handleStepChange = (step: number, stepName: string) => {
+    setOnboardingStep(step);
+    setOnboardingStepName(stepName);
+  };
 
   // Determine if we should show loading screen
-  const shouldShowLoading = isLoading || isInitializing || isUserDataLoading;
+  // Show loading until session restoration is complete AND auth state is complete
+  const shouldShowLoading = isLoading || isInitializing || isSessionRestoring || !isAuthStateComplete || isUserDataLoading;
 
   // Determine loading message based on state
   let loadingMessage = "Loading...";
-  if (isInitializing) {
+  if (isSessionRestoring) {
+    loadingMessage = "Restoring session...";
+  } else if (isInitializing) {
     loadingMessage = "Initializing...";
+  } else if (!isAuthStateComplete) {
+    loadingMessage = "Checking authentication...";
   } else if (isUserDataLoading) {
     loadingMessage = "Loading user data...";
   }
@@ -36,6 +52,8 @@ const AppContent: React.FC = () => {
     isLoading,
     isInitializing,
     isUserDataLoading,
+    isSessionRestoring,
+    isAuthStateComplete,
     shouldShowLoading,
     isAuthenticated,
     hasCompletedOnboarding,
@@ -76,9 +94,15 @@ const AppContent: React.FC = () => {
     });
     return (
       <div className="h-screen flex flex-col">
-        <NavigationBar showAuthButtons={false} />
+        <NavigationBar 
+          showAuthButtons={false}
+          isOnboarding={true}
+          currentStep={onboardingStep}
+          totalSteps={3}
+          stepName={onboardingStepName}
+        />
         <div className="flex-1 overflow-hidden">
-          <OnboardingFlow />
+          <OnboardingFlow onStepChange={handleStepChange} />
         </div>
       </div>
     );

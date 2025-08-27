@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Authentication handlers
   onAuthenticationComplete: (user: any) =>
     ipcRenderer.invoke("on-authentication-complete", user),
+  refreshAuthState: () => ipcRenderer.invoke("refresh-auth-state"),
 
   // Permission handlers
   checkAccessibilityPermission: () =>
@@ -191,6 +192,10 @@ ipcRenderer.on("statistics-updated", (_, stats) => {
   window.dispatchEvent(new CustomEvent("statistics-updated", { detail: stats }));
 });
 
+ipcRenderer.on("session-restoration-status", (_, status) => {
+  window.dispatchEvent(new CustomEvent("session-restoration-status", { detail: status }));
+});
+
 // Type definitions for TypeScript
 declare global {
   interface Window {
@@ -217,6 +222,7 @@ declare global {
       
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
+      refreshAuthState: () => Promise<{ success: boolean; onboardingCompleted?: boolean; error?: string }>;
       
       // Permission handlers
       checkAccessibilityPermission: () => Promise<boolean>;

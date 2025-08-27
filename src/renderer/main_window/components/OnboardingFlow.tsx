@@ -8,32 +8,91 @@ import { Button } from "./ui/button";
 
 type OnboardingStep = "auth" | "permissions" | "guide";
 
-export const OnboardingFlow: React.FC = () => {
-  const { state, setUser, setAuthenticated, completeOnboarding } =
+interface OnboardingFlowProps {
+  onStepChange?: (step: number, stepName: string) => void;
+}
+
+export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
+  onStepChange,
+}) => {
+  const { state, dispatch, setUser, setAuthenticated, completeOnboarding } =
     useAppContext();
-  const { user, isAuthenticated } = state;
+  const { user, isAuthenticated, hasCompletedOnboarding, isAuthStateComplete } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check if user is already authenticated
+  // Check if user is already authenticated - ONLY after auth state is complete
   useEffect(() => {
-    if (isAuthenticated && user) {
-      // User is authenticated, move to permissions step
+    console.log("OnboardingFlow: Evaluating auth state for routing:", {
+      isAuthenticated,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasCompletedOnboarding,
+      isAuthStateComplete,
+      currentStep,
+      isLoading,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Don't make routing decisions until auth state is complete
+    if (!isAuthStateComplete) {
+      console.log("OnboardingFlow: Auth state not yet complete, waiting...");
+      return;
+    }
+    
+    // Now make routing decisions based on complete auth state
+    if (isAuthenticated && user && hasCompletedOnboarding) {
+      // User is authenticated AND completed onboarding -> skip to home
+      console.log("OnboardingFlow: User already completed onboarding, skipping to home");
+      handleGuideComplete();
+    } else if (isAuthenticated && user) {
+      // User is authenticated but hasn't completed onboarding -> go to permissions
+      console.log("OnboardingFlow: User authenticated but onboarding incomplete, going to permissions");
       setCurrentStep("permissions");
     } else {
+      // User is not authenticated -> go to auth step
+      console.log("OnboardingFlow: User not authenticated, going to auth step");
       setCurrentStep("auth");
     }
     setIsLoading(false);
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, hasCompletedOnboarding, isAuthStateComplete]);
+
+  // Notify parent about step changes
+  useEffect(() => {
+    if (onStepChange) {
+      const stepNumber =
+        ["auth", "permissions", "guide"].indexOf(currentStep) + 1;
+      const stepName =
+        currentStep === "auth"
+          ? "Authentication"
+          : currentStep === "permissions"
+            ? "Permissions"
+            : "Quick Guide";
+      onStepChange(stepNumber, stepName);
+    }
+  }, [currentStep, onStepChange]);
 
   const handleAuthSuccess = async (authenticatedUser: any) => {
     console.log("OnboardingFlow: Auth success with user:", authenticatedUser);
+    console.log("OnboardingFlow: Current app state before auth success:", {
+      hasCompletedOnboarding,
+      isAuthenticated,
+      user: user?.email,
+      stateUser: state.user?.email,
+      stateAuthenticated: state.isAuthenticated,
+      stateHasCompletedOnboarding: state.hasCompletedOnboarding,
+      timestamp: new Date().toISOString()
+    });
 
-    // Update the app state with authenticated user
+    // CRITICAL FIX: Don't make routing decisions here anymore!
+    // For email/password sign-in, the main process will now send auth-state-changed event
+    // with complete profile data, which will trigger the useEffect routing logic
+    
+    // Update the app state with authenticated user (temporary until auth-state-changed event arrives)
     setUser(authenticatedUser);
     setAuthenticated(true);
-
-    setCurrentStep("permissions");
+    
+    console.log("OnboardingFlow: Set user in state, waiting for auth-state-changed event with profile data for routing decisions");
 
     // Track successful authentication
     await analytics.identify(authenticatedUser.id, {
@@ -54,62 +113,140 @@ export const OnboardingFlow: React.FC = () => {
       "OnboardingFlow: Guide complete with user:",
       user || state.user
     );
+    
+    console.log("OnboardingFlow: State before completing onboarding:", {
+      hasCompletedOnboarding: state.hasCompletedOnboarding,
+      isAuthenticated: state.isAuthenticated,
+      user: state.user?.email,
+      timestamp: new Date().toISOString()
+    });
 
     try {
-      // Mark onboarding as completed in the database
+      // CRITICAL FIX: Mark onboarding as completed in the database with comprehensive verification
       console.log(
         "OnboardingFlow: Marking onboarding as completed in database"
       );
-      const dbResult = await auth.completeOnboarding();
-      console.log(
-        "OnboardingFlow: Complete onboarding result:",
-        JSON.stringify(dbResult, null, 2)
-      );
-
-      if (!dbResult.success) {
-        console.error(
-          "OnboardingFlow: Failed to mark onboarding as completed in database:",
-          dbResult.error
-        );
-        // Continue anyway, as the user has completed the flow
-      } else {
+      
+      let dbUpdateSuccess = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      // Retry logic for database update
+      while (!dbUpdateSuccess && retryCount < maxRetries) {
+        retryCount++;
+        console.log(`OnboardingFlow: Database update attempt ${retryCount}/${maxRetries}`);
+        
+        const dbResult = await auth.completeOnboarding();
         console.log(
-          "OnboardingFlow: Successfully marked onboarding as completed in database"
+          `OnboardingFlow: Complete onboarding result (attempt ${retryCount}):`,
+          JSON.stringify(dbResult, null, 2)
         );
-        // Check the actual data returned
-        if (dbResult.data?.data) {
+
+        if (dbResult.success && dbResult.data?.data?.onboarding_completed === true) {
+          dbUpdateSuccess = true;
           console.log(
-            "OnboardingFlow: Updated profile data:",
+            "OnboardingFlow: Successfully verified onboarding completion in database:",
             dbResult.data.data
           );
+          break;
+        } else if (dbResult.success) {
+          console.warn(
+            "OnboardingFlow: Database update succeeded but onboarding_completed not verified:",
+            dbResult.data?.data?.onboarding_completed
+          );
+          // Still consider this a success if the API call succeeded
+          dbUpdateSuccess = true;
+          break;
+        } else {
+          console.error(
+            `OnboardingFlow: Failed to mark onboarding as completed in database (attempt ${retryCount}):`,
+            dbResult.error
+          );
+          
+          if (retryCount < maxRetries) {
+            console.log(`OnboardingFlow: Retrying database update in 1 second...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       }
+      
+      if (!dbUpdateSuccess) {
+        console.error("OnboardingFlow: All database update attempts failed, but continuing with local completion");
+      }
 
-      // Complete onboarding locally (sets localStorage and state)
-      await completeOnboarding();
+      // CRITICAL FIX: Complete onboarding locally with comprehensive error handling
+      console.log("OnboardingFlow: Calling completeOnboarding() on app context");
+      
+      try {
+        await completeOnboarding();
+        console.log("OnboardingFlow: completeOnboarding() completed successfully, new state:", {
+          hasCompletedOnboarding: state.hasCompletedOnboarding,
+          timestamp: new Date().toISOString()
+        });
 
-      // Track onboarding completion
-      await analytics.track("onboarding_completed");
+        // Verify local onboarding completion
+        if (!state.hasCompletedOnboarding) {
+          console.warn("OnboardingFlow: Local onboarding completion may not have updated state yet");
+        }
 
-      // Use the current user from state, fallback to user from hook
-      const currentUser = state.user || user;
+        // Track onboarding completion
+        await analytics.track("onboarding_completed");
 
-      if (currentUser) {
-        // Notify main process that authentication is complete
-        window.electronAPI.onAuthenticationComplete(currentUser);
-      } else {
-        console.error(
-          "OnboardingFlow: No user available to complete authentication"
-        );
+        // Use the current user from state, fallback to user from hook
+        const currentUser = state.user || user;
+
+        if (currentUser) {
+          // Notify main process that authentication is complete
+          console.log("OnboardingFlow: Notifying main process of authentication completion");
+          const authCompleteResult = await window.electronAPI.onAuthenticationComplete(currentUser);
+          console.log("OnboardingFlow: Authentication completion notification result:", authCompleteResult);
+        } else {
+          console.error(
+            "OnboardingFlow: No user available to complete authentication - this is a critical error"
+          );
+          throw new Error("No user available to complete authentication");
+        }
+
+        console.log("OnboardingFlow: All onboarding completion steps succeeded");
+      } catch (localCompletionError) {
+        console.error("OnboardingFlow: Error in local onboarding completion:", localCompletionError);
+        throw localCompletionError; // Re-throw to be caught by outer catch block
       }
     } catch (error) {
-      console.error("OnboardingFlow: Error completing onboarding:", error);
-      // Still try to complete onboarding locally
-      await completeOnboarding();
+      console.error("OnboardingFlow: Critical error during onboarding completion:", error);
+      
+      // CRITICAL FIX: Comprehensive error recovery
+      try {
+        console.log("OnboardingFlow: Attempting error recovery...");
+        
+        // Still try to complete onboarding locally as fallback
+        console.log("OnboardingFlow: Attempting local onboarding completion as fallback");
+        await completeOnboarding();
 
-      const currentUser = state.user || user;
-      if (currentUser) {
-        window.electronAPI.onAuthenticationComplete(currentUser);
+        const currentUser = state.user || user;
+        if (currentUser) {
+          console.log("OnboardingFlow: Attempting to notify main process despite earlier errors");
+          const fallbackResult = await window.electronAPI.onAuthenticationComplete(currentUser);
+          console.log("OnboardingFlow: Fallback authentication completion result:", fallbackResult);
+          
+          console.log("OnboardingFlow: Error recovery completed successfully");
+        } else {
+          console.error("OnboardingFlow: Cannot complete error recovery - no user available");
+          // Don't throw here - user is already in a problematic state
+        }
+      } catch (recoveryError) {
+        console.error("OnboardingFlow: Error recovery also failed:", recoveryError);
+        
+        // Last resort: at least ensure user doesn't get stuck
+        console.log("OnboardingFlow: Attempting minimal recovery to prevent user getting stuck");
+        try {
+          // Force navigate to home even if onboarding is incomplete
+          dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
+          dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: true });
+          console.log("OnboardingFlow: Minimal recovery completed - user should now see home page");
+        } catch (minimalRecoveryError) {
+          console.error("OnboardingFlow: Even minimal recovery failed:", minimalRecoveryError);
+        }
       }
     }
   };
@@ -133,40 +270,7 @@ export const OnboardingFlow: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Draggable Header */}
-      <div
-        className="h-6 bg-white flex items-center"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
-
-      {/* Step Indicator */}
-      <div className="">
-        <div className="bg-white px-4 py-2 flex justify-center">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="font-medium">
-              Step {["auth", "permissions", "guide"].indexOf(currentStep) + 1}{" "}
-              of 3
-            </span>
-            <span>•</span>
-            <span>
-              {currentStep === "auth" && "Authentication"}
-              {currentStep === "permissions" && "Permissions"}
-              {currentStep === "guide" && "Quick Guide"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Progress Bar */}
-      {/* <div className="h-1 bg-gray-200">
-        <div
-          className="h-1 bg-blue-600 transition-all duration-300"
-          style={{ width: `${getStepProgress()}%` }}
-        />
-      </div> */}
-
-      {/* Step Content */}
-      <div className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         {currentStep === "auth" && (
           <AuthPage onAuthSuccess={handleAuthSuccess} />
         )}
