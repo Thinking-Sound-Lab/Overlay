@@ -3,6 +3,8 @@ name: Build Multi-Platform
 on:
   push:
     branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
 jobs:
@@ -13,9 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux
-            make: make:linux
           - os: windows-latest
             platform: win32
             make: make:win
@@ -75,7 +74,6 @@ jobs:
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Notes for Production" >> $GITHUB_STEP_SUMMARY
           echo "- Code signing is currently disabled for testing" >> $GITHUB_STEP_SUMMARY
