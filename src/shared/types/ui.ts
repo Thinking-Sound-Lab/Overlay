@@ -38,4 +38,4 @@ export interface Message {
   text: string;
 }
 
-export type ViewType = "home" | "dictionary" | "help" | "referral" | "settings" | "profile";
+export type ViewType = "home" | "dictionary" | "help" | "referral";

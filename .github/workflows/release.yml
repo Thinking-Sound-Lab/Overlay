@@ -76,6 +76,14 @@ jobs:
         run: |
           npm run make:win
         env:
+          CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # PRODUCTION CODE SIGNING (commented for testing)
           # Uncomment these lines and set secrets for production releases
           # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
@@ -88,6 +96,14 @@ jobs:
         run: |
           npm run make:mac
         env:
+          CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # PRODUCTION CODE SIGNING (commented for testing)
           # Uncomment these lines and set secrets for production releases
           # APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -95,7 +111,6 @@ jobs:
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
           # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          CI: true
 
       # Linux Release Build
       - name: Build Linux
@@ -104,6 +119,13 @@ jobs:
           npm run make
         env:
           CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
       # Upload release artifacts
       - name: Upload release artifacts

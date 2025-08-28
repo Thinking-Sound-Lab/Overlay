@@ -33,6 +33,7 @@ import { AuthUtils } from "./utils/auth";
 import { validateTranscriptData } from "./utils/validation";
 import { config } from "../../config/environment";
 import { AuthStateManager } from "./auth/auth-state-manager";
+import { SystemAudioManager } from "./services/system_audio_manager";
 // Webpack entry points
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -65,6 +66,7 @@ let isAuthenticated = false;
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
 let authStateManager: AuthStateManager | null = null;
+let systemAudioManager: SystemAudioManager | null = null;
 
 // Processing state
 let processingStage = "";
@@ -631,6 +633,11 @@ const startRecording = async () => {
   if (isRecording || isProcessing) return;
   isRecording = true;
 
+  // Mute system audio BEFORE starting recording
+  if (systemAudioManager) {
+    await systemAudioManager.muteSystemAudio();
+  }
+
   // Ensure recording window exists (should be created after authentication)
   if (!recordingWindow) {
     createRecordingWindow();
@@ -670,6 +677,11 @@ const stopRecording = async () => {
   recordingWindow?.webContents.send("recording-stopped");
   recordingWindow?.webContents.send("processing-stage", processingStage);
 
+  // Restore system audio as soon as recording stops and transcription begins
+  if (systemAudioManager) {
+    await systemAudioManager.restoreSystemAudio();
+  }
+
   try {
     // Stage 1: Transcribing
     processingStage = "Transcribing speech...";
@@ -687,6 +699,11 @@ const stopRecording = async () => {
     console.error("[Main] Error finalizing dictation:", error);
     processingStage = "Error occurred";
     recordingWindow?.webContents.send("processing-stage", processingStage);
+    
+    // Ensure audio is restored even in error cases
+    if (systemAudioManager) {
+      await systemAudioManager.restoreSystemAudio();
+    }
   } finally {
     // Reset processing state - window management moved to handleMetricsUpdate
     isProcessing = false;
@@ -946,6 +963,9 @@ app.whenReady().then(async () => {
       updateSpeechMetrics
     );
 
+    // Initialize system audio manager
+    systemAudioManager = new SystemAudioManager();
+
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
 
@@ -1078,6 +1098,12 @@ app.on("will-quit", async () => {
   console.log("[Main] App shutting down, cleaning up services...");
 
   globalShortcut.unregisterAll();
+
+  // Restore system audio before shutdown
+  if (systemAudioManager) {
+    await systemAudioManager.restoreSystemAudio();
+    systemAudioManager = null;
+  }
 
   // Cleanup external API services
   if (apiHandlers) {
