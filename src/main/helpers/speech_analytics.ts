@@ -1,9 +1,5 @@
 // helpers/speechAnalytics.ts
-export interface SpeechMetrics {
-  wordCount: number;
-  wordsPerMinute: number;
-  duration: number; // in seconds
-}
+import { SpeechMetrics, GlobalMetrics } from "../../shared/types";
 
 export function calculateSpeechMetrics(
   text: string,
@@ -28,14 +24,7 @@ export function calculateSpeechMetrics(
   };
 }
 
-export interface GlobalMetrics {
-  totalWordCount: number;
-  averageWPM: number;
-  totalRecordings: number;
-  lastRecordingWords: number;
-  lastRecordingWPM: number;
-  streakDays: number;
-}
+// GlobalMetrics interface now imported from shared types
 
 export function updateGlobalMetrics(
   currentMetrics: GlobalMetrics,

@@ -24,11 +24,15 @@ if (process.platform === "win32") {
   }
 }
 import STTService from "./services/stt_service";
-import { updateGlobalMetrics, GlobalMetrics } from "./helpers/speech_analytics";
+import { updateGlobalMetrics } from "./helpers/speech_analytics";
+import { GlobalMetrics } from "../shared/types";
 import { WindowAnimator } from "./helpers/windowAnimator";
 import { ExternalAPIManager } from "./services/external_api_manager";
 import { APIHandlers } from "./ipc/api_handlers";
+import { AuthUtils } from "./utils/auth";
+import { validateTranscriptData } from "./utils/validation";
 import { config } from "../../config/environment";
+import { AuthStateManager } from "./auth/auth-state-manager";
 // Webpack entry points
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -60,6 +64,7 @@ let isAuthenticated = false;
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
+let authStateManager: AuthStateManager | null = null;
 
 // Processing state
 let processingStage = "";
@@ -157,35 +162,7 @@ const store = new Store({
 
 // Initialize metrics to defaults - will be synced from database when user is authenticated
 
-// Function to validate transcript data
-const validateTranscriptData = (transcriptData: any) => {
-  const errors = [];
-
-  if (
-    !transcriptData.text ||
-    typeof transcriptData.text !== "string" ||
-    transcriptData.text.trim().length === 0
-  ) {
-    errors.push("Text is required and must be a non-empty string");
-  }
-
-  if (transcriptData.text && transcriptData.text.length > 10000) {
-    errors.push("Text exceeds maximum length of 10000 characters");
-  }
-
-  if (
-    typeof transcriptData.wordCount !== "number" ||
-    transcriptData.wordCount < 0
-  ) {
-    errors.push("Word count must be a non-negative number");
-  }
-
-  if (typeof transcriptData.wpm !== "number" || transcriptData.wpm < 0) {
-    errors.push("WPM must be a non-negative number");
-  }
-
-  return errors;
-};
+// Using centralized validation utility
 
 // Function to save transcript to database
 const saveTranscriptToDatabase = async (transcriptData: any) => {
@@ -203,9 +180,9 @@ const saveTranscriptToDatabase = async (transcriptData: any) => {
   }
 
   // Validate transcript data
-  const validationErrors = validateTranscriptData(transcriptData);
-  if (validationErrors.length > 0) {
-    console.error("[Main] Transcript validation failed:", validationErrors);
+  const validation = validateTranscriptData(transcriptData);
+  if (!validation.isValid) {
+    console.error("[Main] Transcript validation failed:", validation.errors);
     return false;
   }
 
@@ -264,49 +241,6 @@ const saveTranscriptToDatabase = async (transcriptData: any) => {
   }
 };
 
-// Function to load transcripts from database
-const loadTranscriptsFromDatabase = async () => {
-  if (!isAuthenticated || !externalAPIManager?.supabase.getCurrentUser()) {
-    console.log("[Main] Cannot load transcripts: User not authenticated");
-    return;
-  }
-
-  try {
-    console.log("[Main] Loading transcripts from database...");
-    const result = await externalAPIManager.supabase.getTranscripts(100);
-
-    if (result.data && !result.error) {
-      // Convert database transcripts to local format
-      transcriptHistory = result.data.map((dbTranscript: any) => ({
-        id: dbTranscript.metadata?.localId || dbTranscript.id,
-        text: dbTranscript.text,
-        timestamp: new Date(dbTranscript.created_at),
-        wordCount: dbTranscript.word_count,
-        wpm: dbTranscript.wpm,
-        originalText: dbTranscript.original_text,
-        wasTranslated: dbTranscript.was_translated,
-        targetLanguage: dbTranscript.target_language,
-        detectedLanguage: dbTranscript.metadata?.detectedLanguage,
-        ...dbTranscript.metadata,
-      }));
-
-      console.log(
-        `[Main] Loaded ${transcriptHistory.length} transcripts from database`
-      );
-
-      // Notify renderer about loaded transcripts
-      mainWindow?.webContents.send("transcripts-loaded", transcriptHistory);
-    } else {
-      console.error(
-        "[Main] Failed to load transcripts from database:",
-        result.error
-      );
-    }
-  } catch (error) {
-    console.error("[Main] Error loading transcripts from database:", error);
-  }
-};
-
 // transcriptHistory will be loaded from database when user is authenticated
 transcriptHistory = [];
 lastActivityDate = null;
@@ -352,15 +286,18 @@ const handleMetricsUpdate = (
     }
 
     // Save to database if user is authenticated
-    if (isAuthenticated && externalAPIManager?.supabase.getCurrentUser()) {
+    if (AuthUtils.isUserAuthenticated()) {
       saveTranscriptToDatabase(transcriptEntry)
         .then((success) => {
+          console.log("[Main] Transcript saved to database:", success);
           if (success) {
             // Notify renderer about successful database save
-            mainWindow?.webContents.send(
-              "transcript-saved-to-database",
-              transcriptEntry
-            );
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow?.webContents.send(
+                "transcript-saved-to-database",
+                transcriptEntry
+              );
+            }
           } else {
             console.warn(
               "[Main] Failed to save transcript to database - skipping (app requires internet)"
@@ -377,10 +314,12 @@ const handleMetricsUpdate = (
     }
 
     // Notify renderer about new activity
-    mainWindow?.webContents.send("activity-updated", {
-      type: "transcript",
-      data: transcriptEntry,
-    });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow?.webContents.send("activity-updated", {
+        type: "transcript",
+        data: transcriptEntry,
+      });
+    }
   }
 
   // speechMetrics and lastActivityDate are managed in memory and database only
@@ -388,10 +327,33 @@ const handleMetricsUpdate = (
   console.log("[Main] Updated metrics:", speechMetrics);
 
   // Notify renderer about stats update
-  mainWindow?.webContents.send("statistics-updated", speechMetrics);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow?.webContents.send("statistics-updated", speechMetrics);
+  }
 
   // Update tray menu with new metrics
   updateTrayMenu();
+
+  // Handle window state management AFTER all processing is complete
+  // This ensures text insertion and metrics update happen before window state changes
+  if (recordingWindow && !recordingWindow.isDestroyed()) {
+    console.log(
+      "[Main] Processing complete, switching recording window to compact state"
+    );
+    isProcessing = false;
+    processingStage = "";
+
+    // Animate window to compact size
+    windowAnimator.animateResize(
+      recordingWindow,
+      WINDOW_SIZES.compact.width,
+      WINDOW_SIZES.compact.height,
+      150
+    );
+
+    // Send processing-complete event
+    recordingWindow.webContents.send("processing-complete");
+  }
 };
 
 // STT Service will be initialized after external API manager is ready
@@ -453,65 +415,53 @@ const createMainWindow = () => {
 
   // Send initial session restoration status to renderer when window is ready
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log("[Main] New window loaded, session restoration will handle auth state");
-    
+    console.log(
+      "[Main] New window loaded, session restoration will handle auth state"
+    );
+
     // Check if session restoration has already completed
     if (externalAPIManager?.supabase.isSessionRestorationComplete()) {
-      console.log("[Main] Session restoration already completed, checking current auth state");
+      console.log(
+        "[Main] Session restoration already completed, checking current auth state"
+      );
       const currentUser = externalAPIManager?.supabase.getCurrentUser();
-      
+
       if (currentUser) {
-        // Session restoration completed with user - trigger restoration status event
-        console.log("[Main] Triggering session restoration status for already-restored user");
-        mainWindow.webContents.send("session-restoration-status", { 
-          status: 'completed',
-          authenticated: true
-        });
-        
-        // Also send current auth state (this will be handled by the session restoration listener logic)
-        let onboardingCompleted = false;
-        try {
-          const profileResult = await externalAPIManager.supabase.getUserProfile();
-          if (profileResult.data && !profileResult.error) {
-            onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
-          } else {
-            // For existing sessions, default to completed if profile fetch fails
-            console.warn("[Main] Error checking onboarding status for existing session, defaulting to completed");
-            onboardingCompleted = true;
-          }
-        } catch (error) {
-          console.error("[Main] Error checking onboarding status for existing session:", error);
-          // For existing sessions, default to completed on errors
-          onboardingCompleted = true;
-        }
-        
-        mainWindow.webContents.send("auth-state-changed", {
-          user: currentUser,
+        // Session restoration completed with user
+        console.log(
+          "[Main] Session already restored for user, loading complete auth state"
+        );
+
+        mainWindow.webContents.send("session-restoration-status", {
+          status: "completed",
           authenticated: true,
-          onboardingCompleted: onboardingCompleted,
         });
-        
+
+        // Use AuthStateManager to load and send complete auth state
+        await authStateManager?.loadAndSendAuthState(
+          mainWindow,
+          currentUser,
+          "Window Load - Existing Session"
+        );
+
         // Initialize authenticated services
         if (!recordingWindow) {
           createRecordingWindow();
         }
-        await syncLocalMetricsWithDatabase();
-        loadTranscriptsFromDatabase();
       } else {
         // Session restoration completed without user
         console.log("[Main] Session restoration completed without user");
-        mainWindow.webContents.send("session-restoration-status", { 
-          status: 'completed',
-          authenticated: false
-        });
-        mainWindow.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          onboardingCompleted: false,
-        });
+
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          undefined,
+          "Window Load - No Session"
+        );
       }
     } else {
-      console.log("[Main] Session restoration still in progress, window will receive events when complete");
+      console.log(
+        "[Main] Session restoration still in progress, window will receive events when complete"
+      );
     }
   });
 
@@ -605,6 +555,10 @@ const updateTrayMenu = () => {
       label: `Total Recordings: ${speechMetrics.totalRecordings}`,
       enabled: false,
     },
+    {
+      label: `Streak: ${speechMetrics.streakDays} days`,
+      enabled: false,
+    },
 
     { type: "separator" },
     {
@@ -665,7 +619,7 @@ const registerGlobalHotkey = () => {
 
 const startRecording = async () => {
   // Don't allow recording if user is not authenticated
-  if (!isAuthenticated) {
+  if (!AuthUtils.isUserAuthenticated) {
     console.log("[Main] Recording blocked - user not authenticated");
     return;
   }
@@ -725,32 +679,21 @@ const stopRecording = async () => {
     console.log("[Main] Dictation finalized successfully");
 
     // The actual processing (translation, grammar correction, text insertion)
-    // happens in the STT service, so we just wait for completion
+    // happens in the STT service. The STT service will handle completion timing
+    // via the onMetricsUpdate callback, so no artificial delay is needed here.
     processingStage = "Finalizing...";
     recordingWindow?.webContents.send("processing-stage", processingStage);
-
-    // Give a moment for text insertion to complete
-    await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error("[Main] Error finalizing dictation:", error);
     processingStage = "Error occurred";
     recordingWindow?.webContents.send("processing-stage", processingStage);
   } finally {
+    // Reset processing state - window management moved to handleMetricsUpdate
     isProcessing = false;
     processingStage = "";
-    console.log("[Main] Dictation processing completed");
-
-    if (recordingWindow) {
-      windowAnimator.animateResize(
-        recordingWindow,
-        WINDOW_SIZES.compact.width,
-        WINDOW_SIZES.compact.height,
-        150
-      );
-    }
-
-    // Clear processing stage
-    recordingWindow?.webContents.send("processing-complete");
+    console.log(
+      "[Main] Dictation processing completed - window state will be managed by STT callback"
+    );
   }
 };
 
@@ -798,11 +741,11 @@ const handleOAuthCallback = async (url: string) => {
         console.error(
           "[Main] OAuth callback missing hash fragment with tokens"
         );
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          error: "OAuth callback missing required token data",
-        });
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          "OAuth callback missing required token data",
+          "OAuth Error - Missing Hash"
+        );
         return;
       }
 
@@ -813,11 +756,11 @@ const handleOAuthCallback = async (url: string) => {
       const errorDescription = hashParams.get("error_description");
       if (error) {
         console.error("[Main] OAuth error:", { error, errorDescription });
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          error: `OAuth error: ${error}${errorDescription ? ` - ${errorDescription}` : ""}`,
-        });
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          `OAuth error: ${error}${errorDescription ? ` - ${errorDescription}` : ""}`,
+          "OAuth Error"
+        );
         return;
       }
 
@@ -836,21 +779,21 @@ const handleOAuthCallback = async (url: string) => {
 
       if (!accessToken || !refreshToken) {
         console.error("[Main] OAuth callback missing required tokens");
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          error: "OAuth callback missing access_token or refresh_token",
-        });
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          "OAuth callback missing access_token or refresh_token",
+          "OAuth Error - Missing Tokens"
+        );
         return;
       }
 
       if (!externalAPIManager?.supabase) {
         console.error("[Main] Supabase service not available for OAuth");
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          error: "Authentication service not available",
-        });
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          "Authentication service not available",
+          "OAuth Error - Service Unavailable"
+        );
         return;
       }
 
@@ -866,11 +809,11 @@ const handleOAuthCallback = async (url: string) => {
 
         if (error) {
           console.error("[Main] Error creating session with tokens:", error);
-          mainWindow?.webContents.send("auth-state-changed", {
-            user: null,
-            authenticated: false,
-            error: `Authentication failed: ${error.message}`,
-          });
+          authStateManager?.sendUnauthenticatedState(
+            mainWindow,
+            `Authentication failed: ${error.message}`,
+            "OAuth Error - Session Creation"
+          );
           return;
         }
 
@@ -883,33 +826,47 @@ const handleOAuthCallback = async (url: string) => {
           // Check onboarding status and send complete auth state
           let onboardingCompleted = false;
           try {
-            console.log("[Main] OAuth: Checking onboarding status for user:", data.user.email);
+            console.log(
+              "[Main] OAuth: Checking onboarding status for user:",
+              data.user.email
+            );
             const profileResult =
               await externalAPIManager.supabase.getUserProfile();
             console.log("[Main] OAuth: Profile result:", {
               hasData: !!profileResult.data,
               hasError: !!profileResult.error,
               error: profileResult.error?.message,
-              profileData: profileResult.data ? {
-                id: profileResult.data.id,
-                name: profileResult.data.name,
-                onboarding_completed: profileResult.data.onboarding_completed
-              } : null,
-              timestamp: new Date().toISOString()
+              profileData: profileResult.data
+                ? {
+                    id: profileResult.data.id,
+                    name: profileResult.data.name,
+                    onboarding_completed:
+                      profileResult.data.onboarding_completed,
+                  }
+                : null,
+              timestamp: new Date().toISOString(),
             });
-            
+
             if (profileResult.data && !profileResult.error) {
               // Profile exists - use the actual onboarding_completed value
               onboardingCompleted = Boolean(
                 profileResult.data.onboarding_completed
               );
-              console.log("[Main] OAuth: Existing user profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
+              console.log(
+                "[Main] OAuth: Existing user profile found, onboarding status:",
+                onboardingCompleted,
+                "- Raw value:",
+                profileResult.data.onboarding_completed
+              );
             } else if (profileResult.error) {
               // Error getting profile - this means profile exists but we couldn't fetch it
               // For existing users with profile fetch errors, default to completed (skip onboarding)
               // This prevents existing users from being forced through onboarding due to temporary DB issues
-              console.warn("[Main] OAuth: Error fetching existing profile, defaulting to onboarding completed:", profileResult.error?.message);
-              onboardingCompleted = true; 
+              console.warn(
+                "[Main] OAuth: Error fetching existing profile, defaulting to onboarding completed:",
+                profileResult.error?.message
+              );
+              onboardingCompleted = true;
             } else {
               // No profile data and no error - this is handled by getUserProfile() calling createUserProfile()
               // If we reach here, it means createUserProfile() was called and returned successfully
@@ -917,7 +874,10 @@ const handleOAuthCallback = async (url: string) => {
               onboardingCompleted = Boolean(
                 profileResult.data?.onboarding_completed
               );
-              console.log("[Main] OAuth: New user profile created, onboarding status:", onboardingCompleted);
+              console.log(
+                "[Main] OAuth: New user profile created, onboarding status:",
+                onboardingCompleted
+              );
             }
           } catch (profileError) {
             console.error(
@@ -930,10 +890,13 @@ const handleOAuthCallback = async (url: string) => {
 
           // Update main process state
           isAuthenticated = true;
+          AuthUtils.setAuthenticationState(true);
 
           // Note: Don't send auth-state-changed event here anymore
           // The auth state change listener will handle this automatically
-          console.log("[Main] OAuth: Authentication successful, auth-state-changed event will be sent by auth state listener");
+          console.log(
+            "[Main] OAuth: Authentication successful, auth-state-changed event will be sent by auth state listener"
+          );
 
           // Focus main window
           if (mainWindow) {
@@ -942,31 +905,31 @@ const handleOAuthCallback = async (url: string) => {
           }
         } else {
           console.error("[Main] Session created but no user data received");
-          mainWindow?.webContents.send("auth-state-changed", {
-            user: null,
-            authenticated: false,
-            error: "Authentication completed but no user session received",
-          });
+          authStateManager?.sendUnauthenticatedState(
+            mainWindow,
+            "Authentication completed but no user session received",
+            "OAuth Error - No User Data"
+          );
         }
       } catch (tokenError) {
         console.error(
           "[Main] Exception during token session creation:",
           tokenError
         );
-        mainWindow?.webContents.send("auth-state-changed", {
-          user: null,
-          authenticated: false,
-          error: `Token authentication failed: ${tokenError.message}`,
-        });
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          `Token authentication failed: ${tokenError.message}`,
+          "OAuth Error - Token Exception"
+        );
       }
     }
   } catch (error) {
     console.error("[Main] Error handling OAuth callback:", error);
-    mainWindow?.webContents.send("auth-state-changed", {
-      user: null,
-      authenticated: false,
-      error: "Unexpected error during OAuth processing",
-    });
+    authStateManager?.sendUnauthenticatedState(
+      mainWindow,
+      "Unexpected error during OAuth processing",
+      "OAuth Error - Unexpected"
+    );
   }
 };
 
@@ -977,6 +940,14 @@ app.whenReady().then(async () => {
     // Initialize external API manager and handlers
     externalAPIManager = new ExternalAPIManager();
     apiHandlers = new APIHandlers(externalAPIManager);
+    authStateManager = new AuthStateManager(
+      externalAPIManager,
+      updateTrayMenu,
+      updateSpeechMetrics
+    );
+
+    // Initialize auth utils with API manager
+    AuthUtils.setAuthManager(externalAPIManager);
 
     // Initialize STT service with analytics support
     sttService = new STTService(
@@ -986,184 +957,87 @@ app.whenReady().then(async () => {
       externalAPIManager.analytics
     );
 
-    // Set up session restoration status listener
-    externalAPIManager.supabase.setSessionRestorationStatusListener(async (status, user) => {
-      console.log("[Main] Session restoration status:", status, "user:", user?.email || null);
-      
-      if (status === 'starting') {
-        // Notify renderer that session restoration is starting
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("session-restoration-status", { 
-            status: 'starting' 
-          });
-        }
-      } else if (status === 'completed') {
-        // Session restoration is complete - now send complete auth state with profile data
-        if (user) {
-          isAuthenticated = true;
-          console.log("[Main] Session restored for user:", user.email);
-          
-          // Load complete auth state including profile data
-          let onboardingCompleted = false;
-          try {
-            console.log("[Main] Session restoration: Loading profile data for user:", user.email);
-            const profileResult = await externalAPIManager.supabase.getUserProfile();
-            console.log("[Main] Session restoration: Profile result:", {
-              hasData: !!profileResult.data,
-              hasError: !!profileResult.error,
-              error: profileResult.error?.message,
-              profileData: profileResult.data ? {
-                id: profileResult.data.id,
-                name: profileResult.data.name,
-                onboarding_completed: profileResult.data.onboarding_completed
-              } : null,
-              timestamp: new Date().toISOString()
-            });
-            
-            if (profileResult.data && !profileResult.error) {
-              // Profile exists - use the actual onboarding_completed value
-              onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
-              console.log("[Main] Session restoration: Existing user profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
-            } else if (profileResult.error) {
-              // Error getting profile - for session restoration, default to completed (existing user)
-              console.warn("[Main] Session restoration: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
-              onboardingCompleted = true; 
-            } else {
-              // No profile data and no error - this shouldn't happen for session restoration
-              // but if it does, default to completed for existing sessions
-              console.warn("[Main] Session restoration: No profile data returned, defaulting to onboarding completed");
-              onboardingCompleted = true;
+    // // Set up session restoration status listener
+    externalAPIManager.supabase.setSessionRestorationStatusListener(
+      async (status, user) => {
+        console.log(
+          "[Main] Session restoration status:",
+          status,
+          "user:",
+          user?.email || null
+        );
+
+        if (status === "starting") {
+          // Notify renderer that session restoration is starting
+        } else if (status === "completed") {
+          // Session restoration is complete - load and send complete auth state
+          if (user) {
+            console.log("[Main] Session restored for user:", user.email);
+
+            // Use AuthStateManager to load and send complete auth state
+            await authStateManager?.loadAndSendAuthState(
+              mainWindow,
+              user,
+              "Session Restoration"
+            );
+
+            // Initialize other authenticated services
+            if (!recordingWindow) {
+              createRecordingWindow();
             }
-          } catch (error) {
-            console.error("[Main] Session restoration: Critical error checking onboarding status:", error);
-            // For session restoration errors, default to completed (existing user)
-            onboardingCompleted = true;
+          } else {
+            // No user found after restoration - send unauthenticated state
+            console.log(
+              "[Main] Session restoration: No user found, sending unauthenticated state"
+            );
+            authStateManager?.sendUnauthenticatedState(
+              mainWindow,
+              undefined,
+              "Session Restoration"
+            );
           }
-
-          // Send complete auth state to renderer
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            console.log("[Main] Session restoration: Sending complete auth state to renderer");
-            mainWindow.webContents.send("auth-state-changed", {
-              user: user,
-              authenticated: true,
-              onboardingCompleted: onboardingCompleted,
-            });
-          }
-
-          // Initialize other authenticated services
-          if (!recordingWindow) {
-            createRecordingWindow();
-          }
-          await syncLocalMetricsWithDatabase();
-          loadTranscriptsFromDatabase();
-        } else {
-          // No user found after restoration - send unauthenticated state
-          isAuthenticated = false;
-          console.log("[Main] Session restoration: No user found, sending unauthenticated state");
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send("auth-state-changed", {
-              user: null,
-              authenticated: false,
-              onboardingCompleted: false,
-            });
-          }
-        }
-
-        // Notify renderer that session restoration is complete
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("session-restoration-status", { 
-            status: 'completed',
-            authenticated: !!user
-          });
         }
       }
-    });
+    );
 
     // Set up auth state change listener (for all authentications - email/password and provider)
     externalAPIManager.supabase.setAuthStateChangeListener(async (user) => {
       if (user) {
-        isAuthenticated = true;
         console.log("[Main] User authenticated via external API:", user.email);
 
-        // CRITICAL FIX: Load complete auth state including profile data for ALL authentication methods
-        let onboardingCompleted = false;
-        try {
-          console.log("[Main] Auth state change: Loading profile data for user:", user.email);
-          const profileResult = await externalAPIManager.supabase.getUserProfile();
-          console.log("[Main] Auth state change: Profile result:", {
-            hasData: !!profileResult.data,
-            hasError: !!profileResult.error,
-            error: profileResult.error?.message,
-            profileData: profileResult.data ? {
-              id: profileResult.data.id,
-              name: profileResult.data.name,
-              onboarding_completed: profileResult.data.onboarding_completed
-            } : null,
-            timestamp: new Date().toISOString()
-          });
-          
-          if (profileResult.data && !profileResult.error) {
-            // Profile exists - use the actual onboarding_completed value
-            onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
-            console.log("[Main] Auth state change: Profile found, onboarding status:", onboardingCompleted, "- Raw value:", profileResult.data.onboarding_completed);
-          } else if (profileResult.error) {
-            // Error getting profile - default to completed to prevent existing users from being stuck
-            console.warn("[Main] Auth state change: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
-            onboardingCompleted = true;
-          } else {
-            // No profile data and no error - this means createUserProfile() was called (new user)
-            onboardingCompleted = Boolean(profileResult.data?.onboarding_completed);
-            console.log("[Main] Auth state change: New user profile created, onboarding status:", onboardingCompleted);
-          }
-        } catch (profileError) {
-          console.error("[Main] Auth state change: Critical error checking onboarding status:", profileError);
-          // For critical errors, default to completed to prevent existing users from being stuck
-          onboardingCompleted = true;
-        }
-
-        // Send complete auth state to renderer (now includes profile data for all auth methods)
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          console.log("[Main] Auth state change: Sending complete auth state to renderer");
-          mainWindow.webContents.send("auth-state-changed", {
-            user: user,
-            authenticated: true,
-            onboardingCompleted: onboardingCompleted,
-          });
-        }
+        // Use AuthStateManager to load and send complete auth state
+        await authStateManager?.loadAndSendAuthState(
+          mainWindow,
+          user,
+          "Auth State Change"
+        );
 
         // Create recording window now that user is authenticated
         if (!recordingWindow) {
           createRecordingWindow();
         }
-
-        // Sync local metrics with database stats now that user is authenticated
-        await syncLocalMetricsWithDatabase();
-        loadTranscriptsFromDatabase();
-
       } else {
-        isAuthenticated = false;
         console.log("[Main] User signed out via external API");
 
         // Clear all user caches when user signs out
         clearUserCaches();
 
         // Send sign-out state to renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("auth-state-changed", {
-            user: null,
-            authenticated: false,
-            onboardingCompleted: false,
-          });
-        }
+        authStateManager?.sendUnauthenticatedState(
+          mainWindow,
+          undefined,
+          "Auth State Change - Sign Out"
+        );
       }
     });
-
+    updateTrayMenu();
     console.log("[Main] External API services initialized successfully");
   } catch (error) {
     console.error("[Main] Failed to initialize external API services:", error);
   }
 
   createMainWindow();
+
   // Note: Recording window will be created after authentication
   const initialLanguage = (store.get("language") as string) || "auto";
   await sttService.initialize(initialLanguage);
@@ -1214,6 +1088,9 @@ app.on("will-quit", async () => {
     await externalAPIManager.shutdown();
   }
 
+  // Clear auth state manager reference
+  authStateManager = null;
+
   console.log("[Main] Services cleanup completed");
 });
 
@@ -1230,7 +1107,6 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("get-settings", () => store.store);
 ipcMain.handle("update-settings", async (event, settings) => {
   Object.entries(settings).forEach(([key, value]) => {
     if (key !== "hotkey") store.set(key, value);
@@ -1242,74 +1118,26 @@ ipcMain.handle("update-settings", async (event, settings) => {
   return { success: true };
 });
 
-ipcMain.handle("get-statistics", async () => {
-  // Try to get real-time stats from database if user is authenticated
-  if (isAuthenticated && externalAPIManager?.supabase.getCurrentUser()) {
-    try {
-      const dbStats = await externalAPIManager.supabase.getUserStats();
-      if (dbStats.data && !dbStats.error) {
-        // Merge database stats with local state
-        return {
-          totalWordCount: dbStats.data.totalWordCount,
-          averageWPM: dbStats.data.averageWPM,
-          totalRecordings: dbStats.data.totalRecordings,
-          streakDays: dbStats.data.streakDays,
-          lastRecordingWords: speechMetrics.lastRecordingWords,
-          lastRecordingWPM: speechMetrics.lastRecordingWPM,
-        };
-      }
-    } catch (error) {
-      console.error(
-        "[Main] Error fetching database stats, using local:",
-        error
-      );
-    }
-  }
-
-  // Fallback to local cached stats (streak will be 0 since not calculated locally)
-  return { ...speechMetrics, streakDays: 0 };
-});
-
-// Function to sync local speech metrics with database stats
-const syncLocalMetricsWithDatabase = async () => {
-  if (!isAuthenticated || !externalAPIManager?.supabase.getCurrentUser()) {
-    console.log("[Main] Cannot sync metrics: User not authenticated");
-    return;
-  }
-
-  try {
-    console.log("[Main] Syncing local metrics with database stats...");
-    const dbStats = await externalAPIManager.supabase.getUserStats();
-
-    if (dbStats.data && !dbStats.error) {
-      // Update local speechMetrics with database totals
-      speechMetrics = {
-        totalWordCount: dbStats.data.totalWordCount || 0,
-        averageWPM: dbStats.data.averageWPM || 0,
-        totalRecordings: dbStats.data.totalRecordings || 0,
-        streakDays: dbStats.data.streakDays || 0,
-        lastRecordingWords: speechMetrics.lastRecordingWords, // Keep local recent recording data
-        lastRecordingWPM: speechMetrics.lastRecordingWPM, // Keep local recent recording data
-      };
-
-      console.log("[Main] Successfully synced local metrics with database:", {
-        totalWords: speechMetrics.totalWordCount,
-        totalRecordings: speechMetrics.totalRecordings,
-        averageWPM: speechMetrics.averageWPM.toFixed(1),
-        streakDays: speechMetrics.streakDays,
-      });
-
-      // Update tray with synced stats
-      updateTrayMenu();
-    } else {
-      console.warn(
-        "[Main] Failed to sync with database stats:",
-        dbStats.error?.message
-      );
-    }
-  } catch (error) {
-    console.error("[Main] Error syncing local metrics with database:", error);
-  }
+// Function to update local speechMetrics from database statistics
+const updateSpeechMetrics = (stats: any) => {
+  console.log(
+    "[Main] Updating local speechMetrics with database stats:",
+    stats
+  );
+  speechMetrics = {
+    totalWordCount: stats.totalWordCount || 0,
+    averageWPM: stats.averageWPM || 0,
+    totalRecordings: stats.totalRecordings || 0,
+    streakDays: stats.streakDays || 0,
+    lastRecordingWords: speechMetrics.lastRecordingWords, // Keep local recent recording data
+    lastRecordingWPM: speechMetrics.lastRecordingWPM, // Keep local recent recording data
+  };
+  console.log("[Main] Local speechMetrics updated:", {
+    totalWords: speechMetrics.totalWordCount,
+    totalRecordings: speechMetrics.totalRecordings,
+    averageWPM: speechMetrics.averageWPM.toFixed(1),
+    streakDays: speechMetrics.streakDays,
+  });
 };
 
 // Function to clear all user-related caches and data
@@ -1339,6 +1167,7 @@ const clearUserCaches = () => {
 
   // Reset authentication state
   isAuthenticated = false;
+  AuthUtils.setAuthenticationState(false);
 
   // Notify renderer about cleared data
   mainWindow?.webContents.send("statistics-updated", speechMetrics);
@@ -1367,52 +1196,6 @@ ipcMain.handle("reset-statistics", () => {
   updateTrayMenu();
 
   return { success: true };
-});
-
-ipcMain.handle("get-transcripts", async () => {
-  // Load transcripts from database if user is authenticated
-  if (isAuthenticated && externalAPIManager?.supabase.getCurrentUser()) {
-    try {
-      const result = await externalAPIManager.supabase.getTranscripts(100);
-      if (result.data && !result.error) {
-        // Update local cache
-        transcriptHistory = result.data.map((dbTranscript: any) => ({
-          id: dbTranscript.metadata?.localId || dbTranscript.id,
-          text: dbTranscript.text,
-          timestamp: new Date(dbTranscript.created_at),
-          wordCount: dbTranscript.word_count,
-          wpm: dbTranscript.wpm,
-          originalText: dbTranscript.original_text,
-          wasTranslated: dbTranscript.was_translated,
-          targetLanguage: dbTranscript.target_language,
-          detectedLanguage: dbTranscript.metadata?.detectedLanguage,
-          ...dbTranscript.metadata,
-        }));
-        return transcriptHistory;
-      } else {
-        console.error(
-          "[Main] Failed to load transcripts from database:",
-          result.error
-        );
-        return transcriptHistory; // Return cached data as fallback
-      }
-    } catch (error) {
-      console.error("[Main] Error loading transcripts from database:", error);
-      return transcriptHistory; // Return cached data as fallback
-    }
-  } else {
-    // User not authenticated, return cached data
-    return transcriptHistory;
-  }
-});
-
-ipcMain.handle("get-transcript-sync-status", () => {
-  return {
-    totalLocalTranscripts: transcriptHistory.length,
-    isAuthenticated: isAuthenticated,
-    hasSupabaseService: !!externalAPIManager?.supabase,
-    currentUser: externalAPIManager?.supabase.getCurrentUser()?.email || null,
-  };
 });
 
 ipcMain.handle("window-hover-enter", (event) => {
@@ -1461,6 +1244,7 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
   }
 
   isAuthenticated = true;
+  AuthUtils.setAuthenticationState(true);
   console.log("[Main] User authenticated:", user.email);
 
   // Create recording window now that user is authenticated
@@ -1474,8 +1258,8 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
 // Auth state refresh handler - reload auth state from database after onboarding completion
 ipcMain.handle("refresh-auth-state", async (event) => {
   console.log("[Main] Auth state refresh requested");
-  
-  if (!isAuthenticated || !externalAPIManager?.supabase.getCurrentUser()) {
+
+  if (!AuthUtils.isUserAuthenticated()) {
     console.error("[Main] Cannot refresh auth state - user not authenticated");
     return { success: false, error: "User not authenticated" };
   }
@@ -1484,44 +1268,17 @@ ipcMain.handle("refresh-auth-state", async (event) => {
     const currentUser = externalAPIManager.supabase.getCurrentUser();
     console.log("[Main] Refreshing auth state for user:", currentUser?.email);
 
-    // Get fresh profile data from database
-    let onboardingCompleted = false;
-    const profileResult = await externalAPIManager.supabase.getUserProfile();
-    console.log("[Main] Auth refresh: Profile result:", {
-      hasData: !!profileResult.data,
-      hasError: !!profileResult.error,
-      error: profileResult.error?.message,
-      profileData: profileResult.data ? {
-        id: profileResult.data.id,
-        name: profileResult.data.name,
-        onboarding_completed: profileResult.data.onboarding_completed
-      } : null,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (profileResult.data && !profileResult.error) {
-      // Profile exists - use the actual onboarding_completed value
-      onboardingCompleted = Boolean(profileResult.data.onboarding_completed);
-      console.log("[Main] Auth refresh: Updated onboarding completed status:", onboardingCompleted);
-    } else if (profileResult.error) {
-      // Error getting profile - for auth refresh, default to completed (existing user)
-      console.warn("[Main] Auth refresh: Error fetching profile, defaulting to onboarding completed:", profileResult.error?.message);
-      onboardingCompleted = true;
-    } else {
-      // No profile data and no error - shouldn't happen for refresh, but default to completed
-      console.warn("[Main] Auth refresh: No profile data returned, defaulting to onboarding completed");
-      onboardingCompleted = true;
-    }
+    // Use AuthStateManager to load and send refreshed auth state
+    await authStateManager?.loadAndSendAuthState(
+      mainWindow,
+      currentUser,
+      "Auth Refresh"
+    );
 
-    // Send refreshed auth state to renderer
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log("[Main] Auth refresh: Sending updated auth state to renderer");
-      mainWindow.webContents.send("auth-state-changed", {
-        user: currentUser,
-        authenticated: true,
-        onboardingCompleted: onboardingCompleted,
-      });
-    }
+    // Load fresh profile to get onboarding status for return value
+    const profileResult = await externalAPIManager.supabase.getUserProfile();
+    const onboardingCompleted =
+      profileResult.data?.onboarding_completed || true;
 
     return { success: true, onboardingCompleted };
   } catch (error) {

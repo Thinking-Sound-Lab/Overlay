@@ -1,16 +1,6 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-
-export interface TranslationResult {
-  translatedText: string;
-  sourceLanguage: string;
-  targetLanguage: string;
-  originalText: string;
-  confidence: number;
-  wordCountRatio: number;
-  semanticSimilarity?: number;
-  detectedLanguage?: string;
-}
+import { TranslationResult } from "../../shared/types";
 
 export class TranslationService {
   private static instance: TranslationService;

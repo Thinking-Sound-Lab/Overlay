@@ -3,6 +3,8 @@ name: Build Multi-Platform
 on:
   push:
     branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
 jobs:
@@ -13,9 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux
-            make: make:linux
           - os: windows-latest
             platform: win32
             make: make:win
@@ -46,6 +45,12 @@ jobs:
         run: npm run ${{ matrix.make }}
         env:
           CI: true
+          NODE_ENV: production
+          REACT_APP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
 
       - name: Upload artifacts
@@ -75,7 +80,6 @@ jobs:
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Notes for Production" >> $GITHUB_STEP_SUMMARY
           echo "- Code signing is currently disabled for testing" >> $GITHUB_STEP_SUMMARY

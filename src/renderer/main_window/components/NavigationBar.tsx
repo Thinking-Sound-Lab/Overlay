@@ -26,17 +26,26 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    // Get initial window state
-    window.electronAPI.windowControls
-      .getMaximizedState()
-      .then(({ isMaximized }) => {
-        setIsMaximized(isMaximized);
-      });
+    // Get initial window state - check if API is available first
+    if (window.electronAPI?.windowControls?.getMaximizedState) {
+      window.electronAPI.windowControls
+        .getMaximizedState()
+        .then(({ isMaximized }) => {
+          setIsMaximized(isMaximized);
+        })
+        .catch((error) => {
+          console.warn("Failed to get window maximized state:", error);
+        });
+    }
   }, []);
 
   const handleWindowClose = async () => {
     try {
-      await window.electronAPI.windowControls.close();
+      if (window.electronAPI?.windowControls?.close) {
+        await window.electronAPI.windowControls.close();
+      } else {
+        console.warn("Window close API not available");
+      }
     } catch (error) {
       console.error("Error closing window:", error);
     }
@@ -44,7 +53,11 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
   const handleWindowMinimize = async () => {
     try {
-      await window.electronAPI.windowControls.minimize();
+      if (window.electronAPI?.windowControls?.minimize) {
+        await window.electronAPI.windowControls.minimize();
+      } else {
+        console.warn("Window minimize API not available");
+      }
     } catch (error) {
       console.error("Error minimizing window:", error);
     }
@@ -52,9 +65,13 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
   const handleWindowMaximize = async () => {
     try {
-      const result = await window.electronAPI.windowControls.maximize();
-      if (result.success) {
-        setIsMaximized(result.action === "maximized");
+      if (window.electronAPI?.windowControls?.maximize) {
+        const result = await window.electronAPI.windowControls.maximize();
+        if (result.success) {
+          setIsMaximized(result.action === "maximized");
+        }
+      } else {
+        console.warn("Window maximize API not available");
       }
     } catch (error) {
       console.error("Error maximizing window:", error);

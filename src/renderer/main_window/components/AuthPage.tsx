@@ -11,10 +11,11 @@ import { auth } from "../lib/api_client";
 import { LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
 
 interface AuthPageProps {
-  onAuthSuccess: (user: any) => void;
+  onSignIn: (user: any) => void;
+  onSignUp: (user: any) => void;
 }
 
-export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
+export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,8 +43,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         if (authError) {
           setError(authError);
         } else if (authenticated && user) {
-          // Authentication successful, let parent handle it
-          onAuthSuccess(user);
+          // For Google auth, we don't know if it's signin or signup, so default to signin logic
+          onSignIn(user);
         }
       }
     };
@@ -53,7 +54,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
     return () => {
       window.removeEventListener('auth-state-changed', handleAuthStateChanged);
     };
-  }, [isGoogleLoading, onAuthSuccess]);
+  }, [isGoogleLoading, onSignIn]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,10 +78,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         setError(result.error || "Authentication failed");
       } else if (result.data?.data?.user) {
         console.log(
-          "AuthPage: Auth successful, calling onAuthSuccess with user:",
+          `AuthPage: ${isLogin ? 'Sign in' : 'Sign up'} successful with user:`,
           result.data.data.user
         );
-        onAuthSuccess(result.data.data.user);
+        
+        // Call the appropriate handler based on login/signup mode
+        if (isLogin) {
+          onSignIn(result.data.data.user);
+        } else {
+          onSignUp(result.data.data.user);
+        }
       } else {
         console.error("AuthPage: Auth response structure:", result);
         setError("Authentication successful but user data not received");

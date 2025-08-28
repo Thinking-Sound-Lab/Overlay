@@ -7,17 +7,7 @@ import {
   CardTitle,
 } from "./ui/card";
 import { Badge } from "./ui/badge";
-import {
-  Flame,
-  FileText,
-  Star,
-  Mic,
-  Languages,
-  ArrowRight,
-  CheckCircle,
-  AlertTriangle,
-  Info,
-} from "lucide-react";
+import { Flame, FileText, Star, Mic } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 
 interface TranscriptEntry {
@@ -39,34 +29,6 @@ export const HomePage: React.FC = () => {
   const { state } = useAppContext();
   const { user, userProfile, userStats, transcripts } = state;
   const userName = userProfile?.name || user?.email?.split("@")[0] || "User";
-  const getLanguageName = (code: string): string => {
-    const languages: Record<string, string> = {
-      en: "English",
-      es: "Spanish",
-      fr: "French",
-      de: "German",
-      it: "Italian",
-      pt: "Portuguese",
-      ru: "Russian",
-      ja: "Japanese",
-      ko: "Korean",
-      zh: "Chinese",
-      hi: "Hindi",
-      ur: "Urdu",
-      ta: "Tamil",
-      te: "Telugu",
-      bn: "Bengali",
-      gu: "Gujarati",
-      kn: "Kannada",
-      ml: "Malayalam",
-      pa: "Punjabi",
-      ar: "Arabic",
-      he: "Hebrew",
-      th: "Thai",
-      vi: "Vietnamese",
-    };
-    return languages[code] || code.toUpperCase();
-  };
 
   const formatDate = (date: Date | string) => {
     // Ensure we have a proper Date object
@@ -209,41 +171,6 @@ export const HomePage: React.FC = () => {
                         <div className="text-xs font-medium text-gray-900">
                           {formatTime(transcript.timestamp)}
                         </div>
-                        {/* {transcript.wasTranslated && (
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-md">
-                              <Languages className="h-3 w-3" />
-                              <span className="text-xs font-medium">
-                                {getLanguageName(
-                                  transcript.sourceLanguage || ""
-                                )}
-                              </span>
-                              <ArrowRight className="h-3 w-3" />
-                              <span className="text-xs font-medium">
-                                {getLanguageName(
-                                  transcript.targetLanguage || ""
-                                )}
-                              </span>
-                            </div>
-                            {transcript.confidence !== undefined && (
-                              <div className="flex items-center gap-1">
-                                {transcript.confidence >= 0.8 ? (
-                                  <CheckCircle className="h-3 w-3 text-green-600" />
-                                ) : transcript.confidence >= 0.6 ? (
-                                  <AlertTriangle className="h-3 w-3 text-yellow-600" />
-                                ) : (
-                                  <Info className="h-3 w-3 text-red-600" />
-                                )}
-                                <span className="text-xs text-gray-500">
-                                  {Math.round(
-                                    (transcript.confidence || 0) * 100
-                                  )}
-                                  %
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )} */}
                       </div>
 
                       {transcript.wasTranslated && transcript.originalText && (
@@ -276,22 +203,6 @@ export const HomePage: React.FC = () => {
                         <Badge variant="outline" className="text-xs">
                           {transcript.wpm.toFixed(1)} WPM
                         </Badge>
-                        {/* {transcript.wasTranslated &&
-                          transcript.wordCountRatio !== undefined && (
-                            <Badge
-                              variant="outline"
-                              className={`text-xs ${
-                                Math.abs(transcript.wordCountRatio - 1) <= 0.2
-                                  ? "text-green-700 border-green-300"
-                                  : Math.abs(transcript.wordCountRatio - 1) <=
-                                      0.5
-                                    ? "text-yellow-700 border-yellow-300"
-                                    : "text-red-700 border-red-300"
-                              }`}
-                            >
-                              Ratio: {transcript.wordCountRatio.toFixed(2)}
-                            </Badge>
-                          )} */}
                       </div>
                     </div>
                   ))}

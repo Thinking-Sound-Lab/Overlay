@@ -8,7 +8,7 @@ import {
 } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Languages, Globe, Zap } from "lucide-react";
+import { Languages, Zap } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 import { db } from "../lib/api_client";
 

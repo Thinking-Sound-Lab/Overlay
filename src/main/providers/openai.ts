@@ -5,6 +5,7 @@ import os from "os";
 import OpenAI from "openai";
 import { analyzeAudioSilence } from "../helpers/audioAnalyzer";
 import { config } from "../../../config/environment";
+import { STTClient } from "../../shared/types";
 
 export const openai = new OpenAI({
   apiKey: config.openaiApiKey,
@@ -12,10 +13,7 @@ export const openai = new OpenAI({
   maxRetries: 3,
 });
 
-export interface STTClient {
-  processAudio: (audioChunks: string[]) => Promise<void>;
-  close: () => void;
-}
+export type { STTClient };
 
 interface STTCallback {
   onmessage: (data: any) => void;

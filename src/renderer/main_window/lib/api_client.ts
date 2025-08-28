@@ -1,54 +1,40 @@
 // API Client for renderer process - uses IPC to communicate with main process
 // This replaces direct Supabase and PostHog usage in the renderer
-
-export interface IPCResponse<T = any> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
+import { IPCResponse } from "../../../shared/types";
 
 export class APIClient {
-  // Helper method to wait for electronAPI to be available
-  private static async waitForElectronAPI(
-    maxRetries = 10,
-    delayMs = 100
-  ): Promise<void> {
-    let retries = 0;
-    while (retries < maxRetries) {
-      if (
-        typeof window !== "undefined" &&
-        window.electronAPI &&
-        window.electronAPI.auth &&
-        window.electronAPI.db
-      ) {
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      retries++;
+  // Simple check if electronAPI is available - for error reporting only
+  private static checkElectronAPI(): void {
+    if (
+      typeof window === "undefined" ||
+      !window.electronAPI ||
+      !window.electronAPI.auth ||
+      !window.electronAPI.db
+    ) {
+      throw new Error("Application not properly initialized. Please refresh the page.");
     }
-    throw new Error("electronAPI is not available after waiting");
   }
 
   // Authentication methods
   static async signIn(email: string, password: string): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.signIn(email, password);
       return response;
     } catch (error) {
       console.error("APIClient: Sign in error:", error);
-      return { success: false, error: "Failed to sign in" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to sign in" };
     }
   }
 
   static async signInWithGoogle(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.signInWithGoogle();
       return response;
     } catch (error) {
       console.error("APIClient: Sign in with Google error:", error);
-      return { success: false, error: "Failed to sign in with Google" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to sign in with Google" };
     }
   }
 
@@ -58,7 +44,7 @@ export class APIClient {
     name?: string
   ): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.signUp(
         email,
         password,
@@ -67,51 +53,51 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Sign up error:", error);
-      return { success: false, error: "Failed to sign up" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to sign up" };
     }
   }
 
   static async signOut(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.signOut();
       return response;
     } catch (error) {
       console.error("APIClient: Sign out error:", error);
-      return { success: false, error: "Failed to sign out" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to sign out" };
     }
   }
 
   static async getCurrentUser(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.getCurrentUser();
       return response;
     } catch (error) {
       console.error("APIClient: Get current user error:", error);
-      return { success: false, error: "Failed to get current user" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to get current user" };
     }
   }
 
   static async getUserProfile(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.getUserProfile();
       return response;
     } catch (error) {
       console.error("APIClient: Get user profile error:", error);
-      return { success: false, error: "Failed to get user profile" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to get user profile" };
     }
   }
 
   static async completeOnboarding(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.auth.completeOnboarding();
       return response;
     } catch (error) {
       console.error("APIClient: Complete onboarding error:", error);
-      return { success: false, error: "Failed to complete onboarding" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to complete onboarding" };
     }
   }
 
@@ -128,12 +114,12 @@ export class APIClient {
 
   static async getTranscripts(limit?: number): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.db.getTranscripts(limit);
       return response;
     } catch (error) {
       console.error("APIClient: Get transcripts error:", error);
-      return { success: false, error: "Failed to get transcripts" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to get transcripts" };
     }
   }
 
@@ -149,23 +135,23 @@ export class APIClient {
 
   static async getUserSettings(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.db.getUserSettings();
       return response;
     } catch (error) {
       console.error("APIClient: Get user settings error:", error);
-      return { success: false, error: "Failed to get user settings" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to get user settings" };
     }
   }
 
   static async getUserStats(): Promise<IPCResponse> {
     try {
-      await APIClient.waitForElectronAPI();
+      APIClient.checkElectronAPI();
       const response = await window.electronAPI.db.getUserStats();
       return response;
     } catch (error) {
       console.error("APIClient: Get user stats error:", error);
-      return { success: false, error: "Failed to get user stats" };
+      return { success: false, error: error instanceof Error ? error.message : "Failed to get user stats" };
     }
   }
 

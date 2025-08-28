@@ -4,6 +4,7 @@ import { STTClient } from "../providers/openai";
 import * as robot from "robotjs";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import TranslationService from "./translation_service";
+import { TranslationResult } from "../../shared/types";
 import { AnalyticsService } from "./analytics_service";
 
 class STTService {
@@ -181,7 +182,7 @@ class STTService {
       }
 
       // Step 1: Translation (if enabled)
-      let translationResult = null;
+      let translationResult: TranslationResult | null = null;
       if (this.settings.enableTranslation && this.settings.targetLanguage) {
         const needsTranslation = detectedLanguage !== this.settings.targetLanguage;
 
@@ -223,64 +224,65 @@ class STTService {
       );
       console.log("[STT] Corrected text:", correctedText);
 
-      // Step 3: Insert text using robotjs
-      this.insertTextWithRobot(correctedText);
-
-      // Step 4: Calculate metrics
+      // Step 3: Calculate metrics first
       const metrics = calculateSpeechMetrics(
         correctedText,
         this.lastRecordingDuration
       );
       console.log("[STT] Metrics:", metrics);
 
-      if (this.onMetricsUpdate) {
-        // Include translation metadata if translation was used
-        const transcriptData = correctedText;
-        const wasTranslated =
-          this.settings.enableTranslation &&
-          this.settings.targetLanguage &&
-          detectedLanguage !== this.settings.targetLanguage &&
-          translationResult;
-        const translationMeta = wasTranslated
-          ? {
-              wasTranslated: true,
-              originalText: transcript,
-              sourceLanguage: detectedLanguage,
-              targetLanguage: this.settings.targetLanguage,
-              confidence: translationResult.confidence,
-              wordCountRatio: translationResult.wordCountRatio,
-              detectedLanguage: translationResult.detectedLanguage,
+      // Step 4: Insert text and only fire metrics update after insertion completes
+      this.insertTextWithRobot(correctedText, () => {
+        // Only fire metrics update callback AFTER text insertion is complete
+        if (this.onMetricsUpdate) {
+          // Include translation metadata if translation was used
+          const transcriptData = correctedText;
+          const wasTranslated =
+            this.settings.enableTranslation &&
+            this.settings.targetLanguage &&
+            detectedLanguage !== this.settings.targetLanguage &&
+            translationResult;
+          const translationMeta = wasTranslated
+            ? {
+                wasTranslated: true,
+                originalText: transcript,
+                sourceLanguage: detectedLanguage,
+                targetLanguage: this.settings.targetLanguage,
+                confidence: translationResult.confidence,
+                wordCountRatio: translationResult.wordCountRatio,
+                detectedLanguage: translationResult.detectedLanguage,
+              }
+            : { wasTranslated: false, detectedLanguage };
+
+          this.onMetricsUpdate(metrics, transcriptData, translationMeta);
+
+          // Track transcription completed via analytics
+          if (this.analyticsService) {
+            this.analyticsService.trackTranscriptionCompleted(
+              metrics.wordCount,
+              metrics.wordsPerMinute,
+              !!wasTranslated
+            );
+
+            // Track translation usage if it occurred
+            if (wasTranslated && translationResult) {
+              this.analyticsService.track("translation_used", {
+                source_language: detectedLanguage,
+                target_language: this.settings.targetLanguage,
+                confidence: translationResult.confidence,
+                word_count_ratio: translationResult.wordCountRatio,
+              });
             }
-          : { wasTranslated: false, detectedLanguage };
 
-        this.onMetricsUpdate(metrics, transcriptData, translationMeta);
-
-        // Track transcription completed via analytics
-        if (this.analyticsService) {
-          this.analyticsService.trackTranscriptionCompleted(
-            metrics.wordCount,
-            metrics.wordsPerMinute,
-            !!wasTranslated
-          );
-
-          // Track translation usage if it occurred
-          if (wasTranslated && translationResult) {
-            this.analyticsService.track("translation_used", {
-              source_language: detectedLanguage,
-              target_language: this.settings.targetLanguage,
-              confidence: translationResult.confidence,
-              word_count_ratio: translationResult.wordCountRatio,
-            });
-          }
-
-          // Track feature usage
-          if (this.settings.useAI) {
-            this.analyticsService.track("feature_used", {
-              feature: "ai_refinement",
-            });
+            // Track feature usage
+            if (this.settings.useAI) {
+              this.analyticsService.track("feature_used", {
+                feature: "ai_refinement",
+              });
+            }
           }
         }
-      }
+      });
     } catch (error) {
       console.error("[STT] Error in post-processing:", error);
 
@@ -350,15 +352,19 @@ class STTService {
     );
   }
 
-  private insertTextWithRobot(text: string) {
+  private insertTextWithRobot(text: string, onComplete?: () => void) {
     try {
       // Small delay to ensure the target application is ready
       setTimeout(() => {
         robot.typeString(text);
         console.log("[STT] Text inserted via robotjs:", text);
+        // Fire callback when text insertion is complete
+        onComplete?.();
       }, 100);
     } catch (error) {
       console.error("[STT] Error inserting text with robotjs:", error);
+      // Still fire callback even if there's an error
+      onComplete?.();
     }
   }
 

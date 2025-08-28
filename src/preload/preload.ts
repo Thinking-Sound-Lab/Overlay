@@ -4,21 +4,11 @@ import { contextBridge, ipcRenderer } from "electron";
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld("electronAPI", {
   // Settings management
-  getSettings: () => ipcRenderer.invoke("get-settings"),
   updateSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke("update-settings", settings),
 
   // Statistics and metrics
-  getStatistics: () => ipcRenderer.invoke("get-statistics"),
   resetStatistics: () => ipcRenderer.invoke("reset-statistics"),
-  
-  // Transcripts
-  getTranscripts: () => ipcRenderer.invoke("get-transcripts"),
-
-  // Recording management
-  testMicrophone: () => ipcRenderer.invoke("test-microphone"),
-  startRecording: () => ipcRenderer.invoke("start-recording"),
-  stopRecording: () => ipcRenderer.invoke("stop-recording"),
 
   // External links
   openExternalLink: (url: string) =>
@@ -47,7 +37,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("audio-recorded", data),
   windowHoverEnter: () => ipcRenderer.invoke("window-hover-enter"),
   windowHoverLeave: () => ipcRenderer.invoke("window-hover-leave"),
-  
+
   // Direct window control methods
   expandRecordingWindow: () => ipcRenderer.invoke("expand-recording-window"),
   compactRecordingWindow: () => ipcRenderer.invoke("compact-recording-window"),
@@ -73,7 +63,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     close: () => ipcRenderer.invoke("window:close"),
     minimize: () => ipcRenderer.invoke("window:minimize"),
     maximize: () => ipcRenderer.invoke("window:maximize"),
-    getMaximizedState: () => ipcRenderer.invoke("window:get-maximized-state")
+    getMaximizedState: () => ipcRenderer.invoke("window:get-maximized-state"),
   },
 
   // Platform information
@@ -82,15 +72,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // External API methods (Supabase & Analytics)
   // Authentication
   auth: {
-    signIn: (email: string, password: string) => 
+    signIn: (email: string, password: string) =>
       ipcRenderer.invoke("auth:signIn", { email, password }),
-    signUp: (email: string, password: string, name?: string) => 
+    signUp: (email: string, password: string, name?: string) =>
       ipcRenderer.invoke("auth:signUp", { email, password, name }),
     signInWithGoogle: () => ipcRenderer.invoke("auth:signInWithGoogle"),
     signOut: () => ipcRenderer.invoke("auth:signOut"),
     getCurrentUser: () => ipcRenderer.invoke("auth:getCurrentUser"),
     getUserProfile: () => ipcRenderer.invoke("auth:getUserProfile"),
-    completeOnboarding: () => ipcRenderer.invoke("auth:completeOnboarding")
+    completeOnboarding: () => ipcRenderer.invoke("auth:completeOnboarding"),
   },
 
   // Account management
@@ -100,12 +90,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   db: {
     saveTranscript: (transcript: any) =>
       ipcRenderer.invoke("db:saveTranscript", transcript),
-    getTranscripts: (limit?: number) => 
+    getTranscripts: (limit?: number) =>
       ipcRenderer.invoke("db:getTranscripts", limit),
     saveUserSettings: (settings: any) =>
       ipcRenderer.invoke("db:saveUserSettings", settings),
     getUserSettings: () => ipcRenderer.invoke("db:getUserSettings"),
-    getUserStats: () => ipcRenderer.invoke("db:getUserStats")
+    getUserStats: () => ipcRenderer.invoke("db:getUserStats"),
   },
 
   // Analytics
@@ -114,17 +104,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("analytics:track", { event, properties }),
     identify: (userId: string, properties?: Record<string, any>) =>
       ipcRenderer.invoke("analytics:identify", { userId, properties }),
-    trackUserSignUp: (method?: 'email' | 'google' | 'github') =>
+    trackUserSignUp: (method?: "email" | "google" | "github") =>
       ipcRenderer.invoke("analytics:trackUserSignUp", method),
-    trackUserSignIn: (method?: 'email' | 'google' | 'github') =>
+    trackUserSignIn: (method?: "email" | "google" | "github") =>
       ipcRenderer.invoke("analytics:trackUserSignIn", method),
     trackUserSignOut: () => ipcRenderer.invoke("analytics:trackUserSignOut"),
-    trackRecordingStarted: () => ipcRenderer.invoke("analytics:trackRecordingStarted"),
+    trackRecordingStarted: () =>
+      ipcRenderer.invoke("analytics:trackRecordingStarted"),
     trackRecordingStopped: (duration: number) =>
       ipcRenderer.invoke("analytics:trackRecordingStopped", duration),
-    trackTranscriptionCompleted: (data: { wordCount: number; wpm: number; wasTranslated: boolean }) =>
-      ipcRenderer.invoke("analytics:trackTranscriptionCompleted", data),
-    trackAppLaunched: () => ipcRenderer.invoke("analytics:trackAppLaunched")
+    trackTranscriptionCompleted: (data: {
+      wordCount: number;
+      wpm: number;
+      wasTranslated: boolean;
+    }) => ipcRenderer.invoke("analytics:trackTranscriptionCompleted", data),
+    trackAppLaunched: () => ipcRenderer.invoke("analytics:trackAppLaunched"),
   },
 
   // Update event listeners
@@ -171,45 +165,46 @@ ipcRenderer.on("processing-stage", (_, stage) => {
 });
 
 ipcRenderer.on("auth-state-changed", (_, authState) => {
-  window.dispatchEvent(new CustomEvent("auth-state-changed", { detail: authState }));
+  console.log("Preload: Received auth-state-changed event:", authState);
+  window.dispatchEvent(
+    new CustomEvent("auth-state-changed", { detail: authState })
+  );
 });
 
-ipcRenderer.on("transcripts-loaded", (_, transcripts) => {
-  console.log("Preload: Received transcripts-loaded event:", transcripts?.length || 0);
-  window.dispatchEvent(new CustomEvent("transcripts-loaded", { detail: transcripts }));
-});
 
 ipcRenderer.on("activity-updated", (_, activity) => {
   console.log("Preload: Received activity-updated event:", activity);
-  window.dispatchEvent(new CustomEvent("activity-updated", { detail: activity }));
+  window.dispatchEvent(
+    new CustomEvent("activity-updated", { detail: activity })
+  );
 });
 
 ipcRenderer.on("transcript-saved-to-database", (_, transcript) => {
-  window.dispatchEvent(new CustomEvent("transcript-saved-to-database", { detail: transcript }));
+  window.dispatchEvent(
+    new CustomEvent("transcript-saved-to-database", { detail: transcript })
+  );
 });
 
 ipcRenderer.on("statistics-updated", (_, stats) => {
-  window.dispatchEvent(new CustomEvent("statistics-updated", { detail: stats }));
+  window.dispatchEvent(
+    new CustomEvent("statistics-updated", { detail: stats })
+  );
 });
 
 ipcRenderer.on("session-restoration-status", (_, status) => {
-  window.dispatchEvent(new CustomEvent("session-restoration-status", { detail: status }));
+  window.dispatchEvent(
+    new CustomEvent("session-restoration-status", { detail: status })
+  );
 });
 
 // Type definitions for TypeScript
 declare global {
   interface Window {
     electronAPI: {
-      getSettings: () => Promise<Record<string, unknown>>;
       updateSettings: (
         settings: Record<string, unknown>
       ) => Promise<{ success: boolean }>;
-      getStatistics: () => Promise<Record<string, unknown>>;
       resetStatistics: () => Promise<{ success: boolean }>;
-      getTranscripts: () => Promise<any[]>;
-      testMicrophone: () => Promise<{ success: boolean; error?: string }>;
-      startRecording: () => Promise<{ success: boolean; error?: string }>;
-      stopRecording: () => Promise<{ success: boolean; error?: string }>;
       audioRecorded: (audioData: {
         data: string;
         mimeType: string;
@@ -219,31 +214,41 @@ declare global {
       openExternalLink: (url: string) => Promise<void>;
       onStatisticsUpdate: (callback: (stats: any) => void) => () => void;
       onActivityUpdate: (callback: (activity: any) => void) => () => void;
-      
+
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
-      refreshAuthState: () => Promise<{ success: boolean; onboardingCompleted?: boolean; error?: string }>;
-      
+      refreshAuthState: () => Promise<{
+        success: boolean;
+        onboardingCompleted?: boolean;
+        error?: string;
+      }>;
+
       // Permission handlers
       checkAccessibilityPermission: () => Promise<boolean>;
       requestAccessibilityPermission: () => Promise<{ success: boolean }>;
-      
+
       // Auto-updater handlers
       checkForUpdates: () => Promise<{ success: boolean }>;
       downloadUpdate: () => Promise<{ success: boolean }>;
       installUpdate: () => Promise<{ success: boolean }>;
-      
+
       // Window control handlers for custom navigation bar
       windowControls: {
         close: () => Promise<{ success: boolean; error?: string }>;
         minimize: () => Promise<{ success: boolean; error?: string }>;
-        maximize: () => Promise<{ success: boolean; action?: string; error?: string }>;
+        maximize: () => Promise<{
+          success: boolean;
+          action?: string;
+          error?: string;
+        }>;
         getMaximizedState: () => Promise<{ isMaximized: boolean }>;
       };
-      
+
       // Update event listeners
       onUpdateAvailable: (callback: (info: any) => void) => () => void;
-      onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void;
+      onUpdateDownloadProgress: (
+        callback: (percent: number) => void
+      ) => () => void;
       onUpdateDownloaded: (callback: (info: any) => void) => () => void;
 
       // Platform information
@@ -252,7 +257,11 @@ declare global {
       // External API methods (Supabase & Analytics)
       auth: {
         signIn: (email: string, password: string) => Promise<any>;
-        signUp: (email: string, password: string, name?: string) => Promise<any>;
+        signUp: (
+          email: string,
+          password: string,
+          name?: string
+        ) => Promise<any>;
         signInWithGoogle: () => Promise<any>;
         signOut: () => Promise<any>;
         getCurrentUser: () => Promise<any>;
@@ -272,14 +281,28 @@ declare global {
       };
 
       analytics: {
-        track: (event: string, properties?: Record<string, any>) => Promise<any>;
-        identify: (userId: string, properties?: Record<string, any>) => Promise<any>;
-        trackUserSignUp: (method?: 'email' | 'google' | 'github') => Promise<any>;
-        trackUserSignIn: (method?: 'email' | 'google' | 'github') => Promise<any>;
+        track: (
+          event: string,
+          properties?: Record<string, any>
+        ) => Promise<any>;
+        identify: (
+          userId: string,
+          properties?: Record<string, any>
+        ) => Promise<any>;
+        trackUserSignUp: (
+          method?: "email" | "google" | "github"
+        ) => Promise<any>;
+        trackUserSignIn: (
+          method?: "email" | "google" | "github"
+        ) => Promise<any>;
         trackUserSignOut: () => Promise<any>;
         trackRecordingStarted: () => Promise<any>;
         trackRecordingStopped: (duration: number) => Promise<any>;
-        trackTranscriptionCompleted: (data: { wordCount: number; wpm: number; wasTranslated: boolean }) => Promise<any>;
+        trackTranscriptionCompleted: (data: {
+          wordCount: number;
+          wpm: number;
+          wasTranslated: boolean;
+        }) => Promise<any>;
         trackAppLaunched: () => Promise<any>;
       };
     };
