@@ -48,13 +48,13 @@ const config: ForgeConfig = {
 
     // macOS Code Signing & Notarization (commented out for unsigned testing builds)
     // For production: uncomment these lines and configure with your Apple Developer credentials
-    // osxSign: {
-    //   identity: process.env.APPLE_IDENTITY, // "Developer ID Application: Your Name (TEAM_ID)"
-    //   'hardened-runtime': true,
-    //   entitlements: 'entitlements.plist',
-    //   'entitlements-inherit': 'entitlements.plist',
-    //   'signature-flags': 'library'
-    // },
+    osxSign: {
+      //   identity: process.env.APPLE_IDENTITY, // "Developer ID Application: Your Name (TEAM_ID)"
+      //   hardenedRuntime: true,
+      //   entitlements: 'entitlements.plist',
+      //   'entitlements-inherit': 'entitlements.plist',
+      //   'signature-flags': 'library'
+    },
     // osxNotarize: {
     //   tool: 'notarytool',
     //   appleId: process.env.APPLE_ID,

@@ -5,43 +5,10 @@ import {
   Session,
 } from "@supabase/supabase-js";
 import Store from "electron-store";
+import { UserRecord, DatabaseTranscriptEntry, UserSettings } from "../../shared/types";
 
-// Database types (moved from renderer)
-export interface UserRecord {
-  id: string;
-  email: string;
-  name: string;
-  created_at: string;
-  subscription_tier: "free" | "pro";
-}
-
-export interface TranscriptEntry {
-  id: string;
-  user_id: string;
-  text: string;
-  original_text?: string;
-  language: string;
-  target_language?: string;
-  was_translated: boolean;
-  confidence?: number;
-  word_count: number;
-  wpm: number;
-  created_at: string;
-  metadata?: Record<string, any>;
-}
-
-export interface UserSettings {
-  user_id: string;
-  settings: {
-    outputMode?: "auto-insert" | "clipboard" | "both";
-    openaiApiKey?: string;
-    useAI?: boolean;
-    language?: string;
-    enableTranslation?: boolean;
-    targetLanguage?: string;
-  };
-  updated_at: string;
-}
+// Re-export for backward compatibility
+export type TranscriptEntry = DatabaseTranscriptEntry;
 
 export class SupabaseService {
   private supabase: SupabaseClient;
@@ -49,7 +16,10 @@ export class SupabaseService {
   private currentSession: Session | null = null;
   private sessionStore: Store;
   private onAuthStateChangeCallback?: (user: User | null) => void;
-  private onSessionRestorationStatusCallback?: (status: 'starting' | 'completed', user?: User | null) => void;
+  private onSessionRestorationStatusCallback?: (
+    status: "starting" | "completed",
+    user?: User | null
+  ) => void;
   private sessionRestorationPromise: Promise<void> | null = null;
   private isSessionRestored: boolean = false;
 
@@ -86,16 +56,18 @@ export class SupabaseService {
   private async restoreSession() {
     try {
       console.log("SupabaseService: Starting session restoration...");
-      
+
       // Notify that restoration is starting
       if (this.onSessionRestorationStatusCallback) {
-        this.onSessionRestorationStatusCallback('starting');
+        this.onSessionRestorationStatusCallback("starting");
       }
-      
+
       const storedSession = this.sessionStore.get("session") as Session | null;
-      
+
       if (storedSession) {
-        console.log("SupabaseService: Found stored session, attempting to restore...");
+        console.log(
+          "SupabaseService: Found stored session, attempting to restore..."
+        );
         const { data, error } = await this.supabase.auth.setSession({
           access_token: storedSession.access_token,
           refresh_token: storedSession.refresh_token,
@@ -111,7 +83,10 @@ export class SupabaseService {
           // Don't notify auth state change immediately - wait for profile data to be loaded in main process
         } else {
           // Clear invalid session
-          console.log("SupabaseService: Stored session is invalid, clearing...", error?.message);
+          console.log(
+            "SupabaseService: Stored session is invalid, clearing...",
+            error?.message
+          );
           this.clearStoredSession();
         }
       } else {
@@ -122,11 +97,14 @@ export class SupabaseService {
       this.clearStoredSession();
     } finally {
       this.isSessionRestored = true;
-      console.log("SupabaseService: Session restoration completed. User authenticated:", !!this.currentUser);
-      
+      console.log(
+        "SupabaseService: Session restoration completed. User authenticated:",
+        !!this.currentUser
+      );
+
       // Notify that restoration is complete (with or without user)
       if (this.onSessionRestorationStatusCallback) {
-        this.onSessionRestorationStatusCallback('completed', this.currentUser);
+        this.onSessionRestorationStatusCallback("completed", this.currentUser);
       }
     }
   }
@@ -144,18 +122,24 @@ export class SupabaseService {
       console.log("SupabaseService: Creating session with OAuth tokens...");
       const { data, error } = await this.supabase.auth.setSession({
         access_token: accessToken,
-        refresh_token: refreshToken
+        refresh_token: refreshToken,
       });
-      
+
       if (data.session && data.user && !error) {
-        console.log("SupabaseService: OAuth token session creation successful for user:", data.user.email);
+        console.log(
+          "SupabaseService: OAuth token session creation successful for user:",
+          data.user.email
+        );
         this.storeSession(data.session, data.user);
         this.notifyAuthStateChange(data.user);
       }
-      
+
       return { data, error };
     } catch (error) {
-      console.error("SupabaseService: Error creating session with tokens:", error);
+      console.error(
+        "SupabaseService: Error creating session with tokens:",
+        error
+      );
       return { data: null as any, error };
     }
   }
@@ -179,15 +163,22 @@ export class SupabaseService {
   }
 
   // Set session restoration status listener
-  setSessionRestorationStatusListener(callback: (status: 'starting' | 'completed', user?: User | null) => void) {
+  setSessionRestorationStatusListener(
+    callback: (status: "starting" | "completed", user?: User | null) => void
+  ) {
     this.onSessionRestorationStatusCallback = callback;
   }
 
   // Authentication methods
   async signUp(email: string, password: string, name?: string) {
     try {
-      console.log("SupabaseService: Signing up user with email:", email, "and name:", name);
-      
+      console.log(
+        "SupabaseService: Signing up user with email:",
+        email,
+        "and name:",
+        name
+      );
+
       const signupData: any = {
         email,
         password,
@@ -198,55 +189,75 @@ export class SupabaseService {
         signupData.options = {
           data: {
             full_name: name.trim(),
-            name: name.trim()
-          }
+            name: name.trim(),
+          },
         };
-        console.log("SupabaseService: Adding name to signup metadata:", JSON.stringify(signupData.options.data, null, 2));
+        console.log(
+          "SupabaseService: Adding name to signup metadata:",
+          JSON.stringify(signupData.options.data, null, 2)
+        );
       } else {
-        console.warn("SupabaseService: No name provided for signup, user profile will use email prefix");
+        console.warn(
+          "SupabaseService: No name provided for signup, user profile will use email prefix"
+        );
         // Even without a name, we should provide some metadata for the trigger
         signupData.options = {
           data: {
-            source: 'email_signup'
-          }
+            source: "email_signup",
+          },
         };
       }
-      
-      console.log("SupabaseService: Complete signup data:", JSON.stringify({
-        email: signupData.email,
-        options: signupData.options
-      }, null, 2));
+
+      console.log(
+        "SupabaseService: Complete signup data:",
+        JSON.stringify(
+          {
+            email: signupData.email,
+            options: signupData.options,
+          },
+          null,
+          2
+        )
+      );
 
       const { data, error } = await this.supabase.auth.signUp(signupData);
 
-      console.log("SupabaseService: Signup result - success:", !!data.user, "error:", error?.message);
+      console.log(
+        "SupabaseService: Signup result - success:",
+        !!data.user,
+        "error:",
+        error?.message
+      );
 
       if (data.session && data.user && !error) {
-        console.log("SupabaseService: User created with metadata:", data.user.user_metadata);
+        console.log(
+          "SupabaseService: User created with metadata:",
+          data.user.user_metadata
+        );
         this.storeSession(data.session, data.user);
         this.notifyAuthStateChange(data.user);
 
         // As a backup, ensure user profile is created
         // The database trigger should handle this, but let's be safe
-        setTimeout(async () => {
-          try {
-            console.log("SupabaseService: Checking if profile was created by trigger...");
-            const profileCheck = await this.supabase
-              .from("user_profiles")
-              .select("id")
-              .eq("id", data.user!.id)
-              .single();
-            
-            if (profileCheck.error && profileCheck.error.code === 'PGRST116') {
-              console.log("SupabaseService: Profile not created by trigger, creating manually");
-              await this.createUserProfile();
-            } else if (profileCheck.data) {
-              console.log("SupabaseService: Profile successfully created by trigger");
-            }
-          } catch (error) {
-            console.error("SupabaseService: Error checking profile creation:", error);
-          }
-        }, 2000); // Wait 2 seconds for trigger to fire
+        // setTimeout(async () => {
+        //   try {
+        //     console.log("SupabaseService: Checking if profile was created by trigger...");
+        //     const profileCheck = await this.supabase
+        //       .from("user_profiles")
+        //       .select("id")
+        //       .eq("id", data.user!.id)
+        //       .single();
+
+        //     if (profileCheck.error && profileCheck.error.code === 'PGRST116') {
+        //       console.log("SupabaseService: Profile not created by trigger, creating manually");
+        //       await this.createUserProfile();
+        //     } else if (profileCheck.data) {
+        //       console.log("SupabaseService: Profile successfully created by trigger");
+        //     }
+        //   } catch (error) {
+        //     console.error("SupabaseService: Error checking profile creation:", error);
+        //   }
+        // }, 2000); // Wait 2 seconds for trigger to fire
       }
 
       return { data, error };
@@ -258,23 +269,25 @@ export class SupabaseService {
 
   async signInWithGoogle() {
     try {
-      console.log("SupabaseService: Initiating Google OAuth with custom protocol...");
-      
+      console.log(
+        "SupabaseService: Initiating Google OAuth with custom protocol..."
+      );
+
       const { data, error } = await this.supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: "http://localhost:8080/oauth-success",
           queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
+            access_type: "offline",
+            prompt: "consent",
+          },
         },
       });
 
-      console.log("SupabaseService: Google OAuth initiation result:", { 
-        success: !!data.url, 
+      console.log("SupabaseService: Google OAuth initiation result:", {
+        success: !!data.url,
         hasError: !!error,
-        errorMessage: error?.message 
+        errorMessage: error?.message,
       });
 
       return { data, error };
@@ -325,7 +338,7 @@ export class SupabaseService {
     try {
       // First, delete user's data in the correct order
       const userId = this.currentUser.id;
-      
+
       // Delete user settings
       const { error: settingsError } = await this.supabase
         .from("user_settings")
@@ -358,16 +371,24 @@ export class SupabaseService {
 
       // Finally, delete the auth user (this requires RPC or admin privileges)
       // Since we can't delete auth users from client side, we'll call a custom function
-      const { error: deleteUserError } = await this.supabase.rpc('delete_user_account');
+      const { error: deleteUserError } = await this.supabase.rpc(
+        "delete_user_account"
+      );
 
       if (deleteUserError) {
         // If the RPC function doesn't exist, we'll just sign out
         // The user deletion will need to be handled by an admin or Edge Function
-        console.warn("Could not delete auth user, signing out instead:", deleteUserError);
+        console.warn(
+          "Could not delete auth user, signing out instead:",
+          deleteUserError
+        );
         await this.signOut();
-        return { 
-          data: { message: "Account data deleted, but auth record remains. Contact support for complete deletion." }, 
-          error: null 
+        return {
+          data: {
+            message:
+              "Account data deleted, but auth record remains. Contact support for complete deletion.",
+          },
+          error: null,
         };
       }
 
@@ -405,33 +426,51 @@ export class SupabaseService {
 
   async getUserProfile() {
     if (!this.currentUser) {
-      console.error("SupabaseService: getUserProfile called but no current user");
+      console.error(
+        "SupabaseService: getUserProfile called but no current user"
+      );
       return { data: null, error: new Error("User not authenticated") };
     }
 
     try {
-      console.log("SupabaseService: Getting user profile for user ID:", this.currentUser.id);
-      
+      console.log(
+        "SupabaseService: Getting user profile for user ID:",
+        this.currentUser.id
+      );
+
       const { data, error } = await this.supabase
         .from("user_profiles")
         .select("*")
         .eq("id", this.currentUser.id)
         .single();
 
-      console.log("SupabaseService: Profile query result - data:", data, "error:", error?.message);
+      console.log(
+        "SupabaseService: Profile query result - data:",
+        data,
+        "error:",
+        error?.message
+      );
 
-      if (error && error.code === 'PGRST116') {
+      if (error && error.code === "PGRST116") {
         // No rows found - profile doesn't exist, let's create it
-        console.log("SupabaseService: Profile not found, attempting to create one");
+        console.log(
+          "SupabaseService: Profile not found, attempting to create one"
+        );
         return await this.createUserProfile();
       }
 
       if (error) {
-        console.error("SupabaseService: Database error getting user profile:", error);
+        console.error(
+          "SupabaseService: Database error getting user profile:",
+          error
+        );
       }
 
       if (!data) {
-        console.warn("SupabaseService: No profile found in database for user:", this.currentUser.id);
+        console.warn(
+          "SupabaseService: No profile found in database for user:",
+          this.currentUser.id
+        );
       }
 
       return { data, error };
@@ -447,11 +486,14 @@ export class SupabaseService {
     }
 
     try {
-      console.log("SupabaseService: Creating user profile for user:", this.currentUser.id);
-      
+      console.log(
+        "SupabaseService: Creating user profile for user:",
+        this.currentUser.id
+      );
+
       // Extract name from user metadata or use email prefix with robust fallback
-      let userName = '';
-      
+      let userName = "";
+
       // Try full_name first
       if (this.currentUser.user_metadata?.full_name?.trim()) {
         userName = this.currentUser.user_metadata.full_name.trim();
@@ -462,16 +504,16 @@ export class SupabaseService {
       }
       // Then email prefix
       else if (this.currentUser.email) {
-        userName = this.currentUser.email.split('@')[0];
+        userName = this.currentUser.email.split("@")[0];
       }
       // Final fallback
       else {
-        userName = 'User';
+        userName = "User";
       }
-      
+
       // Ensure we never have an empty string
-      if (!userName || userName.trim() === '') {
-        userName = 'User';
+      if (!userName || userName.trim() === "") {
+        userName = "User";
       }
 
       console.log("SupabaseService: Creating profile with name:", userName);
@@ -481,13 +523,18 @@ export class SupabaseService {
         .insert({
           id: this.currentUser.id,
           name: userName,
-          subscription_tier: 'free',
-          onboarding_completed: false
+          subscription_tier: "free",
+          onboarding_completed: false,
         })
         .select()
         .single();
 
-      console.log("SupabaseService: Profile creation result - data:", data, "error:", error?.message);
+      console.log(
+        "SupabaseService: Profile creation result - data:",
+        data,
+        "error:",
+        error?.message
+      );
 
       return { data, error };
     } catch (error) {
@@ -604,77 +651,123 @@ export class SupabaseService {
       let streakDays = 0;
       try {
         if (!transcripts || transcripts.length === 0) {
-          console.log('SupabaseService: No transcripts found for streak calculation');
+          console.log(
+            "SupabaseService: No transcripts found for streak calculation"
+          );
           streakDays = 0;
         } else {
-          // Extract and validate dates
-          const dates = transcripts
+          // Extract and validate dates with proper normalization
+          const validDates = transcripts
             .map((t) => {
               if (!t.created_at) {
-                console.warn('SupabaseService: Transcript missing created_at field');
+                console.warn(
+                  "SupabaseService: Transcript missing created_at field"
+                );
                 return null;
               }
               try {
-                return new Date(t.created_at).toDateString();
+                // Normalize to start of day in local timezone for consistent comparison
+                const date = new Date(t.created_at);
+                const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                return normalizedDate;
               } catch (error) {
-                console.warn('SupabaseService: Invalid date in transcript:', t.created_at);
+                console.warn(
+                  "SupabaseService: Invalid date in transcript:",
+                  t.created_at
+                );
                 return null;
               }
             })
-            .filter((date): date is string => date !== null);
+            .filter((date): date is Date => date !== null);
 
-          if (dates.length === 0) {
-            console.warn('SupabaseService: No valid dates found in transcripts');
+          console.log(
+            `SupabaseService: Found ${validDates.length} valid transcript dates from ${transcripts.length} transcripts`
+          );
+
+          if (validDates.length === 0) {
+            console.warn(
+              "SupabaseService: No valid dates found in transcripts"
+            );
             streakDays = 0;
           } else {
-            const uniqueDates = Array.from(new Set(dates)).sort().reverse();
-            console.log(`SupabaseService: Calculating streak from ${uniqueDates.length} unique dates:`, uniqueDates);
+            // Get unique dates and sort chronologically (newest first)
+            const uniqueDateTimes = Array.from(
+              new Set(validDates.map(d => d.getTime()))
+            );
+            const uniqueDates = uniqueDateTimes
+              .map(time => new Date(time))
+              .sort((a, b) => b.getTime() - a.getTime()); // Newest first
 
-            const today = new Date().toDateString();
-            
+            const uniqueDateStrings = uniqueDates.map(d => d.toDateString());
+            console.log(
+              `SupabaseService: Calculating streak from ${uniqueDates.length} unique dates:`,
+              uniqueDateStrings
+            );
+
+            // Normalize today and yesterday for consistent comparison
+            const today = new Date();
+            const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const yesterdayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+
             // Check if there's activity today or yesterday to maintain streak
-            const hasActivityToday = uniqueDates.includes(today);
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const hasActivityYesterday = uniqueDates.includes(yesterday.toDateString());
-            
-            console.log('SupabaseService: Activity check - Today:', hasActivityToday, 'Yesterday:', hasActivityYesterday);
-            
+            const hasActivityToday = uniqueDates.some(date => date.getTime() === todayNormalized.getTime());
+            const hasActivityYesterday = uniqueDates.some(date => date.getTime() === yesterdayNormalized.getTime());
+
+            console.log(
+              "SupabaseService: Activity check -",
+              "Today (" + todayNormalized.toDateString() + "):", hasActivityToday,
+              "Yesterday (" + yesterdayNormalized.toDateString() + "):", hasActivityYesterday
+            );
+
             // Only count streak if there's recent activity (today or yesterday)
             if (hasActivityToday || hasActivityYesterday) {
-              let checkDate = new Date();
-              
+              let checkDate = todayNormalized;
+
               // If no activity today, start checking from yesterday
               if (!hasActivityToday && hasActivityYesterday) {
-                checkDate.setDate(checkDate.getDate() - 1);
+                checkDate = yesterdayNormalized;
               }
-              
+
+              console.log(
+                `SupabaseService: Starting streak count from ${checkDate.toDateString()}`
+              );
+
               // Count consecutive days
-              for (const dateStr of uniqueDates) {
-                const expectedDateStr = checkDate.toDateString();
-                if (dateStr === expectedDateStr) {
+              for (const activityDate of uniqueDates) {
+                console.log(
+                  `SupabaseService: Checking ${activityDate.toDateString()} against expected ${checkDate.toDateString()}`
+                );
+                
+                if (activityDate.getTime() === checkDate.getTime()) {
                   streakDays++;
-                  console.log(`SupabaseService: Streak day ${streakDays} - ${dateStr}`);
-                  // Move to previous day for next iteration (create new Date object to avoid mutation)
-                  checkDate = new Date(checkDate);
-                  checkDate.setDate(checkDate.getDate() - 1);
+                  console.log(
+                    `SupabaseService: Streak day ${streakDays} - ${activityDate.toDateString()}`
+                  );
+                  // Move to previous day for next iteration
+                  checkDate = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate() - 1);
                 } else {
                   // Gap found, stop counting
-                  console.log(`SupabaseService: Streak broken at ${dateStr}, expected ${expectedDateStr}`);
+                  console.log(
+                    `SupabaseService: Streak broken - found ${activityDate.toDateString()}, expected ${checkDate.toDateString()}`
+                  );
                   break;
                 }
               }
             } else {
-              console.log('SupabaseService: No recent activity, streak reset to 0');
+              console.log(
+                "SupabaseService: No recent activity (today or yesterday), streak reset to 0"
+              );
             }
           }
         }
       } catch (error) {
-        console.error('SupabaseService: Error calculating streak days:', error);
+        console.error("SupabaseService: Error calculating streak days:", error);
         streakDays = 0;
       }
 
-      console.log(`SupabaseService: Final streak calculation result: ${streakDays} days`);
+      console.log(
+        `SupabaseService: Final streak calculation result: ${streakDays} days`
+      );
 
       return {
         data: {
@@ -697,8 +790,11 @@ export class SupabaseService {
     }
 
     try {
-      console.log("SupabaseService: Marking onboarding as completed for user:", this.currentUser.id);
-      
+      console.log(
+        "SupabaseService: Marking onboarding as completed for user:",
+        this.currentUser.id
+      );
+
       const { data, error } = await this.supabase
         .from("user_profiles")
         .update({ onboarding_completed: true })
@@ -706,7 +802,12 @@ export class SupabaseService {
         .select()
         .single();
 
-      console.log("SupabaseService: Onboarding completion result - data:", data, "error:", error?.message);
+      console.log(
+        "SupabaseService: Onboarding completion result - data:",
+        data,
+        "error:",
+        error?.message
+      );
 
       return { data, error };
     } catch (error) {

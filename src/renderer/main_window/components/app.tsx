@@ -12,55 +12,30 @@ import { AppProvider, useAppContext } from "../contexts/AppContext";
 
 const AppContent: React.FC = () => {
   const { state, setActiveView } = useAppContext();
-  const {
-    isAuthenticated,
-    hasCompletedOnboarding,
-    isLoading,
-    isInitializing,
-    isUserDataLoading,
-    isSessionRestoring,
-    isAuthStateComplete,
-    user,
-  } = state;
-  
+  const { isAuthenticated, hasCompletedOnboarding, isLoading, user } = state;
+
   // Track onboarding step for NavigationBar
   const [onboardingStep, setOnboardingStep] = React.useState(1);
-  const [onboardingStepName, setOnboardingStepName] = React.useState("Authentication");
-  
+  const [onboardingStepName, setOnboardingStepName] =
+    React.useState("Authentication");
+
   const handleStepChange = (step: number, stepName: string) => {
     setOnboardingStep(step);
     setOnboardingStepName(stepName);
   };
 
-  // Determine if we should show loading screen
-  // Show loading until session restoration is complete AND auth state is complete
-  const shouldShowLoading = isLoading || isInitializing || isSessionRestoring || !isAuthStateComplete || isUserDataLoading;
+  // Simplified loading screen logic
+  const shouldShowLoading = isLoading;
 
-  // Determine loading message based on state
-  let loadingMessage = "Loading...";
-  if (isSessionRestoring) {
-    loadingMessage = "Restoring session...";
-  } else if (isInitializing) {
-    loadingMessage = "Initializing...";
-  } else if (!isAuthStateComplete) {
-    loadingMessage = "Checking authentication...";
-  } else if (isUserDataLoading) {
-    loadingMessage = "Loading user data...";
-  }
+  // Simple loading message
+  const loadingMessage = "Loading...";
 
   console.log("AppContent: Rendering with state:", {
     isLoading,
-    isInitializing,
-    isUserDataLoading,
-    isSessionRestoring,
-    isAuthStateComplete,
     shouldShowLoading,
     isAuthenticated,
     hasCompletedOnboarding,
     user: user?.email || null,
-    willShowOnboarding: !isAuthenticated || !hasCompletedOnboarding,
-    willShowMainApp:
-      isAuthenticated && hasCompletedOnboarding && !shouldShowLoading,
     loadingMessage,
     timestamp: new Date().toISOString(),
   });
@@ -94,7 +69,7 @@ const AppContent: React.FC = () => {
     });
     return (
       <div className="h-screen flex flex-col">
-        <NavigationBar 
+        <NavigationBar
           showAuthButtons={false}
           isOnboarding={true}
           currentStep={onboardingStep}
@@ -112,7 +87,7 @@ const AppContent: React.FC = () => {
   console.log("AppContent: Showing main app layout");
   return (
     <div className="h-screen flex flex-col">
-      <NavigationBar 
+      <NavigationBar
         showAuthButtons={true}
         activeView={state.activeView}
         onViewChange={setActiveView}
