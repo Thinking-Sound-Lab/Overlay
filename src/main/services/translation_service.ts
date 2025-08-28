@@ -59,6 +59,8 @@ export class TranslationService {
         targetLanguage
       );
 
+      console.log("Translation result:", translationResult);
+
       // Step 4: Validate and potentially correct the translation
       const validatedResult = await this.validateTranslation(
         text,

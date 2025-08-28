@@ -212,17 +212,17 @@ class STTService {
         }
       }
 
-      // Step 2: Grammar correction (using target language if translated)
+      // Step 2: Grammar correction (only if AI enhancement is enabled)
       const finalLanguage =
         this.settings.enableTranslation && this.settings.targetLanguage
           ? this.settings.targetLanguage
           : detectedLanguage;
 
-      const correctedText = await this.correctGrammar(
-        processedText,
-        finalLanguage
-      );
-      console.log("[STT] Corrected text:", correctedText);
+      const correctedText = this.settings.useAI
+        ? await this.correctGrammar(processedText, finalLanguage)
+        : processedText;
+      console.log("[STT] Final text:", correctedText, 
+        this.settings.useAI ? "(AI enhanced)" : "(no AI enhancement)");
 
       // Step 3: Calculate metrics first
       const metrics = calculateSpeechMetrics(
@@ -298,18 +298,31 @@ class STTService {
     try {
       const systemPrompt = this.getGrammerInstructions(language);
 
-      const prompt = `Your are a helpful assistant. Your task is to correct any spelling discrepancies in the transcribed text. Fix grammar and punctuation in the dictated text. ${systemPrompt}. Only add necessary punctuation such as periods, commas, and capitalization, and use only the context provided. DO NOT add any additional context or information or change the meaning of the text. 
-	 Convert any emoji references to actual emojis. 
+      const prompt = `You are a grammar and spelling corrector. Your ONLY task is to fix spelling errors, grammar mistakes, and add proper punctuation. ${systemPrompt}
 
-	 <rules>
-	 - Replace "fire emoji" with 🔥
-	 - Keep the original meaning of the text
-	 </rules>
+CRITICAL RULES:
+1. NEVER answer questions - if input is a question, output must remain a question
+2. NEVER provide information or explanations  
+3. NEVER change the meaning or intent of the text
+4. NEVER add context or additional information
+5. If input is a statement, output must remain a statement
+6. If input is a question, output must remain a question
 
-	  `;
+ALLOWED CORRECTIONS:
+- Fix spelling errors
+- Correct grammar mistakes  
+- Add necessary punctuation (periods, commas, capitalization)
+- Convert emoji references to actual emojis (e.g., "fire emoji" → 🔥)
+
+EXAMPLES:
+- Input: "how is weather today" → Output: "How is the weather today?"
+- Input: "weather is good" → Output: "The weather is good."
+- Input: "मौसम कैसा है" → Output: "मौसम कैसा है?" (fix punctuation, preserve question)
+
+Return ONLY the corrected text, nothing else.`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4.1",
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
