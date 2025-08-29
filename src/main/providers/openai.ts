@@ -8,7 +8,7 @@ import { config } from "../../../config/environment";
 import { STTClient } from "../../shared/types";
 
 export const openai = new OpenAI({
-  apiKey: config.openaiApiKey,
+  apiKey: process.env.OPENAI_API_KEY,
   timeout: 60000,
   maxRetries: 3,
 });

@@ -29,12 +29,26 @@ export interface DatabaseTranscriptEntry {
 export interface UserSettings {
   user_id: string;
   settings: {
-    outputMode?: "auto-insert" | "clipboard" | "both";
-    openaiApiKey?: string;
-    useAI?: boolean;
+    // General section
+    defaultMicrophone?: string;
     language?: string;
+    
+    // System section  
+    dictateSoundEffects?: boolean;
+    muteMusicWhileDictating?: boolean;
+    
+    // Personalization section
+    outputMode?: "auto-insert" | "clipboard" | "both";
+    useAI?: boolean;
     enableTranslation?: boolean;
     targetLanguage?: string;
+    enableContextFormatting?: boolean;
+    
+    // Data and Privacy section
+    privacyMode?: boolean;
+    
+    // Legacy field (to be removed later)
+    openaiApiKey?: string;
   };
   updated_at: string;
 }

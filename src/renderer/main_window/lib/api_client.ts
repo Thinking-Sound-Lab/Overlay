@@ -68,10 +68,10 @@ export class APIClient {
     }
   }
 
-  static async getCurrentUser(): Promise<IPCResponse> {
+  static async getCurrentUser(forceRefresh: boolean = false): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.getCurrentUser();
+      const response = await window.electronAPI.auth.getCurrentUser(forceRefresh);
       return response;
     } catch (error) {
       console.error("APIClient: Get current user error:", error);
@@ -98,6 +98,28 @@ export class APIClient {
     } catch (error) {
       console.error("APIClient: Complete onboarding error:", error);
       return { success: false, error: error instanceof Error ? error.message : "Failed to complete onboarding" };
+    }
+  }
+
+  static async resendEmailVerification(email: string): Promise<IPCResponse> {
+    try {
+      APIClient.checkElectronAPI();
+      const response = await window.electronAPI.auth.resendEmailVerification(email);
+      return response;
+    } catch (error) {
+      console.error("APIClient: Resend email verification error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to resend email verification" };
+    }
+  }
+
+  static async refreshSession(): Promise<IPCResponse> {
+    try {
+      APIClient.checkElectronAPI();
+      const response = await window.electronAPI.auth.refreshSession();
+      return response;
+    } catch (error) {
+      console.error("APIClient: Refresh session error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to refresh session" };
     }
   }
 
@@ -406,6 +428,8 @@ export const auth = {
   getUserProfile: APIClient.getUserProfile,
   signInWithGoogle: APIClient.signInWithGoogle,
   completeOnboarding: APIClient.completeOnboarding,
+  resendEmailVerification: APIClient.resendEmailVerification,
+  refreshSession: APIClient.refreshSession,
 };
 
 export const db = {

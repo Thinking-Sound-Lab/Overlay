@@ -12,7 +12,7 @@ import { LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
 
 interface AuthPageProps {
   onSignIn: (user: any) => void;
-  onSignUp: (user: any) => void;
+  onSignUp: (signUpData: { user?: any, email: string, needsVerification: boolean }) => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
@@ -76,21 +76,39 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
 
       if (!result.success) {
         setError(result.error || "Authentication failed");
-      } else if (result.data?.data?.user) {
+      } else {
         console.log(
-          `AuthPage: ${isLogin ? 'Sign in' : 'Sign up'} successful with user:`,
-          result.data.data.user
+          `AuthPage: ${isLogin ? 'Sign in' : 'Sign up'} response:`,
+          result
         );
         
         // Call the appropriate handler based on login/signup mode
         if (isLogin) {
-          onSignIn(result.data.data.user);
+          if (result.data?.data?.user) {
+            onSignIn(result.data.data.user);
+          } else {
+            console.error("AuthPage: Sign in successful but no user data");
+            setError("Sign in successful but user data not received");
+          }
         } else {
-          onSignUp(result.data.data.user);
+          // For sign up, check if session exists (email verified) or needs verification
+          const user = result.data?.data?.user;
+          const session = result.data?.data?.session;
+          
+          if (user && session) {
+            // User created and verified immediately (rare case)
+            console.log("AuthPage: User signed up and verified immediately");
+            onSignUp({ user, email, needsVerification: false });
+          } else if (user && !session) {
+            // User created but needs email verification
+            console.log("AuthPage: User signed up, email verification required");
+            onSignUp({ user: null, email, needsVerification: true });
+          } else {
+            console.error("AuthPage: Unexpected sign-up response structure:", result);
+            // Default to verification flow with provided email
+            onSignUp({ user: null, email, needsVerification: true });
+          }
         }
-      } else {
-        console.error("AuthPage: Auth response structure:", result);
-        setError("Authentication successful but user data not received");
       }
     } catch (err) {
       console.error("Auth error:", err);

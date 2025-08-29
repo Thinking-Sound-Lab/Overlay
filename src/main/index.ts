@@ -8,7 +8,6 @@ import {
   Tray,
   nativeImage,
   screen,
-  clipboard,
   shell,
 } from "electron";
 import Store from "electron-store";
@@ -47,20 +46,12 @@ const WINDOW_SIZES = {
   expanded: { width: 100, height: 40 },
 };
 
-let robot: any = null;
-try {
-  robot = require("robotjs");
-} catch {
-  console.warn("robotjs not available");
-}
-
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let recordingWindow: BrowserWindow | null = null;
 let isRecording = false;
 let isProcessing = false;
 let hoverTimeout: NodeJS.Timeout | null = null;
-let isAuthenticated = false;
 
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
@@ -155,10 +146,23 @@ let lastActivityDate: string | null = null;
 
 const store = new Store({
   defaults: {
+    // General section
+    defaultMicrophone: "default",
     language: "auto",
-    outputMode: "clipboard",
+    
+    // System section  
+    dictateSoundEffects: true,
+    muteMusicWhileDictating: true,
+    
+    // Personalization section
+    outputMode: "both",
+    useAI: true,
     enableTranslation: false,
     targetLanguage: "en",
+    enableContextFormatting: true,
+    
+    // Data and Privacy section
+    privacyMode: true,
   },
 });
 
@@ -373,6 +377,18 @@ const updateSTTSettings = async () => {
     useAI: store.get("useAI"),
   };
 
+  console.log("[Main] updateSTTSettings called with:", {
+    currentLanguage,
+    lastLanguageSetting,
+    currentSettings,
+    fromElectronStore: {
+      language: store.get("language"),
+      enableTranslation: store.get("enableTranslation"),
+      targetLanguage: store.get("targetLanguage"),
+      useAI: store.get("useAI"),
+    },
+  });
+
   // Check if language setting has changed
   if (lastLanguageSetting !== null && lastLanguageSetting !== currentLanguage) {
     console.log(
@@ -388,10 +404,12 @@ const updateSTTSettings = async () => {
   }
 
   // Update settings
+  console.log("[Main] Updating STT service settings:", currentSettings);
   sttService.updateSettings(currentSettings);
 
   // Update tracked language
   lastLanguageSetting = currentLanguage;
+  console.log("[Main] Updated lastLanguageSetting to:", lastLanguageSetting);
 };
 
 // ----------- Window & Tray Functions -----------
@@ -699,7 +717,7 @@ const stopRecording = async () => {
     console.error("[Main] Error finalizing dictation:", error);
     processingStage = "Error occurred";
     recordingWindow?.webContents.send("processing-stage", processingStage);
-    
+
     // Ensure audio is restored even in error cases
     if (systemAudioManager) {
       await systemAudioManager.restoreSystemAudio();
@@ -906,7 +924,6 @@ const handleOAuthCallback = async (url: string) => {
           }
 
           // Update main process state
-          isAuthenticated = true;
           AuthUtils.setAuthenticationState(true);
 
           // Note: Don't send auth-state-changed event here anymore
@@ -1134,8 +1151,41 @@ ipcMain.handle(
 );
 
 ipcMain.handle("update-settings", async (event, settings) => {
+  console.log("[Main] Settings update requested:", {
+    settingsKeys: Object.keys(settings),
+    useAI: settings.useAI,
+    language: settings.language,
+    enableTranslation: settings.enableTranslation,
+    targetLanguage: settings.targetLanguage,
+    outputMode: settings.outputMode,
+    hasContextFormatting: !!settings.contextFormatting,
+  });
+
+  // Log current electron store values before update
+  console.log("[Main] Current electron store values:", {
+    useAI: store.get("useAI"),
+    language: store.get("language"),
+    enableTranslation: store.get("enableTranslation"),
+    targetLanguage: store.get("targetLanguage"),
+    outputMode: store.get("outputMode"),
+  });
+
   Object.entries(settings).forEach(([key, value]) => {
-    if (key !== "hotkey") store.set(key, value);
+    if (key !== "hotkey") {
+      console.log(
+        `[Main] Setting electron store: ${key} = ${JSON.stringify(value)}`
+      );
+      store.set(key, value);
+    }
+  });
+
+  // Log electron store values after update
+  console.log("[Main] Updated electron store values:", {
+    useAI: store.get("useAI"),
+    language: store.get("language"),
+    enableTranslation: store.get("enableTranslation"),
+    targetLanguage: store.get("targetLanguage"),
+    outputMode: store.get("outputMode"),
   });
 
   // Update STT service with new settings
@@ -1186,13 +1236,25 @@ const clearUserCaches = () => {
   store.clear();
 
   // Set default values back for app settings only
+  // General section
+  store.set("defaultMicrophone", "default");
   store.set("language", "auto");
-  store.set("outputMode", "clipboard");
+  
+  // System section  
+  store.set("dictateSoundEffects", true);
+  store.set("muteMusicWhileDictating", true);
+  
+  // Personalization section
+  store.set("outputMode", "both");
+  store.set("useAI", true);
   store.set("enableTranslation", false);
   store.set("targetLanguage", "en");
+  store.set("enableContextFormatting", true);
+  
+  // Data and Privacy section
+  store.set("privacyMode", true);
 
   // Reset authentication state
-  isAuthenticated = false;
   AuthUtils.setAuthenticationState(false);
 
   // Notify renderer about cleared data
@@ -1269,7 +1331,6 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
     return { success: false, error: "No user data provided" };
   }
 
-  isAuthenticated = true;
   AuthUtils.setAuthenticationState(true);
   console.log("[Main] User authenticated:", user.email);
 

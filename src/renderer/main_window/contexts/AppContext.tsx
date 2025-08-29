@@ -7,6 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import type { ViewType } from "../types";
+import type { ContextFormattingSettings } from "../../../shared/types";
 import { auth, db, analytics } from "../lib/api_client";
 
 interface User {
@@ -43,11 +44,23 @@ interface TranscriptEntry {
 }
 
 interface Settings {
+  // General section
+  defaultMicrophone: string;
+  language: string;
+  
+  // System section  
+  dictateSoundEffects: boolean;
+  muteMusicWhileDictating: boolean;
+  
+  // Personalization section
   outputMode: "auto-insert" | "clipboard" | "both";
   useAI: boolean;
-  language: string;
   enableTranslation: boolean;
   targetLanguage: string;
+  enableContextFormatting: boolean;
+  
+  // Data and Privacy section
+  privacyMode: boolean;
 }
 
 interface AppState {
@@ -106,11 +119,23 @@ const initialState: AppState = {
   },
   transcripts: [],
   settings: {
+    // General section
+    defaultMicrophone: "default",
+    language: "auto",
+    
+    // System section  
+    dictateSoundEffects: true,
+    muteMusicWhileDictating: true,
+    
+    // Personalization section
     outputMode: "both",
     useAI: true,
-    language: "auto",
     enableTranslation: false,
     targetLanguage: "en",
+    enableContextFormatting: true,
+    
+    // Data and Privacy section
+    privacyMode: true,
   },
   isRecording: false,
   isProcessing: false,
@@ -363,6 +388,23 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
           "AppContext: Transcripts updated from auth state:",
           recentTranscripts.length
         );
+      }
+
+      // Update settings if provided (CRITICAL FIX: This was missing!)
+      if (settings) {
+        dispatch({ type: "SET_SETTINGS", payload: settings });
+        console.log("AppContext: Settings updated from auth state:", {
+          defaultMicrophone: settings.defaultMicrophone,
+          language: settings.language,
+          dictateSoundEffects: settings.dictateSoundEffects,
+          muteMusicWhileDictating: settings.muteMusicWhileDictating,
+          outputMode: settings.outputMode,
+          useAI: settings.useAI,
+          enableTranslation: settings.enableTranslation,
+          targetLanguage: settings.targetLanguage,
+          enableContextFormatting: settings.enableContextFormatting,
+          privacyMode: settings.privacyMode,
+        });
       }
 
       // Handle authentication error

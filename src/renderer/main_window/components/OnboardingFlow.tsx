@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { AuthPage } from "./AuthPage";
+import { EmailVerificationPage } from "./EmailVerificationPage";
 import { PermissionsPage } from "./PermissionsPage";
 import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
 import { analytics, auth } from "../lib/api_client";
 import { Button } from "./ui/button";
 
-type OnboardingStep = "auth" | "permissions" | "guide";
+type OnboardingStep = "auth" | "email-verification" | "permissions" | "guide";
 
 interface OnboardingFlowProps {
   onStepChange?: (step: number, stepName: string) => void;
@@ -20,43 +21,46 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const { user, isAuthenticated, hasCompletedOnboarding } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
   const [isLoading, setIsLoading] = useState(true);
+  const [signUpEmail, setSignUpEmail] = useState<string>("");
 
   // Determine which flow to show based on authentication state
-  //   useEffect(() => {
-  //     console.log("OnboardingFlow: Determining flow based on auth state:", {
-  //       isAuthenticated,
-  //       hasUser: !!user,
-  //       userEmail: user?.email,
-  //       hasCompletedOnboarding,
-  //       timestamp: new Date().toISOString(),
-  //     });
+  useEffect(() => {
+    console.log("OnboardingFlow: Determining flow based on auth state:", {
+      isAuthenticated,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasCompletedOnboarding,
+      timestamp: new Date().toISOString(),
+    });
 
-  //     if (isAuthenticated && user && hasCompletedOnboarding) {
-  //       console.log(
-  //         "OnboardingFlow: User completed onboarding, navigating to home"
-  //       );
-  //       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
-  //     } else if (isAuthenticated && user) {
-  //       console.log("OnboardingFlow: User authenticated, showing permissions");
-  //       setCurrentStep("permissions");
-  //     } else {
-  //       console.log("OnboardingFlow: User not authenticated, showing auth");
-  //       setCurrentStep("auth");
-  //     }
-  //     setIsLoading(false);
-  //   }, [isAuthenticated, user, hasCompletedOnboarding, dispatch]);
+    if (isAuthenticated && user && hasCompletedOnboarding) {
+      console.log(
+        "OnboardingFlow: User completed onboarding, navigating to home"
+      );
+      dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
+    } else if (isAuthenticated && user && !hasCompletedOnboarding) {
+      console.log("OnboardingFlow: User authenticated but onboarding incomplete, showing permissions");
+      setCurrentStep("permissions");
+    } else {
+      console.log("OnboardingFlow: User not authenticated, showing auth");
+      setCurrentStep("auth");
+    }
+    setIsLoading(false);
+  }, [isAuthenticated, user, hasCompletedOnboarding, dispatch]);
 
   // Notify parent about step changes
   useEffect(() => {
     if (onStepChange) {
       const stepNumber =
-        ["auth", "permissions", "guide"].indexOf(currentStep) + 1;
+        ["auth", "email-verification", "permissions", "guide"].indexOf(currentStep) + 1;
       const stepName =
         currentStep === "auth"
           ? "Authentication"
-          : currentStep === "permissions"
-            ? "Permissions"
-            : "Quick Guide";
+          : currentStep === "email-verification"
+            ? "Email Verification"
+            : currentStep === "permissions"
+              ? "Permissions"
+              : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -84,32 +88,53 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
-  const handleSignUp = async (authenticatedUser: any) => {
+  const handleSignUp = async (signUpData: { user?: any, email: string, needsVerification: boolean }) => {
     console.log(
-      "OnboardingFlow: Sign up success with user:",
-      authenticatedUser
+      "OnboardingFlow: Sign up response:",
+      {
+        hasUser: !!signUpData.user,
+        email: signUpData.email,
+        needsVerification: signUpData.needsVerification
+      }
     );
 
-    // Update app state
-    // setUser(authenticatedUser);
-    // setAuthenticated(true);
+    // Store email for verification step
+    setSignUpEmail(signUpData.email);
+
+    if (signUpData.needsVerification) {
+      console.log("OnboardingFlow: Email verification required, showing verification page");
+      setCurrentStep("email-verification");
+    } else if (signUpData.user) {
+      console.log("OnboardingFlow: User verified during sign-up, proceeding to permissions");
+      
+      try {
+        // Track successful sign up
+        await analytics.identify(signUpData.user.id, {
+          email: signUpData.user.email,
+        });
+        await analytics.track("user_signed_up");
+      } catch (error) {
+        console.error("OnboardingFlow: Error tracking sign up:", error);
+      }
+      
+      setCurrentStep("permissions");
+    } else {
+      console.error("OnboardingFlow: Unexpected sign-up state");
+      setCurrentStep("email-verification"); // Default to verification step
+    }
+  };
+
+  const handleEmailVerification = async () => {
+    console.log("OnboardingFlow: Email verified, navigating to permissions");
+    setCurrentStep("permissions");
 
     try {
-      // Track successful sign up
-      await analytics.identify(authenticatedUser.id, {
-        email: authenticatedUser.email,
-      });
-      await analytics.track("user_signed_up");
-
-      // For new users, always go to permissions (onboardingCompleted is false by default)
-      console.log(
-        "OnboardingFlow: New user signed up, navigating to permissions"
-      );
-      setCurrentStep("permissions");
+      await analytics.track("email_verified");
     } catch (error) {
-      console.error("OnboardingFlow: Error tracking sign up:", error);
-      // Still proceed to permissions even if analytics fails
-      setCurrentStep("permissions");
+      console.error(
+        "OnboardingFlow: Error tracking email verification:",
+        error
+      );
     }
   };
 
@@ -161,22 +186,55 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
-  //   if (isLoading) {
-  //     return (
-  //       <div className="h-screen bg-gray-50 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-  //           <p className="text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     );
-  //   }
+  useEffect(() => {
+    console.log("OnboardingFlow: Current step changed to:", currentStep, {
+      isAuthenticated,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasCompletedOnboarding,
+      timestamp: new Date().toISOString(),
+    });
+  }, [currentStep, isAuthenticated, user, hasCompletedOnboarding]);
+
+  useEffect(() => {
+    if (onStepChange) {
+      const stepNumber =
+        ["auth", "email-verification", "permissions", "guide"].indexOf(currentStep) + 1;
+      const stepName =
+        currentStep === "auth"
+          ? "Authentication"
+          : currentStep === "email-verification"
+            ? "Email Verification"
+            : currentStep === "permissions"
+              ? "Permissions"
+              : "Quick Guide";
+      onStepChange(stepNumber, stepName);
+    }
+  }, [currentStep, onStepChange]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col">
       <div className="flex-1 overflow-y-auto">
         {currentStep === "auth" && (
           <AuthPage onSignIn={handleSignIn} onSignUp={handleSignUp} />
+        )}
+
+        {currentStep === "email-verification" && (
+          <EmailVerificationPage 
+            userEmail={signUpEmail} 
+            onVerificationComplete={handleEmailVerification} 
+          />
         )}
 
         {currentStep === "permissions" && (

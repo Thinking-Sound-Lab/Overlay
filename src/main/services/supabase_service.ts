@@ -49,8 +49,44 @@ export class SupabaseService {
       },
     });
 
+    // Set up real-time auth state listener
+    this.setupAuthStateListener();
+
     // Try to restore session on startup and track completion
     this.sessionRestorationPromise = this.restoreSession();
+  }
+
+  private setupAuthStateListener() {
+    console.log("SupabaseService: Setting up real-time auth state listener");
+    
+    this.supabase.auth.onAuthStateChange((event, session) => {
+      console.log("SupabaseService: Auth state changed:", {
+        event,
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        userEmail: session?.user?.email,
+      });
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        console.log("SupabaseService: User signed in via auth state change");
+        this.currentSession = session;
+        this.currentUser = session.user;
+        this.storeSession(session, session.user);
+        this.notifyAuthStateChange(session.user);
+      } else if (event === 'SIGNED_OUT') {
+        console.log("SupabaseService: User signed out via auth state change");
+        this.currentSession = null;
+        this.currentUser = null;
+        this.clearStoredSession();
+        this.notifyAuthStateChange(null);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        console.log("SupabaseService: Token refreshed, updating session");
+        this.currentSession = session;
+        this.currentUser = session.user;
+        this.storeSession(session, session.user);
+        // Don't notify auth state change for token refresh, just update cache
+      }
+    });
   }
 
   private async restoreSession() {
@@ -267,6 +303,53 @@ export class SupabaseService {
     }
   }
 
+  async resendEmailVerification(email: string) {
+    try {
+      console.log("SupabaseService: Resending email verification for:", email);
+
+      const { data, error } = await this.supabase.auth.resend({
+        type: 'signup',
+        email: email
+      });
+
+      if (error) {
+        console.error("SupabaseService: Resend verification error:", error);
+      } else {
+        console.log("SupabaseService: Verification email resent successfully");
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error("SupabaseService: Resend verification error:", error);
+      return { data: null as any, error };
+    }
+  }
+
+  async refreshSession() {
+    try {
+      console.log("SupabaseService: Manually refreshing session...");
+
+      const { data, error } = await this.supabase.auth.refreshSession();
+      
+      if (data.session && data.user && !error) {
+        console.log("SupabaseService: Session refreshed successfully for user:", data.user.email);
+        this.currentSession = data.session;
+        this.currentUser = data.user;
+        this.storeSession(data.session, data.user);
+        
+        // Notify auth state change with refreshed user data
+        this.notifyAuthStateChange(data.user);
+      } else {
+        console.log("SupabaseService: Session refresh failed:", error?.message);
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error("SupabaseService: Session refresh error:", error);
+      return { data: null as any, error };
+    }
+  }
+
   async signInWithGoogle() {
     try {
       console.log(
@@ -404,6 +487,15 @@ export class SupabaseService {
   }
 
   getCurrentUser() {
+    return this.currentUser;
+  }
+
+  async getCurrentUserWithRefresh() {
+    console.log("SupabaseService: Refreshing session to get current user...");
+    const result = await this.refreshSession();
+    if (result.data?.user) {
+      return result.data.user;
+    }
     return this.currentUser;
   }
 
@@ -589,6 +681,12 @@ export class SupabaseService {
     }
 
     try {
+      console.log("SupabaseService: Saving user settings:", {
+        userId: this.currentUser.id,
+        settingsKeys: Object.keys(settings),
+        settings
+      });
+
       const { data, error } = await this.supabase
         .from("user_settings")
         .upsert([
@@ -600,6 +698,12 @@ export class SupabaseService {
         ])
         .select()
         .single();
+
+      if (error) {
+        console.error("SupabaseService: Save user settings error:", error);
+      } else {
+        console.log("SupabaseService: Settings saved successfully:", data);
+      }
 
       return { data, error };
     } catch (error) {
@@ -614,15 +718,80 @@ export class SupabaseService {
     }
 
     try {
+      console.log("SupabaseService: Getting user settings for:", this.currentUser.id);
+      
       const { data, error } = await this.supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", this.currentUser.id)
         .single();
 
+      if (error) {
+        console.log("SupabaseService: Get user settings error:", error?.message);
+      } else {
+        console.log("SupabaseService: Settings retrieved successfully:", {
+          hasData: !!data,
+          settingsKeys: data?.settings ? Object.keys(data.settings) : []
+        });
+      }
+
       return { data, error };
     } catch (error) {
       console.error("SupabaseService: Get user settings error:", error);
+      return { data: null as any, error };
+    }
+  }
+
+  async createInitialUserSettings() {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log("SupabaseService: Creating initial user settings for:", this.currentUser.id);
+
+      // Default settings based on electron store defaults
+      const defaultSettings = {
+        // General section
+        defaultMicrophone: "default",
+        language: "auto",
+        
+        // System section  
+        dictateSoundEffects: true,
+        muteMusicWhileDictating: true,
+        
+        // Personalization section
+        outputMode: "both" as const,
+        useAI: true,
+        enableTranslation: false,
+        targetLanguage: "en",
+        enableContextFormatting: true,
+        
+        // Data and Privacy section
+        privacyMode: true,
+      };
+
+      const { data, error } = await this.supabase
+        .from("user_settings")
+        .insert([
+          {
+            user_id: this.currentUser.id,
+            settings: defaultSettings,
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("SupabaseService: Create initial settings error:", error);
+      } else {
+        console.log("SupabaseService: Initial settings created successfully:", data);
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error("SupabaseService: Create initial settings error:", error);
       return { data: null as any, error };
     }
   }
@@ -795,6 +964,7 @@ export class SupabaseService {
         this.currentUser.id
       );
 
+      // First, mark onboarding as completed
       const { data, error } = await this.supabase
         .from("user_profiles")
         .update({ onboarding_completed: true })
@@ -802,12 +972,29 @@ export class SupabaseService {
         .select()
         .single();
 
+      if (error) {
+        console.error("SupabaseService: Failed to mark onboarding complete:", error);
+        return { data, error };
+      }
+
       console.log(
         "SupabaseService: Onboarding completion result - data:",
         data,
         "error:",
         error?.message
       );
+
+      // Create initial user settings
+      console.log("SupabaseService: Creating initial settings for completed onboarding");
+      const settingsResult = await this.createInitialUserSettings();
+      
+      if (settingsResult.error) {
+        console.warn("SupabaseService: Failed to create initial settings:", settingsResult.error?.message);
+        // Don't fail the onboarding completion if settings creation fails
+        // The settings will be created later when first accessed
+      } else {
+        console.log("SupabaseService: Initial settings created successfully");
+      }
 
       return { data, error };
     } catch (error) {

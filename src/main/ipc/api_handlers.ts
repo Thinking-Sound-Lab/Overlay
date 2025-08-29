@@ -41,8 +41,16 @@ export class APIHandlers {
       "auth:completeOnboarding",
       this.handleCompleteOnboarding.bind(this)
     );
+    ipcMain.handle(
+      "auth:resendEmailVerification",
+      this.handleResendEmailVerification.bind(this)
+    );
+    ipcMain.handle(
+      "auth:refreshSession",
+      this.handleRefreshSession.bind(this)
+    );
     console.log(
-      "APIHandlers: Registered auth:deleteAccount and auth:completeOnboarding handlers"
+      "APIHandlers: Registered auth handlers including deleteAccount, completeOnboarding, resendEmailVerification, and refreshSession"
     );
 
     // Database handlers
@@ -215,14 +223,16 @@ export class APIHandlers {
     }
   }
 
-  private async handleGetCurrentUser(event: any): Promise<IPCResponse> {
+  private async handleGetCurrentUser(event: any, forceRefresh: boolean = false): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      const user = this.apiManager.supabase.getCurrentUser();
-      return this.createResponse({ user });
+      const user = forceRefresh 
+        ? await this.apiManager.supabase.getCurrentUserWithRefresh()
+        : this.apiManager.supabase.getCurrentUser();
+      return this.createResponse({ data: { user } });
     } catch (error) {
       return this.createResponse(null, error);
     }
@@ -261,6 +271,35 @@ export class APIHandlers {
 
     try {
       const result = await this.apiManager.supabase.completeOnboarding();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleResendEmailVerification(
+    event: any,
+    email: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.apiManager.supabase.resendEmailVerification(email);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRefreshSession(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.apiManager.supabase.refreshSession();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -493,6 +532,8 @@ export class APIHandlers {
     ipcMain.removeAllListeners("auth:deleteAccount");
     ipcMain.removeAllListeners("auth:getUserProfile");
     ipcMain.removeAllListeners("auth:completeOnboarding");
+    ipcMain.removeAllListeners("auth:resendEmailVerification");
+    ipcMain.removeAllListeners("auth:refreshSession");
     ipcMain.removeAllListeners("db:saveTranscript");
     ipcMain.removeAllListeners("db:getTranscripts");
     ipcMain.removeAllListeners("db:saveUserSettings");

@@ -78,9 +78,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("auth:signUp", { email, password, name }),
     signInWithGoogle: () => ipcRenderer.invoke("auth:signInWithGoogle"),
     signOut: () => ipcRenderer.invoke("auth:signOut"),
-    getCurrentUser: () => ipcRenderer.invoke("auth:getCurrentUser"),
+    getCurrentUser: (forceRefresh?: boolean) => ipcRenderer.invoke("auth:getCurrentUser", forceRefresh),
     getUserProfile: () => ipcRenderer.invoke("auth:getUserProfile"),
     completeOnboarding: () => ipcRenderer.invoke("auth:completeOnboarding"),
+    resendEmailVerification: (email: string) => ipcRenderer.invoke("auth:resendEmailVerification", email),
+    refreshSession: () => ipcRenderer.invoke("auth:refreshSession"),
   },
 
   // Account management
@@ -215,6 +217,10 @@ declare global {
       onStatisticsUpdate: (callback: (stats: any) => void) => () => void;
       onActivityUpdate: (callback: (activity: any) => void) => () => void;
 
+      // Direct window control methods
+      expandRecordingWindow: () => Promise<{ success: boolean }>;
+      compactRecordingWindow: () => Promise<{ success: boolean }>;
+
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
       refreshAuthState: () => Promise<{
@@ -264,9 +270,11 @@ declare global {
         ) => Promise<any>;
         signInWithGoogle: () => Promise<any>;
         signOut: () => Promise<any>;
-        getCurrentUser: () => Promise<any>;
+        getCurrentUser: (forceRefresh?: boolean) => Promise<any>;
         getUserProfile: () => Promise<any>;
         completeOnboarding: () => Promise<any>;
+        resendEmailVerification: (email: string) => Promise<any>;
+        refreshSession: () => Promise<any>;
       };
 
       // Account management
