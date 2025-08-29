@@ -46,10 +46,10 @@ jobs:
         env:
           CI: true
           NODE_ENV: production
-          REACT_APP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          REACT_APP_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          REACT_APP_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.REACT_APP_POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
 

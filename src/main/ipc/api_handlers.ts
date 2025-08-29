@@ -1,9 +1,9 @@
 import { ipcMain } from "electron";
 import { ExternalAPIManager } from "../services/external_api_manager";
-import { IPCResponse } from "../utils/ipc-handler";
+import { IPCResponse } from "../../shared/types";
 
 // Re-export IPCResponse type for compatibility
-export { IPCResponse } from "../utils/ipc-handler";
+// export { IPCResponse } from "../utils/ipc-handler";
 
 export class APIHandlers {
   private apiManager: ExternalAPIManager;
@@ -17,10 +17,16 @@ export class APIHandlers {
     console.log("APIHandlers: Setting up IPC handlers...");
 
     // Authentication handlers
-    ipcMain.handle("auth:signInWithMagicLink", this.handleSignInWithMagicLink.bind(this));
+    ipcMain.handle(
+      "auth:signInWithMagicLink",
+      this.handleSignInWithMagicLink.bind(this)
+    );
     console.log("APIHandlers: Registered auth:signInWithMagicLink handler");
 
-    ipcMain.handle("auth:signUpWithMagicLink", this.handleSignUpWithMagicLink.bind(this));
+    ipcMain.handle(
+      "auth:signUpWithMagicLink",
+      this.handleSignUpWithMagicLink.bind(this)
+    );
     console.log("APIHandlers: Registered auth:signUpWithMagicLink handler");
 
     ipcMain.handle(
@@ -123,10 +129,7 @@ export class APIHandlers {
 
     try {
       if (!credentials?.email) {
-        return this.createResponse(
-          null,
-          new Error("Email is required")
-        );
+        return this.createResponse(null, new Error("Email is required"));
       }
 
       const result = await this.apiManager.supabase.signInWithMagicLink(
@@ -264,8 +267,6 @@ export class APIHandlers {
       return this.createResponse(null, error);
     }
   }
-
-
 
   // Database handlers
   private async handleSaveTranscript(

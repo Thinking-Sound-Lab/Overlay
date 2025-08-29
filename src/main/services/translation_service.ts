@@ -92,7 +92,7 @@ export class TranslationService {
     }
   }
 
-  private async enhancedLanguageDetection(text: string): Promise<string> {
+  async enhancedLanguageDetection(text: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",

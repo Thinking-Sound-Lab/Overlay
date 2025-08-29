@@ -4,7 +4,12 @@ import { STTClient } from "../providers/openai";
 import * as robot from "robotjs";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import TranslationService from "./translation_service";
-import { TranslationResult, ApplicationContextType, ContextFormattingSettings, FormattingResult } from "../../shared/types";
+import {
+  TranslationResult,
+  ApplicationContextType,
+  ContextFormattingSettings,
+  FormattingResult,
+} from "../../shared/types";
 import { AnalyticsService } from "./analytics_service";
 import { ApplicationDetector } from "./application_detector";
 import { ContextFormatter } from "./context_formatter";
@@ -42,12 +47,12 @@ class STTService {
     this.analyticsService = analyticsService;
     this.applicationDetector = ApplicationDetector.getInstance();
     this.contextFormatter = ContextFormatter.getInstance();
-    
+
     // Initialize default context formatting settings
     this.contextFormattingSettings = {
       enableContextFormatting: true,
       contextSettings: {},
-      customAppMappings: {}
+      customAppMappings: {},
     };
   }
 
@@ -57,30 +62,41 @@ class STTService {
       enableTranslation: settings.enableTranslation,
       targetLanguage: settings.targetLanguage,
     });
-    
+
     // Update context formatting settings if provided
     if (settings.contextFormatting) {
       this.contextFormattingSettings = {
         ...this.contextFormattingSettings,
-        ...settings.contextFormatting
+        ...settings.contextFormatting,
       };
-      console.log("[STT] Context formatting settings updated:", this.contextFormattingSettings);
+      console.log(
+        "[STT] Context formatting settings updated:",
+        this.contextFormattingSettings
+      );
     }
   }
 
-  updateContextFormattingSettings(settings: Partial<ContextFormattingSettings>) {
+  updateContextFormattingSettings(
+    settings: Partial<ContextFormattingSettings>
+  ) {
     this.contextFormattingSettings = {
       ...this.contextFormattingSettings,
-      ...settings
+      ...settings,
     };
-    
+
     // Update the context formatter options
     this.contextFormatter.updateOptions({
-      enableContextFormatting: this.contextFormattingSettings.enableContextFormatting,
-      userOverrides: new Map(Object.entries(this.contextFormattingSettings.customAppMappings))
+      enableContextFormatting:
+        this.contextFormattingSettings.enableContextFormatting,
+      userOverrides: new Map(
+        Object.entries(this.contextFormattingSettings.customAppMappings)
+      ),
     });
-    
-    console.log("[STT] Context formatting settings updated:", this.contextFormattingSettings);
+
+    console.log(
+      "[STT] Context formatting settings updated:",
+      this.contextFormattingSettings
+    );
   }
 
   async initialize(language = "en") {
@@ -221,7 +237,7 @@ class STTService {
           "[STT] Auto-detection enabled, detecting language from transcript"
         );
         detectedLanguage =
-          await this.translationService.detectLanguage(transcript);
+          await this.translationService.enhancedLanguageDetection(transcript);
         console.log("[STT] Detected language:", detectedLanguage);
       }
 
@@ -275,38 +291,43 @@ class STTService {
       // Step 3: Apply context-aware formatting
       let finalText = correctedText;
       let formattingResult: FormattingResult | null = null;
-      
+
       if (this.contextFormattingSettings.enableContextFormatting) {
         try {
-          console.log("[STT] Detecting active application for context formatting...");
-          const activeApp = await this.applicationDetector.getActiveApplication();
-          
+          console.log(
+            "[STT] Detecting active application for context formatting..."
+          );
+          const activeApp =
+            await this.applicationDetector.getActiveApplication();
+
           if (activeApp) {
             console.log("[STT] Active application detected:", {
               name: activeApp.applicationName,
               contextType: activeApp.contextType,
-              windowTitle: activeApp.windowTitle
+              windowTitle: activeApp.windowTitle,
             });
-            
+
             formattingResult = this.contextFormatter.formatText(
               correctedText,
               activeApp,
-              { 
+              {
                 detectedLanguage: finalLanguage,
-                settings: this.settings
+                settings: this.settings,
               }
             );
-            
+
             finalText = formattingResult.formattedText;
             console.log("[STT] Context formatting applied:", {
               originalText: correctedText,
               formattedText: finalText,
               contextType: formattingResult.contextType,
               transformations: formattingResult.appliedTransformations,
-              confidence: formattingResult.confidence
+              confidence: formattingResult.confidence,
             });
           } else {
-            console.log("[STT] Could not detect active application, using original text");
+            console.log(
+              "[STT] Could not detect active application, using original text"
+            );
           }
         } catch (error) {
           console.error("[STT] Error during context formatting:", error);
@@ -337,7 +358,7 @@ class STTService {
             this.settings.targetLanguage &&
             detectedLanguage !== this.settings.targetLanguage &&
             translationResult;
-          
+
           // Build comprehensive metadata including formatting information
           const translationMeta = wasTranslated
             ? {
@@ -358,14 +379,14 @@ class STTService {
                 contextType: formattingResult.contextType,
                 appliedTransformations: formattingResult.appliedTransformations,
                 formattingConfidence: formattingResult.confidence,
-                preFormattingText: correctedText
+                preFormattingText: correctedText,
               }
             : { contextFormattingApplied: false };
 
           // Combine all metadata
           const combinedMeta = {
             ...translationMeta,
-            ...contextFormattingMeta
+            ...contextFormattingMeta,
           };
 
           this.onMetricsUpdate(metrics, transcriptData, combinedMeta);
@@ -399,7 +420,8 @@ class STTService {
             if (formattingResult) {
               this.analyticsService.track("context_formatting_used", {
                 context_type: formattingResult.contextType,
-                applied_transformations: formattingResult.appliedTransformations,
+                applied_transformations:
+                  formattingResult.appliedTransformations,
                 formatting_confidence: formattingResult.confidence,
                 text_length_before: correctedText.length,
                 text_length_after: finalText.length,
