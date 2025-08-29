@@ -16,14 +16,14 @@ export class APIClient {
   }
 
   // Authentication methods
-  static async signIn(email: string, password: string): Promise<IPCResponse> {
+  static async signInWithMagicLink(email: string): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.signIn(email, password);
+      const response = await window.electronAPI.auth.signInWithMagicLink(email);
       return response;
     } catch (error) {
-      console.error("APIClient: Sign in error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign in" };
+      console.error("APIClient: Magic link sign in error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
     }
   }
 
@@ -38,22 +38,20 @@ export class APIClient {
     }
   }
 
-  static async signUp(
+  static async signUpWithMagicLink(
     email: string,
-    password: string,
-    name?: string
+    name: string
   ): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.signUp(
+      const response = await window.electronAPI.auth.signUpWithMagicLink(
         email,
-        password,
         name
       );
       return response;
     } catch (error) {
-      console.error("APIClient: Sign up error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign up" };
+      console.error("APIClient: Magic link sign up error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
     }
   }
 
@@ -68,10 +66,10 @@ export class APIClient {
     }
   }
 
-  static async getCurrentUser(forceRefresh: boolean = false): Promise<IPCResponse> {
+  static async getCurrentUser(): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.getCurrentUser(forceRefresh);
+      const response = await window.electronAPI.auth.getCurrentUser();
       return response;
     } catch (error) {
       console.error("APIClient: Get current user error:", error);
@@ -101,27 +99,7 @@ export class APIClient {
     }
   }
 
-  static async resendEmailVerification(email: string): Promise<IPCResponse> {
-    try {
-      APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.resendEmailVerification(email);
-      return response;
-    } catch (error) {
-      console.error("APIClient: Resend email verification error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to resend email verification" };
-    }
-  }
 
-  static async refreshSession(): Promise<IPCResponse> {
-    try {
-      APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.refreshSession();
-      return response;
-    } catch (error) {
-      console.error("APIClient: Refresh session error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to refresh session" };
-    }
-  }
 
   // Database methods
   static async saveTranscript(transcript: any): Promise<IPCResponse> {
@@ -421,15 +399,13 @@ export class APIClient {
 
 // Convenience exports that match the old API structure
 export const auth = {
-  signUp: APIClient.signUp,
-  signIn: APIClient.signIn,
+  signUpWithMagicLink: APIClient.signUpWithMagicLink,
+  signInWithMagicLink: APIClient.signInWithMagicLink,
   signOut: APIClient.signOut,
   getCurrentUser: APIClient.getCurrentUser,
   getUserProfile: APIClient.getUserProfile,
   signInWithGoogle: APIClient.signInWithGoogle,
   completeOnboarding: APIClient.completeOnboarding,
-  resendEmailVerification: APIClient.resendEmailVerification,
-  refreshSession: APIClient.refreshSession,
 };
 
 export const db = {

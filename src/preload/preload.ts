@@ -72,17 +72,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // External API methods (Supabase & Analytics)
   // Authentication
   auth: {
-    signIn: (email: string, password: string) =>
-      ipcRenderer.invoke("auth:signIn", { email, password }),
-    signUp: (email: string, password: string, name?: string) =>
-      ipcRenderer.invoke("auth:signUp", { email, password, name }),
+    signInWithMagicLink: (email: string) =>
+      ipcRenderer.invoke("auth:signInWithMagicLink", { email }),
+    signUpWithMagicLink: (email: string, name: string) =>
+      ipcRenderer.invoke("auth:signUpWithMagicLink", { email, name }),
     signInWithGoogle: () => ipcRenderer.invoke("auth:signInWithGoogle"),
     signOut: () => ipcRenderer.invoke("auth:signOut"),
-    getCurrentUser: (forceRefresh?: boolean) => ipcRenderer.invoke("auth:getCurrentUser", forceRefresh),
+    getCurrentUser: () => ipcRenderer.invoke("auth:getCurrentUser"),
     getUserProfile: () => ipcRenderer.invoke("auth:getUserProfile"),
     completeOnboarding: () => ipcRenderer.invoke("auth:completeOnboarding"),
-    resendEmailVerification: (email: string) => ipcRenderer.invoke("auth:resendEmailVerification", email),
-    refreshSession: () => ipcRenderer.invoke("auth:refreshSession"),
   },
 
   // Account management
@@ -262,19 +260,16 @@ declare global {
 
       // External API methods (Supabase & Analytics)
       auth: {
-        signIn: (email: string, password: string) => Promise<any>;
-        signUp: (
+        signInWithMagicLink: (email: string) => Promise<any>;
+        signUpWithMagicLink: (
           email: string,
-          password: string,
-          name?: string
+          name: string
         ) => Promise<any>;
         signInWithGoogle: () => Promise<any>;
         signOut: () => Promise<any>;
-        getCurrentUser: (forceRefresh?: boolean) => Promise<any>;
+        getCurrentUser: () => Promise<any>;
         getUserProfile: () => Promise<any>;
         completeOnboarding: () => Promise<any>;
-        resendEmailVerification: (email: string) => Promise<any>;
-        refreshSession: () => Promise<any>;
       };
 
       // Account management

@@ -17,11 +17,11 @@ export class APIHandlers {
     console.log("APIHandlers: Setting up IPC handlers...");
 
     // Authentication handlers
-    ipcMain.handle("auth:signIn", this.handleSignIn.bind(this));
-    console.log("APIHandlers: Registered auth:signIn handler");
+    ipcMain.handle("auth:signInWithMagicLink", this.handleSignInWithMagicLink.bind(this));
+    console.log("APIHandlers: Registered auth:signInWithMagicLink handler");
 
-    ipcMain.handle("auth:signUp", this.handleSignUp.bind(this));
-    console.log("APIHandlers: Registered auth:signUp handler");
+    ipcMain.handle("auth:signUpWithMagicLink", this.handleSignUpWithMagicLink.bind(this));
+    console.log("APIHandlers: Registered auth:signUpWithMagicLink handler");
 
     ipcMain.handle(
       "auth:signInWithGoogle",
@@ -41,16 +41,8 @@ export class APIHandlers {
       "auth:completeOnboarding",
       this.handleCompleteOnboarding.bind(this)
     );
-    ipcMain.handle(
-      "auth:resendEmailVerification",
-      this.handleResendEmailVerification.bind(this)
-    );
-    ipcMain.handle(
-      "auth:refreshSession",
-      this.handleRefreshSession.bind(this)
-    );
     console.log(
-      "APIHandlers: Registered auth handlers including deleteAccount, completeOnboarding, resendEmailVerification, and refreshSession"
+      "APIHandlers: Registered auth handlers including deleteAccount and completeOnboarding"
     );
 
     // Database handlers
@@ -121,25 +113,24 @@ export class APIHandlers {
   }
 
   // Authentication handlers
-  private async handleSignIn(
+  private async handleSignInWithMagicLink(
     event: any,
-    credentials: { email: string; password: string }
+    credentials: { email: string }
   ): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      if (!credentials?.email || !credentials?.password) {
+      if (!credentials?.email) {
         return this.createResponse(
           null,
-          new Error("Email and password are required")
+          new Error("Email is required")
         );
       }
 
-      const result = await this.apiManager.supabase.signIn(
-        credentials.email,
-        credentials.password
+      const result = await this.apiManager.supabase.signInWithMagicLink(
+        credentials.email
       );
       return this.createResponse(result);
     } catch (error) {
@@ -147,25 +138,24 @@ export class APIHandlers {
     }
   }
 
-  private async handleSignUp(
+  private async handleSignUpWithMagicLink(
     event: any,
-    credentials: { email: string; password: string; name?: string }
+    credentials: { email: string; name: string }
   ): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      if (!credentials?.email || !credentials?.password) {
+      if (!credentials?.email || !credentials?.name) {
         return this.createResponse(
           null,
-          new Error("Email and password are required")
+          new Error("Email and name are required for signup")
         );
       }
 
-      const result = await this.apiManager.supabase.signUp(
+      const result = await this.apiManager.supabase.signUpWithMagicLink(
         credentials.email,
-        credentials.password,
         credentials.name
       );
       return this.createResponse(result);
@@ -223,15 +213,13 @@ export class APIHandlers {
     }
   }
 
-  private async handleGetCurrentUser(event: any, forceRefresh: boolean = false): Promise<IPCResponse> {
+  private async handleGetCurrentUser(event: any): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      const user = forceRefresh 
-        ? await this.apiManager.supabase.getCurrentUserWithRefresh()
-        : this.apiManager.supabase.getCurrentUser();
+      const user = this.apiManager.supabase.getCurrentUser();
       return this.createResponse({ data: { user } });
     } catch (error) {
       return this.createResponse(null, error);
@@ -277,34 +265,7 @@ export class APIHandlers {
     }
   }
 
-  private async handleResendEmailVerification(
-    event: any,
-    email: string
-  ): Promise<IPCResponse> {
-    if (!this.validateSender(event.sender)) {
-      return this.createResponse(null, new Error("Unauthorized"));
-    }
 
-    try {
-      const result = await this.apiManager.supabase.resendEmailVerification(email);
-      return this.createResponse(result);
-    } catch (error) {
-      return this.createResponse(null, error);
-    }
-  }
-
-  private async handleRefreshSession(event: any): Promise<IPCResponse> {
-    if (!this.validateSender(event.sender)) {
-      return this.createResponse(null, new Error("Unauthorized"));
-    }
-
-    try {
-      const result = await this.apiManager.supabase.refreshSession();
-      return this.createResponse(result);
-    } catch (error) {
-      return this.createResponse(null, error);
-    }
-  }
 
   // Database handlers
   private async handleSaveTranscript(
@@ -532,8 +493,6 @@ export class APIHandlers {
     ipcMain.removeAllListeners("auth:deleteAccount");
     ipcMain.removeAllListeners("auth:getUserProfile");
     ipcMain.removeAllListeners("auth:completeOnboarding");
-    ipcMain.removeAllListeners("auth:resendEmailVerification");
-    ipcMain.removeAllListeners("auth:refreshSession");
     ipcMain.removeAllListeners("db:saveTranscript");
     ipcMain.removeAllListeners("db:getTranscripts");
     ipcMain.removeAllListeners("db:saveUserSettings");

@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { AuthPage } from "./AuthPage";
-import { EmailVerificationPage } from "./EmailVerificationPage";
 import { PermissionsPage } from "./PermissionsPage";
 import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
 import { analytics, auth } from "../lib/api_client";
 import { Button } from "./ui/button";
 
-type OnboardingStep = "auth" | "email-verification" | "permissions" | "guide";
+type OnboardingStep = "auth" | "permissions" | "guide";
 
 interface OnboardingFlowProps {
   onStepChange?: (step: number, stepName: string) => void;
@@ -52,15 +51,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   useEffect(() => {
     if (onStepChange) {
       const stepNumber =
-        ["auth", "email-verification", "permissions", "guide"].indexOf(currentStep) + 1;
+        ["auth", "permissions", "guide"].indexOf(currentStep) + 1;
       const stepName =
         currentStep === "auth"
           ? "Authentication"
-          : currentStep === "email-verification"
-            ? "Email Verification"
-            : currentStep === "permissions"
-              ? "Permissions"
-              : "Quick Guide";
+          : currentStep === "permissions"
+            ? "Permissions"
+            : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -80,7 +77,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       await analytics.identify(authenticatedUser.id, {
         email: authenticatedUser.email,
       });
-      await analytics.track("user_signed_in");
+      await analytics.track("user_authenticated_via_magic_link");
 
       // User data and navigation will be handled by AuthStateManager
     } catch (error) {
@@ -101,10 +98,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     // Store email for verification step
     setSignUpEmail(signUpData.email);
 
-    if (signUpData.needsVerification) {
-      console.log("OnboardingFlow: Email verification required, showing verification page");
-      setCurrentStep("email-verification");
-    } else if (signUpData.user) {
+    if (signUpData.user) {
       console.log("OnboardingFlow: User verified during sign-up, proceeding to permissions");
       
       try {
@@ -112,31 +106,18 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         await analytics.identify(signUpData.user.id, {
           email: signUpData.user.email,
         });
-        await analytics.track("user_signed_up");
+        await analytics.track("user_signed_up_via_magic_link");
       } catch (error) {
         console.error("OnboardingFlow: Error tracking sign up:", error);
       }
       
       setCurrentStep("permissions");
     } else {
-      console.error("OnboardingFlow: Unexpected sign-up state");
-      setCurrentStep("email-verification"); // Default to verification step
+      console.error("OnboardingFlow: Unexpected sign-up state - no user returned");
+      setCurrentStep("auth"); // Go back to auth step
     }
   };
 
-  const handleEmailVerification = async () => {
-    console.log("OnboardingFlow: Email verified, navigating to permissions");
-    setCurrentStep("permissions");
-
-    try {
-      await analytics.track("email_verified");
-    } catch (error) {
-      console.error(
-        "OnboardingFlow: Error tracking email verification:",
-        error
-      );
-    }
-  };
 
   const handlePermissions = async () => {
     console.log("OnboardingFlow: Permissions granted, navigating to guide");
@@ -199,15 +180,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   useEffect(() => {
     if (onStepChange) {
       const stepNumber =
-        ["auth", "email-verification", "permissions", "guide"].indexOf(currentStep) + 1;
+        ["auth", "permissions", "guide"].indexOf(currentStep) + 1;
       const stepName =
         currentStep === "auth"
           ? "Authentication"
-          : currentStep === "email-verification"
-            ? "Email Verification"
-            : currentStep === "permissions"
-              ? "Permissions"
-              : "Quick Guide";
+          : currentStep === "permissions"
+            ? "Permissions"
+            : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -230,12 +209,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <AuthPage onSignIn={handleSignIn} onSignUp={handleSignUp} />
         )}
 
-        {currentStep === "email-verification" && (
-          <EmailVerificationPage 
-            userEmail={signUpEmail} 
-            onVerificationComplete={handleEmailVerification} 
-          />
-        )}
 
         {currentStep === "permissions" && (
           <PermissionsPage onPermissionsGranted={handlePermissions} />

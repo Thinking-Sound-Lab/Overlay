@@ -71,7 +71,7 @@ const AppContent: React.FC = () => {
           showAuthButtons={false}
           isOnboarding={true}
           currentStep={onboardingStep}
-          totalSteps={4}
+          totalSteps={3}
           stepName={onboardingStepName}
         />
         <div className="flex-1 overflow-hidden">

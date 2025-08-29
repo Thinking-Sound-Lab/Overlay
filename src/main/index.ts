@@ -926,10 +926,9 @@ const handleOAuthCallback = async (url: string) => {
           // Update main process state
           AuthUtils.setAuthenticationState(true);
 
-          // Note: Don't send auth-state-changed event here anymore
-          // The auth state change listener will handle this automatically
+          // Note: Auth state will be sent to renderer by the auth state change listener
           console.log(
-            "[Main] OAuth: Authentication successful, auth-state-changed event will be sent by auth state listener"
+            "[Main] OAuth: Authentication successful, auth state will be sent by listener"
           );
 
           // Focus main window
@@ -1037,28 +1036,24 @@ app.whenReady().then(async () => {
       }
     );
 
-    // Set up auth state change listener (for all authentications - email/password and provider)
+    // Set up auth state change listener (for all authentications - magic links and OAuth)
     externalAPIManager.supabase.setAuthStateChangeListener(async (user) => {
       if (user) {
         console.log("[Main] User authenticated via external API:", user.email);
-
         // Use AuthStateManager to load and send complete auth state
         await authStateManager?.loadAndSendAuthState(
           mainWindow,
           user,
           "Auth State Change"
         );
-
         // Create recording window now that user is authenticated
         if (!recordingWindow) {
           createRecordingWindow();
         }
       } else {
         console.log("[Main] User signed out via external API");
-
         // Clear all user caches when user signs out
         clearUserCaches();
-
         // Send sign-out state to renderer
         authStateManager?.sendUnauthenticatedState(
           mainWindow,

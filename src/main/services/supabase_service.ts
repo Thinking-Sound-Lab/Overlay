@@ -5,7 +5,11 @@ import {
   Session,
 } from "@supabase/supabase-js";
 import Store from "electron-store";
-import { UserRecord, DatabaseTranscriptEntry, UserSettings } from "../../shared/types";
+import {
+  UserRecord,
+  DatabaseTranscriptEntry,
+  UserSettings,
+} from "../../shared/types";
 
 // Re-export for backward compatibility
 export type TranscriptEntry = DatabaseTranscriptEntry;
@@ -22,6 +26,7 @@ export class SupabaseService {
   ) => void;
   private sessionRestorationPromise: Promise<void> | null = null;
   private isSessionRestored: boolean = false;
+  private tempUserName: string | null = null; // Store name for magic link signup
 
   constructor() {
     // Import centralized config
@@ -49,45 +54,11 @@ export class SupabaseService {
       },
     });
 
-    // Set up real-time auth state listener
-    this.setupAuthStateListener();
 
     // Try to restore session on startup and track completion
     this.sessionRestorationPromise = this.restoreSession();
   }
 
-  private setupAuthStateListener() {
-    console.log("SupabaseService: Setting up real-time auth state listener");
-    
-    this.supabase.auth.onAuthStateChange((event, session) => {
-      console.log("SupabaseService: Auth state changed:", {
-        event,
-        hasSession: !!session,
-        hasUser: !!session?.user,
-        userEmail: session?.user?.email,
-      });
-
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log("SupabaseService: User signed in via auth state change");
-        this.currentSession = session;
-        this.currentUser = session.user;
-        this.storeSession(session, session.user);
-        this.notifyAuthStateChange(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        console.log("SupabaseService: User signed out via auth state change");
-        this.currentSession = null;
-        this.currentUser = null;
-        this.clearStoredSession();
-        this.notifyAuthStateChange(null);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        console.log("SupabaseService: Token refreshed, updating session");
-        this.currentSession = session;
-        this.currentUser = session.user;
-        this.storeSession(session, session.user);
-        // Don't notify auth state change for token refresh, just update cache
-      }
-    });
-  }
 
   private async restoreSession() {
     try {
@@ -167,7 +138,7 @@ export class SupabaseService {
           data.user.email
         );
         this.storeSession(data.session, data.user);
-        this.notifyAuthStateChange(data.user);
+        await this.notifyAuthStateChange(data.user);
       }
 
       return { data, error };
@@ -187,7 +158,39 @@ export class SupabaseService {
     this.currentUser = null;
   }
 
-  private notifyAuthStateChange(user: User | null) {
+  private async notifyAuthStateChange(user: User | null) {
+    // If we have a newly authenticated user and a stored name, update their profile
+    if (user && this.tempUserName) {
+      console.log(
+        "SupabaseService: New user authenticated with stored name, updating profile"
+      );
+      try {
+        const { error } = await this.supabase.auth.updateUser({
+          data: {
+            full_name: this.tempUserName,
+            name: this.tempUserName,
+          },
+        });
+
+        if (error) {
+          console.error(
+            "SupabaseService: Failed to update user profile:",
+            error
+          );
+        } else {
+          console.log(
+            "SupabaseService: Successfully updated user profile with name:",
+            this.tempUserName
+          );
+        }
+      } catch (error) {
+        console.error("SupabaseService: Error updating user profile:", error);
+      } finally {
+        // Clear the temporary name
+        this.tempUserName = null;
+      }
+    }
+
     if (this.onAuthStateChangeCallback) {
       this.onAuthStateChangeCallback(user);
     }
@@ -205,147 +208,67 @@ export class SupabaseService {
     this.onSessionRestorationStatusCallback = callback;
   }
 
-  // Authentication methods
-  async signUp(email: string, password: string, name?: string) {
+  // Magic Link Authentication methods
+  async signInWithMagicLink(email: string) {
     try {
-      console.log(
-        "SupabaseService: Signing up user with email:",
-        email,
-        "and name:",
-        name
-      );
+      console.log("SupabaseService: Sending magic link for sign in to:", email);
 
-      const signupData: any = {
-        email,
-        password,
-      };
-
-      // Add name to user metadata if provided
-      if (name && name.trim()) {
-        signupData.options = {
-          data: {
-            full_name: name.trim(),
-            name: name.trim(),
-          },
-        };
-        console.log(
-          "SupabaseService: Adding name to signup metadata:",
-          JSON.stringify(signupData.options.data, null, 2)
-        );
-      } else {
-        console.warn(
-          "SupabaseService: No name provided for signup, user profile will use email prefix"
-        );
-        // Even without a name, we should provide some metadata for the trigger
-        signupData.options = {
-          data: {
-            source: "email_signup",
-          },
-        };
-      }
-
-      console.log(
-        "SupabaseService: Complete signup data:",
-        JSON.stringify(
-          {
-            email: signupData.email,
-            options: signupData.options,
-          },
-          null,
-          2
-        )
-      );
-
-      const { data, error } = await this.supabase.auth.signUp(signupData);
-
-      console.log(
-        "SupabaseService: Signup result - success:",
-        !!data.user,
-        "error:",
-        error?.message
-      );
-
-      if (data.session && data.user && !error) {
-        console.log(
-          "SupabaseService: User created with metadata:",
-          data.user.user_metadata
-        );
-        this.storeSession(data.session, data.user);
-        this.notifyAuthStateChange(data.user);
-
-        // As a backup, ensure user profile is created
-        // The database trigger should handle this, but let's be safe
-        // setTimeout(async () => {
-        //   try {
-        //     console.log("SupabaseService: Checking if profile was created by trigger...");
-        //     const profileCheck = await this.supabase
-        //       .from("user_profiles")
-        //       .select("id")
-        //       .eq("id", data.user!.id)
-        //       .single();
-
-        //     if (profileCheck.error && profileCheck.error.code === 'PGRST116') {
-        //       console.log("SupabaseService: Profile not created by trigger, creating manually");
-        //       await this.createUserProfile();
-        //     } else if (profileCheck.data) {
-        //       console.log("SupabaseService: Profile successfully created by trigger");
-        //     }
-        //   } catch (error) {
-        //     console.error("SupabaseService: Error checking profile creation:", error);
-        //   }
-        // }, 2000); // Wait 2 seconds for trigger to fire
-      }
-
-      return { data, error };
-    } catch (error) {
-      console.error("SupabaseService: Sign up error:", error);
-      return { data: null as any, error };
-    }
-  }
-
-  async resendEmailVerification(email: string) {
-    try {
-      console.log("SupabaseService: Resending email verification for:", email);
-
-      const { data, error } = await this.supabase.auth.resend({
-        type: 'signup',
-        email: email
+      const { data, error } = await this.supabase.auth.signInWithOtp({
+        email: email,
+        options: {
+          emailRedirectTo: "http://localhost:8080/oauth-success",
+          shouldCreateUser: false, // Don't create user for sign in
+        },
       });
 
       if (error) {
-        console.error("SupabaseService: Resend verification error:", error);
+        console.error("SupabaseService: Magic link sign in error:", error);
       } else {
-        console.log("SupabaseService: Verification email resent successfully");
+        console.log(
+          "SupabaseService: Magic link sent successfully for sign in"
+        );
       }
 
       return { data, error };
     } catch (error) {
-      console.error("SupabaseService: Resend verification error:", error);
+      console.error("SupabaseService: Magic link sign in error:", error);
       return { data: null as any, error };
     }
   }
 
-  async refreshSession() {
+  async signUpWithMagicLink(email: string, name: string) {
     try {
-      console.log("SupabaseService: Manually refreshing session...");
+      console.log(
+        "SupabaseService: Sending magic link for sign up to:",
+        email,
+        "with name:",
+        name
+      );
 
-      const { data, error } = await this.supabase.auth.refreshSession();
-      
-      if (data.session && data.user && !error) {
-        console.log("SupabaseService: Session refreshed successfully for user:", data.user.email);
-        this.currentSession = data.session;
-        this.currentUser = data.user;
-        this.storeSession(data.session, data.user);
-        
-        // Notify auth state change with refreshed user data
-        this.notifyAuthStateChange(data.user);
+      // Store the name temporarily for post-authentication profile update
+      this.tempUserName = name;
+
+      const { data, error } = await this.supabase.auth.signInWithOtp({
+        email: email,
+        options: {
+          emailRedirectTo: "http://localhost:8080/oauth-success",
+          shouldCreateUser: true, // Allow user creation for sign up
+        },
+      });
+
+      if (error) {
+        console.error("SupabaseService: Magic link sign up error:", error);
+        this.tempUserName = null; // Clear on error
       } else {
-        console.log("SupabaseService: Session refresh failed:", error?.message);
+        console.log(
+          "SupabaseService: Magic link sent successfully for sign up"
+        );
       }
 
       return { data, error };
     } catch (error) {
-      console.error("SupabaseService: Session refresh error:", error);
+      console.error("SupabaseService: Magic link sign up error:", error);
+      this.tempUserName = null; // Clear on error
       return { data: null as any, error };
     }
   }
@@ -380,31 +303,12 @@ export class SupabaseService {
     }
   }
 
-  async signIn(email: string, password: string) {
-    try {
-      const { data, error } = await this.supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (data.session && data.user && !error) {
-        this.storeSession(data.session, data.user);
-        this.notifyAuthStateChange(data.user);
-      }
-
-      return { data, error };
-    } catch (error) {
-      console.error("SupabaseService: Sign in error:", error);
-      return { data: null as any, error };
-    }
-  }
-
   async signOut() {
     try {
       const { error } = await this.supabase.auth.signOut();
 
       this.clearStoredSession();
-      this.notifyAuthStateChange(null);
+      await this.notifyAuthStateChange(null);
 
       return { error };
     } catch (error) {
@@ -477,7 +381,7 @@ export class SupabaseService {
 
       // Clear session and notify
       this.clearStoredSession();
-      this.notifyAuthStateChange(null);
+      await this.notifyAuthStateChange(null);
 
       return { data: { message: "Account successfully deleted" }, error: null };
     } catch (error) {
@@ -487,15 +391,6 @@ export class SupabaseService {
   }
 
   getCurrentUser() {
-    return this.currentUser;
-  }
-
-  async getCurrentUserWithRefresh() {
-    console.log("SupabaseService: Refreshing session to get current user...");
-    const result = await this.refreshSession();
-    if (result.data?.user) {
-      return result.data.user;
-    }
     return this.currentUser;
   }
 
@@ -684,7 +579,7 @@ export class SupabaseService {
       console.log("SupabaseService: Saving user settings:", {
         userId: this.currentUser.id,
         settingsKeys: Object.keys(settings),
-        settings
+        settings,
       });
 
       const { data, error } = await this.supabase
@@ -718,8 +613,11 @@ export class SupabaseService {
     }
 
     try {
-      console.log("SupabaseService: Getting user settings for:", this.currentUser.id);
-      
+      console.log(
+        "SupabaseService: Getting user settings for:",
+        this.currentUser.id
+      );
+
       const { data, error } = await this.supabase
         .from("user_settings")
         .select("*")
@@ -727,11 +625,14 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.log("SupabaseService: Get user settings error:", error?.message);
+        console.log(
+          "SupabaseService: Get user settings error:",
+          error?.message
+        );
       } else {
         console.log("SupabaseService: Settings retrieved successfully:", {
           hasData: !!data,
-          settingsKeys: data?.settings ? Object.keys(data.settings) : []
+          settingsKeys: data?.settings ? Object.keys(data.settings) : [],
         });
       }
 
@@ -748,25 +649,28 @@ export class SupabaseService {
     }
 
     try {
-      console.log("SupabaseService: Creating initial user settings for:", this.currentUser.id);
+      console.log(
+        "SupabaseService: Creating initial user settings for:",
+        this.currentUser.id
+      );
 
       // Default settings based on electron store defaults
       const defaultSettings = {
         // General section
         defaultMicrophone: "default",
         language: "auto",
-        
-        // System section  
+
+        // System section
         dictateSoundEffects: true,
         muteMusicWhileDictating: true,
-        
+
         // Personalization section
         outputMode: "both" as const,
         useAI: true,
         enableTranslation: false,
         targetLanguage: "en",
         enableContextFormatting: true,
-        
+
         // Data and Privacy section
         privacyMode: true,
       };
@@ -786,7 +690,10 @@ export class SupabaseService {
       if (error) {
         console.error("SupabaseService: Create initial settings error:", error);
       } else {
-        console.log("SupabaseService: Initial settings created successfully:", data);
+        console.log(
+          "SupabaseService: Initial settings created successfully:",
+          data
+        );
       }
 
       return { data, error };
@@ -837,7 +744,11 @@ export class SupabaseService {
               try {
                 // Normalize to start of day in local timezone for consistent comparison
                 const date = new Date(t.created_at);
-                const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                const normalizedDate = new Date(
+                  date.getFullYear(),
+                  date.getMonth(),
+                  date.getDate()
+                );
                 return normalizedDate;
               } catch (error) {
                 console.warn(
@@ -861,13 +772,13 @@ export class SupabaseService {
           } else {
             // Get unique dates and sort chronologically (newest first)
             const uniqueDateTimes = Array.from(
-              new Set(validDates.map(d => d.getTime()))
+              new Set(validDates.map((d) => d.getTime()))
             );
             const uniqueDates = uniqueDateTimes
-              .map(time => new Date(time))
+              .map((time) => new Date(time))
               .sort((a, b) => b.getTime() - a.getTime()); // Newest first
 
-            const uniqueDateStrings = uniqueDates.map(d => d.toDateString());
+            const uniqueDateStrings = uniqueDates.map((d) => d.toDateString());
             console.log(
               `SupabaseService: Calculating streak from ${uniqueDates.length} unique dates:`,
               uniqueDateStrings
@@ -875,17 +786,31 @@ export class SupabaseService {
 
             // Normalize today and yesterday for consistent comparison
             const today = new Date();
-            const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            const yesterdayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+            const todayNormalized = new Date(
+              today.getFullYear(),
+              today.getMonth(),
+              today.getDate()
+            );
+            const yesterdayNormalized = new Date(
+              today.getFullYear(),
+              today.getMonth(),
+              today.getDate() - 1
+            );
 
             // Check if there's activity today or yesterday to maintain streak
-            const hasActivityToday = uniqueDates.some(date => date.getTime() === todayNormalized.getTime());
-            const hasActivityYesterday = uniqueDates.some(date => date.getTime() === yesterdayNormalized.getTime());
+            const hasActivityToday = uniqueDates.some(
+              (date) => date.getTime() === todayNormalized.getTime()
+            );
+            const hasActivityYesterday = uniqueDates.some(
+              (date) => date.getTime() === yesterdayNormalized.getTime()
+            );
 
             console.log(
               "SupabaseService: Activity check -",
-              "Today (" + todayNormalized.toDateString() + "):", hasActivityToday,
-              "Yesterday (" + yesterdayNormalized.toDateString() + "):", hasActivityYesterday
+              "Today (" + todayNormalized.toDateString() + "):",
+              hasActivityToday,
+              "Yesterday (" + yesterdayNormalized.toDateString() + "):",
+              hasActivityYesterday
             );
 
             // Only count streak if there's recent activity (today or yesterday)
@@ -906,14 +831,18 @@ export class SupabaseService {
                 console.log(
                   `SupabaseService: Checking ${activityDate.toDateString()} against expected ${checkDate.toDateString()}`
                 );
-                
+
                 if (activityDate.getTime() === checkDate.getTime()) {
                   streakDays++;
                   console.log(
                     `SupabaseService: Streak day ${streakDays} - ${activityDate.toDateString()}`
                   );
                   // Move to previous day for next iteration
-                  checkDate = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate() - 1);
+                  checkDate = new Date(
+                    checkDate.getFullYear(),
+                    checkDate.getMonth(),
+                    checkDate.getDate() - 1
+                  );
                 } else {
                   // Gap found, stop counting
                   console.log(
@@ -973,7 +902,10 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.error("SupabaseService: Failed to mark onboarding complete:", error);
+        console.error(
+          "SupabaseService: Failed to mark onboarding complete:",
+          error
+        );
         return { data, error };
       }
 
@@ -985,11 +917,16 @@ export class SupabaseService {
       );
 
       // Create initial user settings
-      console.log("SupabaseService: Creating initial settings for completed onboarding");
+      console.log(
+        "SupabaseService: Creating initial settings for completed onboarding"
+      );
       const settingsResult = await this.createInitialUserSettings();
-      
+
       if (settingsResult.error) {
-        console.warn("SupabaseService: Failed to create initial settings:", settingsResult.error?.message);
+        console.warn(
+          "SupabaseService: Failed to create initial settings:",
+          settingsResult.error?.message
+        );
         // Don't fail the onboarding completion if settings creation fails
         // The settings will be created later when first accessed
       } else {
