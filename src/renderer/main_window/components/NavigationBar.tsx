@@ -22,7 +22,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
   onViewChange,
   isOnboarding = false,
   currentStep = 1,
-  totalSteps = 3,
+  totalSteps = 4,
   stepName = "",
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);

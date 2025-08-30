@@ -121,7 +121,7 @@ const initialState: AppState = {
   settings: {
     // General section
     defaultMicrophone: "default",
-    language: "auto",
+    language: "en",
     
     // System section  
     dictateSoundEffects: true,

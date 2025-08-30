@@ -148,7 +148,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     ];
 
     const languageOptions: SelectOption[] = [
-      { value: "auto", label: "Auto-detect" },
       { value: "en", label: "English" },
       { value: "es", label: "Spanish" },
       { value: "fr", label: "French" },
@@ -190,10 +189,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         <div className="flex justify-between items-center">
           <div className="space-y-1">
             <h3 className="text-md font-medium text-gray-900">
-              Set default language
+              Speech recognition language
             </h3>
             <p className="text-gray-600 text-sm">
-              Choose your preferred language for speech recognition.
+              Your selected language for speech-to-text conversion.
             </p>
           </div>
           <Select

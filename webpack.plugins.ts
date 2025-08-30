@@ -17,18 +17,22 @@ export const plugins = [
     logger: "webpack-infrastructure",
   }),
   new DefinePlugin({
-    "process.env": {
-      REACT_APP_SUPABASE_URL: JSON.stringify(
-        process.env.REACT_APP_SUPABASE_URL
-      ),
-      REACT_APP_SUPABASE_ANON_KEY: JSON.stringify(
-        process.env.REACT_APP_SUPABASE_ANON_KEY
-      ),
-      REACT_APP_POSTHOG_KEY: JSON.stringify(process.env.REACT_APP_POSTHOG_KEY),
-      REACT_APP_POSTHOG_HOST: JSON.stringify(
-        process.env.REACT_APP_POSTHOG_HOST
-      ),
-      OPENAI_API_KEY: JSON.stringify(process.env.OPENAI_API_KEY),
-    },
+    "process.env.REACT_APP_SUPABASE_URL": JSON.stringify(
+      process.env.REACT_APP_SUPABASE_URL
+    ),
+    "process.env.REACT_APP_SUPABASE_ANON_KEY": JSON.stringify(
+      process.env.REACT_APP_SUPABASE_ANON_KEY
+    ),
+    "process.env.REACT_APP_POSTHOG_KEY": JSON.stringify(
+      process.env.REACT_APP_POSTHOG_KEY
+    ),
+    "process.env.REACT_APP_POSTHOG_HOST": JSON.stringify(
+      process.env.REACT_APP_POSTHOG_HOST
+    ),
+    "process.env.OPENAI_API_KEY": JSON.stringify(process.env.OPENAI_API_KEY),
+    "process.env.WINDOWS_UPDATE_SERVER_URL": JSON.stringify(
+      process.env.WINDOWS_UPDATE_SERVER_URL
+    ),
+    "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
   }),
 ];

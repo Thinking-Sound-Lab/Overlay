@@ -15,28 +15,27 @@ export class TranslationService {
   async translateText(
     text: string,
     targetLanguage: string,
-    sourceLanguage?: string
+    sourceLanguage: string
   ): Promise<TranslationResult> {
     try {
       if (!text.trim()) {
         throw new Error("Text cannot be empty");
       }
 
+      if (!sourceLanguage) {
+        throw new Error("Source language must be provided");
+      }
+
       console.log(
-        `[Translation] Translating text from ${sourceLanguage || "auto"} to ${targetLanguage}`
+        `[Translation] Translating text from ${sourceLanguage} to ${targetLanguage}`
       );
       console.log(`[Translation] Original text: "${text}"`);
 
-      // Step 1: Enhanced language detection if source not provided
-      let detectedSourceLanguage = sourceLanguage;
-      if (!sourceLanguage || sourceLanguage === "auto") {
-        detectedSourceLanguage = await this.enhancedLanguageDetection(text);
-        console.log(
-          `[Translation] Enhanced detection result: ${detectedSourceLanguage}`
-        );
-      }
+      // Use the predetermined source language from user settings
+      const detectedSourceLanguage = sourceLanguage;
+      console.log(`[Translation] Using predetermined source language: ${detectedSourceLanguage}`);
 
-      // Step 2: Check if translation is actually needed
+      // Check if translation is actually needed
       if (detectedSourceLanguage === targetLanguage) {
         console.log(
           `[Translation] Source and target language are the same, skipping translation`
@@ -52,7 +51,7 @@ export class TranslationService {
         };
       }
 
-      // Step 3: Perform semantic-aware translation
+      // Perform semantic-aware translation
       const translationResult = await this.performSemanticTranslation(
         text,
         detectedSourceLanguage,
@@ -61,7 +60,7 @@ export class TranslationService {
 
       console.log("Translation result:", translationResult);
 
-      // Step 4: Validate and potentially correct the translation
+      // Validate and potentially correct the translation
       const validatedResult = await this.validateTranslation(
         text,
         translationResult,
@@ -82,66 +81,16 @@ export class TranslationService {
       console.error("[Translation] Error translating text:", error);
       return {
         translatedText: text,
-        sourceLanguage: sourceLanguage || "auto",
+        sourceLanguage: sourceLanguage || "en",
         targetLanguage,
         originalText: text,
         confidence: 0.0,
         wordCountRatio: 1.0,
-        detectedLanguage: sourceLanguage || "unknown",
+        detectedLanguage: sourceLanguage || "en",
       };
     }
   }
 
-  async enhancedLanguageDetection(text: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert language detection system. Analyze the given text and provide the most accurate language identification.
-
-INSTRUCTIONS:
-1. Return only the ISO 639-1 language code (2 letters)
-2. Consider context, grammar, and vocabulary patterns
-3. For mixed languages, identify the dominant language
-4. Be confident in your detection - avoid 'auto' or 'unknown'
-5. Common codes: en=English, es=Spanish, fr=French, de=German, hi=Hindi, ur=Urdu, ta=Tamil, etc.
-
-IMPORTANT: Return only the 2-letter code, nothing else.`,
-          },
-          {
-            role: "user",
-            content: `Detect the language of this text: "${text}"`,
-          },
-        ],
-        max_tokens: 10,
-        temperature: 0.1,
-      });
-
-      const detectedLanguage =
-        response.choices[0].message.content?.trim().toLowerCase() || "en";
-
-      // Validate the detected language code
-      if (
-        detectedLanguage.length === 2 &&
-        /^[a-z]{2}$/.test(detectedLanguage)
-      ) {
-        return detectedLanguage;
-      }
-
-      console.warn(
-        `[Translation] Invalid language code detected: ${detectedLanguage}, defaulting to 'en'`
-      );
-      return "en";
-    } catch (error) {
-      console.error(
-        "[Translation] Error in enhanced language detection:",
-        error
-      );
-      return "en"; // Default fallback
-    }
-  }
 
   private async performSemanticTranslation(
     text: string,
@@ -448,34 +397,6 @@ OUTPUT: Return only the adjusted translation, nothing else.`;
     };
   }
 
-  async detectLanguage(text: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a language detection expert. Analyze the given text and return only the ISO 639-1 language code (2 letters) of the detected language. Examples: 'en' for English, 'es' for Spanish, 'fr' for French, etc. Return only the code, nothing else.",
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-        max_tokens: 10,
-        temperature: 0.1,
-      });
-
-      const detectedLanguage =
-        response.choices[0].message.content?.trim().toLowerCase() || "en";
-      console.log(`[Translation] Detected language: ${detectedLanguage}`);
-      return detectedLanguage;
-    } catch (error) {
-      console.error("[Translation] Error detecting language:", error);
-      return "en"; // Default to English
-    }
-  }
 }
 
 export default TranslationService;

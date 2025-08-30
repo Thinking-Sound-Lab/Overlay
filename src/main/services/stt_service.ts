@@ -99,7 +99,7 @@ class STTService {
     );
   }
 
-  async initialize(language = "en") {
+  async initialize(language: string) {
     const handleMessage = (message: any) => {
       if (message.type === "transcription.completed") {
         console.log("[STT] Final transcript:", message.transcript);
@@ -225,21 +225,14 @@ class STTService {
     }
 
     console.log("[STT] Raw transcript:", transcript);
-    console.log("[STT] Received language parameter:", language);
+    console.log("[STT] Using predetermined language:", language);
 
     try {
       let processedText = transcript;
       let detectedLanguage = language;
 
-      // If language is "auto", use TranslationService to detect the actual language
-      if (language === "auto") {
-        console.log(
-          "[STT] Auto-detection enabled, detecting language from transcript"
-        );
-        detectedLanguage =
-          await this.translationService.enhancedLanguageDetection(transcript);
-        console.log("[STT] Detected language:", detectedLanguage);
-      }
+      // Use the predetermined language from user settings
+      console.log("[STT] Using language from user selection:", detectedLanguage);
 
       // Step 1: Translation (if enabled)
       let translationResult: TranslationResult | null = null;
