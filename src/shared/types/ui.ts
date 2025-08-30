@@ -17,6 +17,7 @@ export interface Settings {
   // Personalization section
   outputMode: "auto-insert" | "clipboard" | "both";
   useAI: boolean;
+  enableRealtimeMode: boolean;
   enableTranslation: boolean;
   targetLanguage: string;
   enableContextFormatting: boolean;

@@ -1,6 +1,11 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-import { TranslationResult, ApplicationContextType, ContextFormattingSettings, FormattingResult } from "../../shared/types";
+import {
+  TranslationResult,
+  ApplicationContextType,
+  ContextFormattingSettings,
+  FormattingResult,
+} from "../../shared/types";
 import * as robot from "robotjs";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
@@ -11,14 +16,14 @@ export class TranslationService {
   private applicationDetector: ApplicationDetector;
   private contextFormatter: ContextFormatter;
   private contextFormattingSettings: ContextFormattingSettings;
-  
+
   // Single language model configuration
-  private readonly LANGUAGE_MODEL = "gpt-4o";
+  private readonly LANGUAGE_MODEL = "gpt-4.1";
 
   constructor() {
     this.applicationDetector = ApplicationDetector.getInstance();
     this.contextFormatter = ContextFormatter.getInstance();
-    
+
     // Initialize default context formatting settings
     this.contextFormattingSettings = {
       enableContextFormatting: true,
@@ -140,12 +145,17 @@ export class TranslationService {
             );
           }
         } catch (error) {
-          console.error("[Translation] Error during context formatting:", error);
+          console.error(
+            "[Translation] Error during context formatting:",
+            error
+          );
           // Fallback to original text if formatting fails
           finalText = correctedText;
         }
       } else {
-        console.log("[Translation] Context formatting disabled, using original text");
+        console.log(
+          "[Translation] Context formatting disabled, using original text"
+        );
       }
 
       console.log("[Translation] Final text:", finalText);
@@ -245,7 +255,9 @@ export class TranslationService {
 
       // Use the predetermined source language from user settings
       const detectedSourceLanguage = sourceLanguage;
-      console.log(`[Translation] Using predetermined source language: ${detectedSourceLanguage}`);
+      console.log(
+        `[Translation] Using predetermined source language: ${detectedSourceLanguage}`
+      );
 
       // Check if translation is actually needed
       if (detectedSourceLanguage === targetLanguage) {
@@ -302,7 +314,6 @@ export class TranslationService {
       };
     }
   }
-
 
   private async performSemanticTranslation(
     text: string,
@@ -407,7 +418,6 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
       detectedLanguage: sourceLanguage,
     };
   }
-
 
   private countWords(text: string): number {
     // Handle null, undefined, or empty strings

@@ -194,7 +194,7 @@ export class APIHandlers {
           "APIHandlers: Opening Google OAuth URL in external browser..."
         );
         // Import shell dynamically to open OAuth URL in browser
-        const { shell } = require("electron");
+        const { shell } = await import("electron");
         await shell.openExternal(result.data.url);
 
         // Return success indicating OAuth was initiated

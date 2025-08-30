@@ -325,6 +325,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           />
         </div>
 
+        {/* Real-time Transcription */}
+        <div className="flex items-center justify-between py-3">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900">
+              Real-time Transcription
+            </h3>
+            <p className="text-gray-600 text-sm mt-1">
+              Stream audio for immediate transcription instead of batch processing
+            </p>
+          </div>
+          <Switch
+            checked={settings.enableRealtimeMode}
+            onCheckedChange={(checked) => updateSetting("enableRealtimeMode", checked)}
+          />
+        </div>
+
         {/* Enable Translation */}
         <div className="space-y-4">
           <div className="flex items-center justify-between py-3">

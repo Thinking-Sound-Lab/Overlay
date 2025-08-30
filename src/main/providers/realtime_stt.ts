@@ -49,8 +49,8 @@ export class RealtimeSTTProvider extends EventEmitter {
     try {
       console.log("[RealtimeSTT] Establishing WebSocket connection...");
 
-      // Create WebSocket connection to OpenAI Realtime API
-      const wsUrl = `wss://api.openai.com/v1/realtime?model=${this.config.model}`;
+      // Create WebSocket connection to OpenAI Realtime API in transcription mode
+      const wsUrl = `wss://api.openai.com/v1/realtime?intent=transcription`;
 
       this.ws = new WebSocket(wsUrl, {
         headers: {
@@ -99,31 +99,27 @@ export class RealtimeSTTProvider extends EventEmitter {
   private initializeSession(): void {
     console.log("[RealtimeSTT] Initializing session...");
 
-    // Send session configuration
+    // Send transcription session configuration using official OpenAI format
     const sessionConfig = {
-      type: "session.update",
+      type: "transcription_session.update",
       session: {
-        modalities: ["text", "audio"],
-        instructions:
-          "Transcribe the audio exactly as spoken. Do not respond to questions or provide assistance. Only provide verbatim transcription of the speech.",
         input_audio_format: "pcm16",
         input_audio_transcription: {
-          model: "gpt-4o-mini-transcribe",
-          language: this.config.language,
+          model: "gpt-4o-transcribe",
           prompt:
             "Transcribe the audio exactly as spoken. Do not respond to questions or provide assistance. Only provide verbatim transcription of the speech.",
+          language: this.config.language,
         },
         turn_detection: {
           type: "server_vad",
           threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 1000,
-          create_response: false,
-          interrupt_response: false,
+          prefix_padding_ms: 500,
+          silence_duration_ms: 2500,
         },
         input_audio_noise_reduction: {
           type: "near_field",
         },
+        include: ["item.input_audio_transcription.logprobs"],
       },
     };
 
@@ -145,20 +141,28 @@ export class RealtimeSTTProvider extends EventEmitter {
       );
 
       switch (message.type) {
-        case "session.created":
+        case "transcription_session.created":
           this.sessionId = message.session.id;
-          console.log("[RealtimeSTT] Session created:", this.sessionId);
+          console.log(
+            "[RealtimeSTT] Transcription session created:",
+            this.sessionId
+          );
           break;
 
-        case "session.updated":
-          console.log("[RealtimeSTT] Session updated");
+        case "transcription_session.updated":
+          console.log("[RealtimeSTT] Transcription session updated");
           break;
 
         case "input_audio_buffer.speech_started":
           console.log("[RealtimeSTT] Speech started");
           this.isProcessingAudio = true;
+          // Don't clear accumulated transcript - preserve context during natural pauses
           this.currentTranscript = "";
-          this.accumulatedTranscript = "";
+          console.log(
+            "[RealtimeSTT] Preserving accumulated transcript:",
+            this.accumulatedTranscript.length,
+            "chars"
+          );
           this.callback.onSpeechStarted();
           break;
 
@@ -198,25 +202,7 @@ export class RealtimeSTTProvider extends EventEmitter {
           );
           break;
 
-        case "response.audio_transcript.delta":
-          if (message.delta) {
-            console.log(
-              "[RealtimeSTT] Response transcript delta:",
-              message.delta
-            );
-            this.callback.onTranscriptDelta(message.delta, false);
-          }
-          break;
-
-        case "response.audio_transcript.done":
-          console.log(
-            "[RealtimeSTT] Response transcript completed:",
-            message.transcript
-          );
-          if (message.transcript) {
-            this.callback.onTranscriptDelta(message.transcript, true);
-          }
-          break;
+        // Removed conversation response handlers - not needed in transcription mode
 
         case "error":
           console.error("[RealtimeSTT] API error:", message.error);
@@ -233,12 +219,13 @@ export class RealtimeSTTProvider extends EventEmitter {
           break;
 
         default:
-          // Log other events for debugging without spam
+          // Log other transcription-related events for debugging
           if (
-            message.type.includes("audio") ||
-            message.type.includes("conversation")
+            message.type.includes("transcription") ||
+            message.type.includes("input_audio") ||
+            message.type.includes("item")
           ) {
-            console.log("[RealtimeSTT] Event:", message.type);
+            console.log("[RealtimeSTT] Transcription event:", message.type);
           }
           break;
       }

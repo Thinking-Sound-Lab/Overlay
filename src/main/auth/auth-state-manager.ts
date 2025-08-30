@@ -1,27 +1,35 @@
 import { BrowserWindow } from "electron";
+import Store from "electron-store";
 import { ExternalAPIManager } from "../services/external_api_manager";
 import { AuthUtils } from "../utils/auth";
-import { AuthStateData } from "../../shared/types";
+import { User } from '@supabase/supabase-js';
+import { AuthStateData, UserRecord, DatabaseTranscriptEntry, Settings, UserStats } from "../../shared/types";
 
 export class AuthStateManager {
   private apiManager: ExternalAPIManager;
   private updateTrayCallback?: () => void;
-  private updateSpeechMetricsCallback?: (stats: any) => void;
+  private updateSpeechMetricsCallback?: (stats: UserStats) => void;
+  private updateSTTSettingsCallback?: () => Promise<void>;
+  private store: Store<Settings>;
 
   constructor(
     apiManager: ExternalAPIManager, 
+    store: Store<Settings>,
     updateTrayCallback?: () => void,
-    updateSpeechMetricsCallback?: (stats: any) => void
+    updateSpeechMetricsCallback?: (stats: UserStats) => void,
+    updateSTTSettingsCallback?: () => Promise<void>
   ) {
     this.apiManager = apiManager;
+    this.store = store;
     this.updateTrayCallback = updateTrayCallback;
     this.updateSpeechMetricsCallback = updateSpeechMetricsCallback;
+    this.updateSTTSettingsCallback = updateSTTSettingsCallback;
   }
 
   /**
    * Load complete authentication state including user profile, statistics, settings, and transcripts
    */
-  async loadCompleteAuthState(user: any, source: string = "unknown"): Promise<AuthStateData> {
+  async loadCompleteAuthState(user: User, source = "unknown"): Promise<AuthStateData> {
     if (!user) {
       console.log(`[AuthStateManager] ${source}: No user provided, returning unauthenticated state`);
       return {
@@ -108,6 +116,33 @@ export class AuthStateManager {
           hasSettings: !!authState.settings,
           settingsKeys: authState.settings ? Object.keys(authState.settings) : []
         });
+        
+        // CRITICAL FIX: Sync database settings to electron-store so STT service can access them
+        if (authState.settings) {
+          console.log(`[AuthStateManager] ${source}: Syncing database settings to electron-store...`);
+          
+          // Sync all database settings to electron-store
+          Object.entries(authState.settings).forEach(([key, value]) => {
+            const currentStoreValue = this.store.get(key);
+            if (currentStoreValue !== value) {
+              console.log(`[AuthStateManager] ${source}: Syncing ${key}: ${currentStoreValue} → ${value}`);
+              this.store.set(key, value);
+            }
+          });
+          
+          console.log(`[AuthStateManager] ${source}: Database settings synced to electron-store successfully`);
+          
+          // Trigger STT settings update to pick up new language immediately
+          if (this.updateSTTSettingsCallback) {
+            console.log(`[AuthStateManager] ${source}: Triggering STT settings update...`);
+            try {
+              await this.updateSTTSettingsCallback();
+              console.log(`[AuthStateManager] ${source}: STT settings updated successfully`);
+            } catch (error) {
+              console.error(`[AuthStateManager] ${source}: Error updating STT settings:`, error);
+            }
+          }
+        }
       } else {
         console.warn(`[AuthStateManager] ${source}: Failed to load settings:`, settingsResult.error?.message);
       }
@@ -122,7 +157,7 @@ export class AuthStateManager {
       
       if (transcriptsResult.data && !transcriptsResult.error) {
         // Convert database transcripts to local format
-        authState.recentTranscripts = transcriptsResult.data.map((dbTranscript: any) => ({
+        authState.recentTranscripts = transcriptsResult.data.map((dbTranscript: DatabaseTranscriptEntry) => ({
           id: dbTranscript.metadata?.localId || dbTranscript.id,
           text: dbTranscript.text,
           timestamp: new Date(dbTranscript.created_at),
@@ -169,7 +204,7 @@ export class AuthStateManager {
   sendAuthStateToRenderer(
     mainWindow: BrowserWindow | null,
     authState: AuthStateData,
-    source: string = "unknown"
+    source = "unknown"
   ): void {
     if (!mainWindow || mainWindow.isDestroyed()) {
       console.warn(`[AuthStateManager] ${source}: Cannot send auth state - mainWindow unavailable or destroyed`);
@@ -204,7 +239,7 @@ export class AuthStateManager {
   sendUnauthenticatedState(
     mainWindow: BrowserWindow | null,
     error?: string,
-    source: string = "unknown"
+    source = "unknown"
   ): void {
     const authState: AuthStateData = {
       user: null,
@@ -224,8 +259,8 @@ export class AuthStateManager {
    */
   async loadAndSendAuthState(
     mainWindow: BrowserWindow | null,
-    user: any,
-    source: string = "unknown"
+    user: User,
+    source = "unknown"
   ): Promise<void> {
     try {
       const authState = await this.loadCompleteAuthState(user, source);

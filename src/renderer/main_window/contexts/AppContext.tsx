@@ -7,7 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import type { ViewType } from "../types";
-import type { ContextFormattingSettings } from "../../../shared/types";
+import type { ContextFormattingSettings, Settings } from "../../../shared/types";
 import { auth, db, analytics } from "../lib/api_client";
 
 interface User {
@@ -43,25 +43,6 @@ interface TranscriptEntry {
   targetLanguage?: string;
 }
 
-interface Settings {
-  // General section
-  defaultMicrophone: string;
-  language: string;
-  
-  // System section  
-  dictateSoundEffects: boolean;
-  muteMusicWhileDictating: boolean;
-  
-  // Personalization section
-  outputMode: "auto-insert" | "clipboard" | "both";
-  useAI: boolean;
-  enableTranslation: boolean;
-  targetLanguage: string;
-  enableContextFormatting: boolean;
-  
-  // Data and Privacy section
-  privacyMode: boolean;
-}
 
 interface AppState {
   // Auth state
@@ -130,6 +111,7 @@ const initialState: AppState = {
     // Personalization section
     outputMode: "both",
     useAI: true,
+    enableRealtimeMode: false,
     enableTranslation: false,
     targetLanguage: "en",
     enableContextFormatting: true,

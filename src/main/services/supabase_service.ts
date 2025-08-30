@@ -25,7 +25,7 @@ export class SupabaseService {
     user?: User | null
   ) => void;
   private sessionRestorationPromise: Promise<void> | null = null;
-  private isSessionRestored: boolean = false;
+  private isSessionRestored = false;
   private tempUserName: string | null = null; // Store name for magic link signup
 
   constructor() {
@@ -662,7 +662,7 @@ export class SupabaseService {
       const defaultSettings = {
         // General section
         defaultMicrophone: "default",
-        language: "auto",
+        language: "en",
 
         // System section
         dictateSoundEffects: true,
@@ -671,6 +671,7 @@ export class SupabaseService {
         // Personalization section
         outputMode: "both" as const,
         useAI: true,
+        enableRealtimeMode: false,
         enableTranslation: false,
         targetLanguage: "en",
         enableContextFormatting: true,

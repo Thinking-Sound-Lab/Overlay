@@ -28,6 +28,7 @@ class STTService {
   private isRealtimeMode = false;
   private accumulatedTranscript = "";
   private streamingDeltas: string[] = [];
+  private currentLanguage = "en";
 
   constructor(
     onMetricsUpdate?: (
@@ -60,6 +61,7 @@ class STTService {
   }
 
   async initialize(language: string) {
+    this.currentLanguage = language;
     const handleMessage = (message: any) => {
       if (message.type === "transcription.completed") {
         console.log("[STT] Final transcript:", message.transcript);
@@ -81,6 +83,7 @@ class STTService {
   }
 
   async initializeRealtime(language: string): Promise<void> {
+    this.currentLanguage = language;
     console.log(`[STT] Initializing realtime mode with language: ${language}`);
 
     const config: RealtimeConfig = {
@@ -97,7 +100,8 @@ class STTService {
           "isFinal:",
           isFinal
         );
-        // Process streaming transcription
+        // In transcription-only mode, we only process final results for insertion
+        // Deltas are just accumulated for completeness
         this.processStreamingTranscript(delta, isFinal, language);
       },
       onTranscriptComplete: (transcript: string, language: string) => {
@@ -107,24 +111,25 @@ class STTService {
       onSpeechStarted: () => {
         console.log("[STT] Realtime speech started");
         this.isRecording = true;
-        this.recordingStartTime = Date.now();
-
-        // Clear previous accumulation
-        this.accumulatedTranscript = "";
-        this.streamingDeltas = [];
+        
+        // Don't clear accumulated transcript - let manual recording control the session
+        // VAD speech_started just means user is speaking, not that it's a new session
+        console.log("[STT] Speech detected, continuing accumulation. Current length:", this.accumulatedTranscript.length);
 
         if (this.analyticsService) {
           this.analyticsService.trackRecordingStarted();
         }
       },
       onSpeechStopped: () => {
-        console.log("[STT] Realtime speech stopped");
+        console.log("[STT] Realtime speech stopped (natural pause)");
         this.isRecording = false;
-
-        const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
-        this.lastRecordingDuration = recordingDuration;
+        
+        // Don't process here - this is just a natural pause
+        // Processing only happens on manual finalizeDictation()
+        console.log("[STT] Waiting for user to manually stop recording");
 
         if (this.analyticsService) {
+          const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
           this.analyticsService.trackRecordingStopped(recordingDuration);
         }
       },
@@ -209,6 +214,11 @@ class STTService {
     this.isRecording = true;
     this.audioBuffer = [];
     this.recordingStartTime = Date.now();
+    
+    // Clear accumulated transcript for new manual recording session
+    this.accumulatedTranscript = "";
+    this.streamingDeltas = [];
+    console.log("[STT] Started new dictation session - cleared accumulation");
 
     console.log("[STT] Started dictation - speak now...");
 
@@ -244,13 +254,26 @@ class STTService {
 
     try {
       if (this.isRealtimeMode) {
-        // In realtime mode, commit the audio buffer to trigger transcription
+        // In realtime mode, commit audio to signal end of input to OpenAI
+        console.log("[STT] Committing audio buffer to trigger final transcription");
+        this.realtimeProvider?.commitAudio();
+        
+        // In realtime mode, process the accumulated transcript
         console.log(
-          "[STT] Realtime mode - committing audio buffer for transcription"
+          "[STT] Realtime mode - processing accumulated transcript"
         );
-        if (this.realtimeProvider?.isReady()) {
-          this.realtimeProvider.commitAudio();
+        
+        if (this.accumulatedTranscript && this.accumulatedTranscript.trim().length > 0) {
+          console.log("[STT] Processing accumulated transcript:", this.accumulatedTranscript.length, "chars");
+          await this.processTranscript(this.accumulatedTranscript, this.currentLanguage);
+          
+          // Clear after processing
+          this.accumulatedTranscript = "";
+          this.streamingDeltas = [];
+        } else {
+          console.log("[STT] No accumulated transcript to process");
         }
+        
         this.lastRecordingDuration = recordingDuration;
       } else {
         // In regular mode, send accumulated audio to Whisper
@@ -377,19 +400,20 @@ class STTService {
         this.accumulatedTranscript
       );
 
-      // Emit intermediate results for real-time UI updates if callback exists
-      //   if (this.onMetricsUpdate) {
-      //     this.onMetricsUpdate(
-      //       {
-      //         type: "streaming_transcript",
-      //         partialTranscript: this.accumulatedTranscript,
-      //         delta: delta,
-      //         isFinal: false,
-      //         timestamp: Date.now(),
-      //       },
-      //       this.accumulatedTranscript
-      //     );
-      //   }
+      // In transcription-only mode, we don't emit intermediate results
+      // We only process and insert final transcripts to avoid processing every delta
+      console.log("[STT] Delta accumulated, waiting for final transcript");
+      
+      // Commented out UI update for transcription-only mode:
+      // if (this.onMetricsUpdate) {
+      //   this.onMetricsUpdate({
+      //     type: "streaming_transcript", 
+      //     partialTranscript: this.accumulatedTranscript,
+      //     delta: delta,
+      //     isFinal: false,
+      //     timestamp: Date.now(),
+      //   }, this.accumulatedTranscript);
+      // }
     }
   }
 

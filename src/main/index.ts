@@ -24,7 +24,7 @@ if (process.platform === "win32") {
 }
 import STTService from "./services/stt_service";
 import { updateGlobalMetrics } from "./helpers/speech_analytics";
-import { GlobalMetrics } from "../shared/types";
+import { GlobalMetrics, Settings } from "../shared/types";
 import { WindowAnimator } from "./helpers/windowAnimator";
 import { ExternalAPIManager } from "./services/external_api_manager";
 import { APIHandlers } from "./ipc/api_handlers";
@@ -144,11 +144,11 @@ let speechMetrics: GlobalMetrics = {
 let transcriptHistory: any[] = [];
 let lastActivityDate: string | null = null;
 
-const store = new Store({
+const store = new Store<Settings>({
   defaults: {
     // General section
     defaultMicrophone: "default",
-    language: "auto",
+    language: "en",
 
     // System section
     dictateSoundEffects: true,
@@ -157,6 +157,7 @@ const store = new Store({
     // Personalization section
     outputMode: "both",
     useAI: true,
+    enableRealtimeMode: false,
     enableTranslation: false,
     targetLanguage: "en",
     enableContextFormatting: true,
@@ -198,7 +199,7 @@ const saveTranscriptToDatabase = async (transcriptData: any) => {
       user_id: currentUser.id,
       text: transcriptData.text.trim(),
       original_text: transcriptData.originalText || null,
-      language: store.get("language") || "en",
+      language: store.get("language"),
       target_language: transcriptData.targetLanguage || null,
       was_translated: Boolean(transcriptData.wasTranslated),
       confidence:
@@ -370,11 +371,12 @@ let lastLanguageSetting: string | null = null;
 
 // Update STT service with current settings
 const updateSTTSettings = async () => {
-  const currentLanguage = (store.get("language") as string) || "auto";
+  const currentLanguage = store.get("language") as string;
   const currentSettings = {
     enableTranslation: store.get("enableTranslation"),
     targetLanguage: store.get("targetLanguage"),
     useAI: store.get("useAI"),
+    enableRealtimeMode: store.get("enableRealtimeMode"),
   };
 
   console.log("[Main] updateSTTSettings called with:", {
@@ -406,6 +408,33 @@ const updateSTTSettings = async () => {
   // Update settings
   console.log("[Main] Updating STT service settings:", currentSettings);
   sttService.updateSettings(currentSettings);
+
+  // Handle realtime mode switching
+  const isRealtimeModeEnabled = currentSettings.enableRealtimeMode;
+  const isCurrentlyInRealtimeMode = sttService.isRealtime;
+
+  console.log("[Main] Realtime mode check:", {
+    isRealtimeModeEnabled,
+    isCurrentlyInRealtimeMode,
+  });
+
+  if (isRealtimeModeEnabled && !isCurrentlyInRealtimeMode) {
+    console.log("[Main] Enabling realtime mode");
+    try {
+      await sttService.enableRealtimeMode(currentLanguage);
+      console.log("[Main] Successfully enabled realtime mode");
+    } catch (error) {
+      console.error("[Main] Failed to enable realtime mode:", error);
+    }
+  } else if (!isRealtimeModeEnabled && isCurrentlyInRealtimeMode) {
+    console.log("[Main] Disabling realtime mode");
+    try {
+      await sttService.disableRealtimeMode(currentLanguage);
+      console.log("[Main] Successfully disabled realtime mode");
+    } catch (error) {
+      console.error("[Main] Failed to disable realtime mode:", error);
+    }
+  }
 
   // Update tracked language
   lastLanguageSetting = currentLanguage;
@@ -583,17 +612,17 @@ const updateTrayMenu = () => {
     { type: "separator" },
     {
       label: "Share Feedback",
-      click: () => {},
+      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement feedback functionality
     },
     {
       label: "Settings",
-      click: () => {},
+      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement settings functionality
     },
 
     { type: "separator" },
     {
       label: "Select microphone",
-      click: () => {},
+      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement microphone selection
     },
 
     { type: "separator" },
@@ -619,7 +648,7 @@ const updateTrayMenu = () => {
       },
     },
     { type: "separator" },
-    { label: "About Overlay", click: () => {} },
+    { label: "About Overlay", click: () => {} }, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement about dialog
     { label: "Quit Overlay", click: () => app.quit() },
   ]);
   tray.setContextMenu(contextMenu);
@@ -958,8 +987,10 @@ app.whenReady().then(async () => {
     apiHandlers = new APIHandlers(externalAPIManager);
     authStateManager = new AuthStateManager(
       externalAPIManager,
+      store,
       updateTrayMenu,
-      updateSpeechMetrics
+      updateSpeechMetrics,
+      updateSTTSettings
     );
 
     // Initialize system audio manager
@@ -1054,7 +1085,7 @@ app.whenReady().then(async () => {
   createMainWindow();
 
   // Note: Recording window will be created after authentication
-  const initialLanguage = (store.get("language") as string) || "auto";
+  const initialLanguage = store.get("language") as string;
   await sttService.initialize(initialLanguage);
 
   // Initialize language tracking
@@ -1216,7 +1247,7 @@ const clearUserCaches = () => {
   // Set default values back for app settings only
   // General section
   store.set("defaultMicrophone", "default");
-  store.set("language", "auto");
+  store.set("language", "en");
 
   // System section
   store.set("dictateSoundEffects", true);
@@ -1225,6 +1256,7 @@ const clearUserCaches = () => {
   // Personalization section
   store.set("outputMode", "both");
   store.set("useAI", true);
+  store.set("enableRealtimeMode", false);
   store.set("enableTranslation", false);
   store.set("targetLanguage", "en");
   store.set("enableContextFormatting", true);
