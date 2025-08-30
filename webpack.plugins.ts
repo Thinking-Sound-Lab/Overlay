@@ -4,9 +4,10 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 
 // Load environment variables directly here
-// const envFile =
-//   process.env.NODE_ENV === "development" ? ".env.development" : ".env";
-// dotenv.config({ path: path.join(process.cwd(), envFile) });
+const isDev = process.env.NODE_ENV === "development";
+if (isDev) {
+  dotenv.config({ path: path.join(process.cwd(), ".env.development") });
+}
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ForkTsCheckerWebpackPlugin: typeof IForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
@@ -27,7 +28,6 @@ export const plugins = [
       REACT_APP_POSTHOG_HOST: JSON.stringify(
         process.env.REACT_APP_POSTHOG_HOST
       ),
-      NODE_ENV: JSON.stringify(process.env.NODE_ENV || "development"),
       OPENAI_API_KEY: JSON.stringify(process.env.OPENAI_API_KEY),
     },
   }),
