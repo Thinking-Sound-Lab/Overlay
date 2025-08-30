@@ -4,10 +4,11 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 
 // Load environment variables directly here
-const isDev = process.env.NODE_ENV === "development";
-if (isDev) {
-  dotenv.config({ path: path.join(process.cwd(), ".env.development") });
-}
+const envFile =
+  process.env.NODE_ENV === "development"
+    ? ".env.development"
+    : ".env.production";
+dotenv.config({ path: path.join(process.cwd(), envFile) });
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ForkTsCheckerWebpackPlugin: typeof IForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");

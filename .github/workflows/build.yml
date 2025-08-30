@@ -41,6 +41,14 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      - name: Create .env.production
+        run: |
+          echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env.production
+          echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env.production
+          echo "REACT_APP_POSTHOG_KEY=${{ secrets.REACT_APP_POSTHOG_KEY }}" >> .env.production
+          echo "REACT_APP_POSTHOG_HOST=${{ secrets.REACT_APP_POSTHOG_HOST }}" >> .env.production
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env.production
+
       - name: Build for ${{ matrix.platform }}
         run: npm run ${{ matrix.make }}
         env:
