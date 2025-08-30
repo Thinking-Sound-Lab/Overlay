@@ -149,18 +149,18 @@ const store = new Store({
     // General section
     defaultMicrophone: "default",
     language: "auto",
-    
-    // System section  
+
+    // System section
     dictateSoundEffects: true,
     muteMusicWhileDictating: true,
-    
+
     // Personalization section
     outputMode: "both",
     useAI: true,
     enableTranslation: false,
     targetLanguage: "en",
     enableContextFormatting: true,
-    
+
     // Data and Privacy section
     privacyMode: true,
   },
@@ -639,7 +639,7 @@ const registerGlobalHotkey = () => {
 
 const startRecording = async () => {
   // Don't allow recording if user is not authenticated
-  if (!AuthUtils.isUserAuthenticated) {
+  if (!AuthUtils.isUserAuthenticated()) {
     console.log("[Main] Recording blocked - user not authenticated");
     return;
   }
@@ -691,9 +691,7 @@ const stopRecording = async () => {
   }
 
   // Update processing stage and send to UI
-  processingStage = "Transcribing audio...";
   recordingWindow?.webContents.send("recording-stopped");
-  recordingWindow?.webContents.send("processing-stage", processingStage);
 
   // Restore system audio as soon as recording stops and transcription begins
   if (systemAudioManager) {
@@ -702,21 +700,10 @@ const stopRecording = async () => {
 
   try {
     // Stage 1: Transcribing
-    processingStage = "Transcribing speech...";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
-
     await sttService.finalizeDictation();
     console.log("[Main] Dictation finalized successfully");
-
-    // The actual processing (translation, grammar correction, text insertion)
-    // happens in the STT service. The STT service will handle completion timing
-    // via the onMetricsUpdate callback, so no artificial delay is needed here.
-    processingStage = "Finalizing...";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
   } catch (error) {
     console.error("[Main] Error finalizing dictation:", error);
-    processingStage = "Error occurred";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
 
     // Ensure audio is restored even in error cases
     if (systemAudioManager) {
@@ -725,10 +712,6 @@ const stopRecording = async () => {
   } finally {
     // Reset processing state - window management moved to handleMetricsUpdate
     isProcessing = false;
-    processingStage = "";
-    console.log(
-      "[Main] Dictation processing completed - window state will be managed by STT callback"
-    );
   }
 };
 
@@ -1234,23 +1217,32 @@ const clearUserCaches = () => {
   // General section
   store.set("defaultMicrophone", "default");
   store.set("language", "auto");
-  
-  // System section  
+
+  // System section
   store.set("dictateSoundEffects", true);
   store.set("muteMusicWhileDictating", true);
-  
+
   // Personalization section
   store.set("outputMode", "both");
   store.set("useAI", true);
   store.set("enableTranslation", false);
   store.set("targetLanguage", "en");
   store.set("enableContextFormatting", true);
-  
+
   // Data and Privacy section
   store.set("privacyMode", true);
 
   // Reset authentication state
   AuthUtils.setAuthenticationState(false);
+
+  // Close and destroy recording window to prevent unauthorized access
+  if (recordingWindow && !recordingWindow.isDestroyed()) {
+    console.log(
+      "[Main] Closing recording window due to sign out/account deletion"
+    );
+    recordingWindow.close();
+    recordingWindow = null;
+  }
 
   // Notify renderer about cleared data
   mainWindow?.webContents.send("statistics-updated", speechMetrics);

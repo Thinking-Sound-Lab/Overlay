@@ -30,22 +30,28 @@ export class SupabaseService {
 
   constructor() {
     // Import centralized config
-    const { config } = require("../../../config/environment");
+    // const { config } = require("../../../config/environment");
 
     console.log("SupabaseService: Initializing with config:", {
-      url: config.supabaseUrl,
-      keyLength: config.supabaseAnonKey?.length,
-      hasUrl: !!config.supabaseUrl,
-      hasKey: !!config.supabaseAnonKey,
+      url: process.env.REACT_APP_SUPABASE_URL,
+      keyLength: process.env.REACT_APP_SUPABASE_ANON_KEY?.length,
+      hasUrl: !!process.env.REACT_APP_SUPABASE_URL,
+      hasKey: !!process.env.REACT_APP_SUPABASE_ANON_KEY,
     });
 
-    if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    if (
+      !process.env.REACT_APP_SUPABASE_URL ||
+      !process.env.REACT_APP_SUPABASE_ANON_KEY
+    ) {
       throw new Error(
         "Supabase configuration missing. Check environment variables."
       );
     }
 
-    this.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+    this.supabase = createClient(
+      process.env.REACT_APP_SUPABASE_URL,
+      process.env.REACT_APP_SUPABASE_ANON_KEY
+    );
     this.sessionStore = new Store<any>({
       name: "supabase-session",
       defaults: {
@@ -54,11 +60,9 @@ export class SupabaseService {
       },
     });
 
-
     // Try to restore session on startup and track completion
     this.sessionRestorationPromise = this.restoreSession();
   }
-
 
   private async restoreSession() {
     try {
