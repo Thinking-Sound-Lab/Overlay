@@ -16,14 +16,14 @@ export class APIClient {
   }
 
   // Authentication methods
-  static async signIn(email: string, password: string): Promise<IPCResponse> {
+  static async signInWithMagicLink(email: string): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.signIn(email, password);
+      const response = await window.electronAPI.auth.signInWithMagicLink(email);
       return response;
     } catch (error) {
-      console.error("APIClient: Sign in error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign in" };
+      console.error("APIClient: Magic link sign in error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
     }
   }
 
@@ -38,22 +38,20 @@ export class APIClient {
     }
   }
 
-  static async signUp(
+  static async signUpWithMagicLink(
     email: string,
-    password: string,
-    name?: string
+    name: string
   ): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.auth.signUp(
+      const response = await window.electronAPI.auth.signUpWithMagicLink(
         email,
-        password,
         name
       );
       return response;
     } catch (error) {
-      console.error("APIClient: Sign up error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign up" };
+      console.error("APIClient: Magic link sign up error:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
     }
   }
 
@@ -100,6 +98,8 @@ export class APIClient {
       return { success: false, error: error instanceof Error ? error.message : "Failed to complete onboarding" };
     }
   }
+
+
 
   // Database methods
   static async saveTranscript(transcript: any): Promise<IPCResponse> {
@@ -399,8 +399,8 @@ export class APIClient {
 
 // Convenience exports that match the old API structure
 export const auth = {
-  signUp: APIClient.signUp,
-  signIn: APIClient.signIn,
+  signUpWithMagicLink: APIClient.signUpWithMagicLink,
+  signInWithMagicLink: APIClient.signInWithMagicLink,
   signOut: APIClient.signOut,
   getCurrentUser: APIClient.getCurrentUser,
   getUserProfile: APIClient.getUserProfile,

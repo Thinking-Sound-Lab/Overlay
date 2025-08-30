@@ -8,24 +8,24 @@ import {
 } from "./ui/card";
 import { Button } from "./ui/button";
 import { auth } from "../lib/api_client";
-import { LogIn, UserPlus, Eye, EyeOff } from "lucide-react";
+import { Mail, LogIn, UserPlus } from "lucide-react";
 
 interface AuthPageProps {
   onSignIn: (user: any) => void;
-  onSignUp: (user: any) => void;
+  onSignUp: (signUpData: { user?: any, email: string, needsVerification: boolean }) => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingMagicLinkSignup, setPendingMagicLinkSignup] = useState<{email: string, name: string} | null>(null);
 
-  // Listen for auth state changes to clear Google loading state
+  // Listen for auth state changes to handle Google and magic link authentication
   useEffect(() => {
     const handleAuthStateChanged = (event: any) => {
       const { user, authenticated, error: authError } = event.detail;
@@ -46,6 +46,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
           // For Google auth, we don't know if it's signin or signup, so default to signin logic
           onSignIn(user);
         }
+      } else if (authenticated && user && (successMessage || pendingMagicLinkSignup)) {
+        // This is a magic link authentication completing
+        console.log('AuthPage: Magic link authentication completed:', user.email);
+        setSuccessMessage("");
+        
+        if (pendingMagicLinkSignup) {
+          // This was a sign-up magic link
+          console.log('AuthPage: Magic link sign-up completed for:', user.email);
+          setPendingMagicLinkSignup(null);
+          onSignUp({ user, email: user.email, needsVerification: false });
+        } else {
+          // This was a sign-in magic link
+          console.log('AuthPage: Magic link sign-in completed for:', user.email);
+          onSignIn(user);
+        }
       }
     };
 
@@ -54,47 +69,49 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
     return () => {
       window.removeEventListener('auth-state-changed', handleAuthStateChanged);
     };
-  }, [isGoogleLoading, onSignIn]);
+  }, [isGoogleLoading, onSignIn, onSignUp, successMessage, pendingMagicLinkSignup]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccessMessage("");
     setIsLoading(true);
 
     try {
+      if (!email.trim()) {
+        setError("Email is required");
+        return;
+      }
+
       let result;
       if (isLogin) {
-        result = await auth.signIn(email, password);
+        result = await auth.signInWithMagicLink(email.trim());
       } else {
         // For signup, name is required
         if (!name.trim()) {
           setError("Name is required for signup");
           return;
         }
-        result = await auth.signUp(email, password, name.trim());
+        result = await auth.signUpWithMagicLink(email.trim(), name.trim());
       }
 
       if (!result.success) {
-        setError(result.error || "Authentication failed");
-      } else if (result.data?.data?.user) {
-        console.log(
-          `AuthPage: ${isLogin ? 'Sign in' : 'Sign up'} successful with user:`,
-          result.data.data.user
-        );
-        
-        // Call the appropriate handler based on login/signup mode
-        if (isLogin) {
-          onSignIn(result.data.data.user);
-        } else {
-          onSignUp(result.data.data.user);
-        }
+        setError(result.error || "Failed to send magic link");
       } else {
-        console.error("AuthPage: Auth response structure:", result);
-        setError("Authentication successful but user data not received");
+        console.log(
+          `AuthPage: Magic link ${isLogin ? 'sign in' : 'sign up'} sent successfully`
+        );
+        setSuccessMessage(
+          `Magic link sent to ${email}! Check your email and click the link to ${isLogin ? 'sign in' : 'complete signup'}.`
+        );
+        // Store signup info for post-authentication handling (no immediate redirect)
+        if (!isLogin) {
+          setPendingMagicLinkSignup({ email: email.trim(), name: name.trim() });
+        }
       }
-    } catch (err) {
-      console.error("Auth error:", err);
-      setError("An unexpected error occurred");
+    } catch (error) {
+      console.error(`AuthPage: Magic link ${isLogin ? 'sign in' : 'sign up'} error:`, error);
+      setError(`Failed to send magic link`);
     } finally {
       setIsLoading(false);
     }
@@ -103,77 +120,47 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
   const handleGoogleSignIn = async () => {
     setError("");
     setIsGoogleLoading(true);
-
+    
     try {
+      console.log('AuthPage: Initiating Google sign-in...');
       const result = await auth.signInWithGoogle();
-
+      
       if (!result.success) {
-        setError(result.error || "Google authentication failed");
-        setIsGoogleLoading(false); // Clear loading on immediate error
-      } else {
-        // Google OAuth will redirect externally, keep loading until auth completes
-        console.log("Google OAuth initiated - waiting for callback...");
-        // Don't clear isGoogleLoading here - it will be cleared by auth-state-changed event
+        console.error('AuthPage: Google sign-in failed:', result.error);
+        setError(result.error || "Google sign-in failed");
+        setIsGoogleLoading(false);
       }
-    } catch (err) {
-      console.error("Google auth error:", err);
-      setError("An unexpected error occurred during Google sign in");
-      setIsGoogleLoading(false); // Clear loading on exception
+      // Success case is handled by auth state listener
+    } catch (error) {
+      console.error('AuthPage: Google sign-in error:', error);
+      setError("Google sign-in failed");
+      setIsGoogleLoading(false);
     }
-    // Note: Don't use finally block to clear loading - let the auth state change event handle it
   };
 
   return (
     <div className="flex-1 flex items-center justify-center p-8 bg-gray-50 relative h-full">
-      {/* Draggable area at top */}
-      {/* <div
-        className="absolute top-0 left-0 right-0 h-8 z-10"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      /> */}
-      <Card
-        className="w-full max-w-md relative z-20"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
+      <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-2xl font-bold text-gray-900">Overlay</span>
+          <div className="flex items-center justify-center mb-4">
+            <div className="p-3 bg-blue-100 rounded-full">
+              <Mail className="h-8 w-8 text-blue-600" />
+            </div>
           </div>
           <CardTitle className="text-xl">
             {isLogin ? "Welcome back" : "Create your account"}
           </CardTitle>
           <CardDescription>
-            {isLogin
-              ? "Sign in to access your transcripts and settings"
-              : "Get started with AI-powered voice dictation"}
+            {isLogin 
+              ? "Enter your email to receive a magic link"
+              : "Enter your details to get started"
+            }
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div>
-                <label
-                  htmlFor="name"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Full Name
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required={!isLogin}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Your full name"
-                  disabled={isLoading}
-                />
-              </div>
-            )}
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-gray-700">
                 Email
               </label>
               <input
@@ -181,113 +168,97 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter your email"
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="your@email.com"
-                disabled={isLoading}
               />
             </div>
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Password
-              </label>
-              <div className="relative">
+
+            {!isLogin && (
+              <div className="space-y-2">
+                <label htmlFor="name" className="text-sm font-medium text-gray-700">
+                  Full Name
+                </label>
                 <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="••••••••"
-                  disabled={isLoading}
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter your full name"
+                  required={!isLogin}
                 />
-                <Button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  disabled={isLoading}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
               </div>
-            </div>
+            )}
 
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md border border-red-200">
                 {error}
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            {successMessage && (
+              <div className="text-green-600 text-sm bg-green-50 p-3 rounded-md border border-green-200">
+                {successMessage}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="w-full"
+            >
               {isLoading ? (
                 <span className="flex items-center gap-2">
-                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-                  {isLogin ? "Signing in..." : "Creating account..."}
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                  Sending magic link...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  {isLogin ? (
-                    <>
-                      <LogIn className="h-4 w-4" />
-                      Sign in
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-4 w-4" />
-                      Create account
-                    </>
-                  )}
+                  <Mail className="h-4 w-4" />
+                  Send magic link
                 </span>
               )}
             </Button>
           </form>
 
-          <div className="relative my-6">
+          <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300" />
+              <span className="w-full border-t" />
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">or</span>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
 
           <Button
-            type="button"
             variant="outline"
             onClick={handleGoogleSignIn}
-            disabled={isLoading || isGoogleLoading}
-            className="w-full mb-6"
+            disabled={isGoogleLoading}
+            className="w-full"
           >
             {isGoogleLoading ? (
               <span className="flex items-center gap-2">
-                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></span>
-                Signing in with Google...
+                <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+                Connecting...
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <svg className="h-4 w-4" viewBox="0 0 24 24">
                   <path
-                    fill="#4285f4"
+                    fill="currentColor"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                   />
                   <path
-                    fill="#34a853"
+                    fill="currentColor"
                     d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
                   />
                   <path
-                    fill="#fbbc05"
+                    fill="currentColor"
                     d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
                   />
                   <path
-                    fill="#ea4335"
+                    fill="currentColor"
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
@@ -299,19 +270,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
           <div className="text-center">
             <button
               type="button"
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError("");
-                setEmail("");
-                setPassword("");
-                setName("");
-              }}
-              className="text-sm text-blue-600 hover:text-blue-800"
-              disabled={isLoading}
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-sm text-blue-600 hover:text-blue-500 underline"
             >
-              {isLogin
-                ? "Don't have an account? Sign up"
-                : "Already have an account? Sign in"}
+              {isLogin ? (
+                <span className="flex items-center justify-center gap-1">
+                  <UserPlus className="h-4 w-4" />
+                  Don't have an account? Sign up
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-1">
+                  <LogIn className="h-4 w-4" />
+                  Already have an account? Sign in
+                </span>
+              )}
             </button>
           </div>
         </CardContent>

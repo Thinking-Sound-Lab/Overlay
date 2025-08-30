@@ -12,17 +12,6 @@ export class ExternalAPIManager {
       this.supabaseService = new SupabaseService();
       this.analyticsService = new AnalyticsService();
       
-      // Set up auth state change listener to sync with analytics
-      this.supabaseService.setAuthStateChangeListener((user: User | null) => {
-        if (user) {
-          this.analyticsService.identify(user.id, {
-            email: user.email,
-            created_at: user.created_at,
-            app_metadata: user.app_metadata,
-            user_metadata: user.user_metadata
-          });
-        }
-      });
 
       this.isInitialized = true;
       console.log('ExternalAPIManager: Successfully initialized');
@@ -48,12 +37,12 @@ export class ExternalAPIManager {
   }
 
   // Authentication methods
-  async signIn(email: string, password: string) {
-    return await this.supabaseService.signIn(email, password);
+  async signInWithMagicLink(email: string) {
+    return await this.supabaseService.signInWithMagicLink(email);
   }
 
-  async signUp(email: string, password: string, name?: string) {
-    return await this.supabaseService.signUp(email, password, name);
+  async signUpWithMagicLink(email: string, name: string) {
+    return await this.supabaseService.signUpWithMagicLink(email, name);
   }
 
   async signInWithGoogle() {

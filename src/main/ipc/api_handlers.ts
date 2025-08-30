@@ -1,9 +1,9 @@
 import { ipcMain } from "electron";
 import { ExternalAPIManager } from "../services/external_api_manager";
-import { IPCResponse } from "../utils/ipc-handler";
+import { IPCResponse } from "../../shared/types";
 
 // Re-export IPCResponse type for compatibility
-export { IPCResponse } from "../utils/ipc-handler";
+// export { IPCResponse } from "../utils/ipc-handler";
 
 export class APIHandlers {
   private apiManager: ExternalAPIManager;
@@ -17,11 +17,17 @@ export class APIHandlers {
     console.log("APIHandlers: Setting up IPC handlers...");
 
     // Authentication handlers
-    ipcMain.handle("auth:signIn", this.handleSignIn.bind(this));
-    console.log("APIHandlers: Registered auth:signIn handler");
+    ipcMain.handle(
+      "auth:signInWithMagicLink",
+      this.handleSignInWithMagicLink.bind(this)
+    );
+    console.log("APIHandlers: Registered auth:signInWithMagicLink handler");
 
-    ipcMain.handle("auth:signUp", this.handleSignUp.bind(this));
-    console.log("APIHandlers: Registered auth:signUp handler");
+    ipcMain.handle(
+      "auth:signUpWithMagicLink",
+      this.handleSignUpWithMagicLink.bind(this)
+    );
+    console.log("APIHandlers: Registered auth:signUpWithMagicLink handler");
 
     ipcMain.handle(
       "auth:signInWithGoogle",
@@ -42,7 +48,7 @@ export class APIHandlers {
       this.handleCompleteOnboarding.bind(this)
     );
     console.log(
-      "APIHandlers: Registered auth:deleteAccount and auth:completeOnboarding handlers"
+      "APIHandlers: Registered auth handlers including deleteAccount and completeOnboarding"
     );
 
     // Database handlers
@@ -113,25 +119,21 @@ export class APIHandlers {
   }
 
   // Authentication handlers
-  private async handleSignIn(
+  private async handleSignInWithMagicLink(
     event: any,
-    credentials: { email: string; password: string }
+    credentials: { email: string }
   ): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      if (!credentials?.email || !credentials?.password) {
-        return this.createResponse(
-          null,
-          new Error("Email and password are required")
-        );
+      if (!credentials?.email) {
+        return this.createResponse(null, new Error("Email is required"));
       }
 
-      const result = await this.apiManager.supabase.signIn(
-        credentials.email,
-        credentials.password
+      const result = await this.apiManager.supabase.signInWithMagicLink(
+        credentials.email
       );
       return this.createResponse(result);
     } catch (error) {
@@ -139,25 +141,24 @@ export class APIHandlers {
     }
   }
 
-  private async handleSignUp(
+  private async handleSignUpWithMagicLink(
     event: any,
-    credentials: { email: string; password: string; name?: string }
+    credentials: { email: string; name: string }
   ): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      if (!credentials?.email || !credentials?.password) {
+      if (!credentials?.email || !credentials?.name) {
         return this.createResponse(
           null,
-          new Error("Email and password are required")
+          new Error("Email and name are required for signup")
         );
       }
 
-      const result = await this.apiManager.supabase.signUp(
+      const result = await this.apiManager.supabase.signUpWithMagicLink(
         credentials.email,
-        credentials.password,
         credentials.name
       );
       return this.createResponse(result);
@@ -222,7 +223,7 @@ export class APIHandlers {
 
     try {
       const user = this.apiManager.supabase.getCurrentUser();
-      return this.createResponse({ user });
+      return this.createResponse({ data: { user } });
     } catch (error) {
       return this.createResponse(null, error);
     }

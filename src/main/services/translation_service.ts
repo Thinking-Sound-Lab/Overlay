@@ -1,9 +1,31 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-import { TranslationResult } from "../../shared/types";
+import { TranslationResult, ApplicationContextType, ContextFormattingSettings, FormattingResult } from "../../shared/types";
+import * as robot from "robotjs";
+import { calculateSpeechMetrics } from "../helpers/speech_analytics";
+import { ApplicationDetector } from "./application_detector";
+import { ContextFormatter } from "./context_formatter";
 
 export class TranslationService {
   private static instance: TranslationService;
+  private applicationDetector: ApplicationDetector;
+  private contextFormatter: ContextFormatter;
+  private contextFormattingSettings: ContextFormattingSettings;
+  
+  // Single language model configuration
+  private readonly LANGUAGE_MODEL = "gpt-4o";
+
+  constructor() {
+    this.applicationDetector = ApplicationDetector.getInstance();
+    this.contextFormatter = ContextFormatter.getInstance();
+    
+    // Initialize default context formatting settings
+    this.contextFormattingSettings = {
+      enableContextFormatting: true,
+      contextSettings: {},
+      customAppMappings: {},
+    };
+  }
 
   public static getInstance(): TranslationService {
     if (!TranslationService.instance) {
@@ -12,31 +34,220 @@ export class TranslationService {
     return TranslationService.instance;
   }
 
+  /**
+   * Main text processing pipeline - handles complete language model processing
+   * @param transcript Raw transcript from STT service
+   * @param sourceLanguage Source language of the transcript
+   * @param settings User settings for processing options
+   * @param recordingDuration Duration of the recording for metrics
+   * @param onComplete Callback when processing and insertion is complete
+   */
+  async processText(
+    transcript: string,
+    sourceLanguage: string,
+    settings: any,
+    recordingDuration: number,
+    onComplete?: (metrics: any, finalText: string, metadata: any) => void
+  ): Promise<void> {
+    if (!transcript || transcript.trim().length === 0) {
+      console.log("[Translation] Empty transcript received");
+      return;
+    }
+
+    console.log("[Translation] Processing transcript:", transcript);
+    console.log("[Translation] Source language:", sourceLanguage);
+
+    try {
+      let processedText = transcript;
+
+      // Step 1: Translation (if enabled and needed)
+      let translationResult: TranslationResult | null = null;
+      if (settings.enableTranslation && settings.targetLanguage) {
+        const needsTranslation = sourceLanguage !== settings.targetLanguage;
+
+        if (needsTranslation) {
+          console.log(
+            `[Translation] Translation enabled: ${sourceLanguage} -> ${settings.targetLanguage}`
+          );
+          translationResult = await this.translateText(
+            transcript,
+            settings.targetLanguage,
+            sourceLanguage
+          );
+          processedText = translationResult.translatedText;
+          console.log("[Translation] Translated text:", processedText);
+        } else {
+          console.log(
+            "[Translation] Text already in target language, skipping translation"
+          );
+        }
+      }
+
+      // Step 2: Grammar correction (if AI enhancement is enabled)
+      const finalLanguage =
+        settings.enableTranslation && settings.targetLanguage
+          ? settings.targetLanguage
+          : sourceLanguage;
+
+      const correctedText = settings.useAI
+        ? await this.correctGrammar(processedText, finalLanguage)
+        : processedText;
+      console.log(
+        "[Translation] Grammar corrected text:",
+        correctedText,
+        settings.useAI ? "(AI enhanced)" : "(no AI enhancement)"
+      );
+
+      // Step 3: Apply context-aware formatting
+      let finalText = correctedText;
+      let formattingResult: FormattingResult | null = null;
+
+      if (this.contextFormattingSettings.enableContextFormatting) {
+        try {
+          console.log(
+            "[Translation] Detecting active application for context formatting..."
+          );
+          const activeApp =
+            await this.applicationDetector.getActiveApplication();
+
+          if (activeApp) {
+            console.log("[Translation] Active application detected:", {
+              name: activeApp.applicationName,
+              contextType: activeApp.contextType,
+              windowTitle: activeApp.windowTitle,
+            });
+
+            formattingResult = this.contextFormatter.formatText(
+              correctedText,
+              activeApp,
+              {
+                detectedLanguage: finalLanguage,
+                settings: settings,
+              }
+            );
+
+            finalText = formattingResult.formattedText;
+            console.log("[Translation] Context formatting applied:", {
+              originalText: correctedText,
+              formattedText: finalText,
+              contextType: formattingResult.contextType,
+              transformations: formattingResult.appliedTransformations,
+              confidence: formattingResult.confidence,
+            });
+          } else {
+            console.log(
+              "[Translation] Could not detect active application, using original text"
+            );
+          }
+        } catch (error) {
+          console.error("[Translation] Error during context formatting:", error);
+          // Fallback to original text if formatting fails
+          finalText = correctedText;
+        }
+      } else {
+        console.log("[Translation] Context formatting disabled, using original text");
+      }
+
+      console.log("[Translation] Final text:", finalText);
+
+      // Step 4: Calculate metrics
+      const metrics = calculateSpeechMetrics(finalText, recordingDuration);
+      console.log("[Translation] Metrics:", metrics);
+
+      // Step 5: Insert text and fire callback after insertion completes
+      this.insertTextWithRobot(finalText, () => {
+        if (onComplete) {
+          // Build comprehensive metadata
+          const wasTranslated =
+            settings.enableTranslation &&
+            settings.targetLanguage &&
+            sourceLanguage !== settings.targetLanguage &&
+            translationResult;
+
+          const translationMeta = wasTranslated
+            ? {
+                wasTranslated: true,
+                originalText: transcript,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: settings.targetLanguage,
+                confidence: translationResult.confidence,
+                wordCountRatio: translationResult.wordCountRatio,
+                detectedLanguage: translationResult.detectedLanguage,
+              }
+            : { wasTranslated: false, detectedLanguage: sourceLanguage };
+
+          const contextFormattingMeta = formattingResult
+            ? {
+                contextFormattingApplied: true,
+                contextType: formattingResult.contextType,
+                appliedTransformations: formattingResult.appliedTransformations,
+                formattingConfidence: formattingResult.confidence,
+                preFormattingText: correctedText,
+              }
+            : { contextFormattingApplied: false };
+
+          const combinedMeta = {
+            ...translationMeta,
+            ...contextFormattingMeta,
+          };
+
+          onComplete(metrics, finalText, combinedMeta);
+        }
+      });
+    } catch (error) {
+      console.error("[Translation] Error in text processing pipeline:", error);
+    }
+  }
+
+  /**
+   * Update context formatting settings
+   */
+  updateContextFormattingSettings(
+    settings: Partial<ContextFormattingSettings>
+  ) {
+    this.contextFormattingSettings = {
+      ...this.contextFormattingSettings,
+      ...settings,
+    };
+
+    this.contextFormatter.updateOptions({
+      enableContextFormatting:
+        this.contextFormattingSettings.enableContextFormatting,
+      userOverrides: new Map(
+        Object.entries(this.contextFormattingSettings.customAppMappings)
+      ),
+    });
+
+    console.log(
+      "[Translation] Context formatting settings updated:",
+      this.contextFormattingSettings
+    );
+  }
+
   async translateText(
     text: string,
     targetLanguage: string,
-    sourceLanguage?: string
+    sourceLanguage: string
   ): Promise<TranslationResult> {
     try {
       if (!text.trim()) {
         throw new Error("Text cannot be empty");
       }
 
+      if (!sourceLanguage) {
+        throw new Error("Source language must be provided");
+      }
+
       console.log(
-        `[Translation] Translating text from ${sourceLanguage || "auto"} to ${targetLanguage}`
+        `[Translation] Translating text from ${sourceLanguage} to ${targetLanguage}`
       );
       console.log(`[Translation] Original text: "${text}"`);
 
-      // Step 1: Enhanced language detection if source not provided
-      let detectedSourceLanguage = sourceLanguage;
-      if (!sourceLanguage || sourceLanguage === "auto") {
-        detectedSourceLanguage = await this.enhancedLanguageDetection(text);
-        console.log(
-          `[Translation] Enhanced detection result: ${detectedSourceLanguage}`
-        );
-      }
+      // Use the predetermined source language from user settings
+      const detectedSourceLanguage = sourceLanguage;
+      console.log(`[Translation] Using predetermined source language: ${detectedSourceLanguage}`);
 
-      // Step 2: Check if translation is actually needed
+      // Check if translation is actually needed
       if (detectedSourceLanguage === targetLanguage) {
         console.log(
           `[Translation] Source and target language are the same, skipping translation`
@@ -52,14 +263,16 @@ export class TranslationService {
         };
       }
 
-      // Step 3: Perform semantic-aware translation
+      // Perform semantic-aware translation
       const translationResult = await this.performSemanticTranslation(
         text,
         detectedSourceLanguage,
         targetLanguage
       );
 
-      // Step 4: Validate and potentially correct the translation
+      console.log("Translation result:", translationResult);
+
+      // Validate and potentially correct the translation
       const validatedResult = await this.validateTranslation(
         text,
         translationResult,
@@ -80,66 +293,16 @@ export class TranslationService {
       console.error("[Translation] Error translating text:", error);
       return {
         translatedText: text,
-        sourceLanguage: sourceLanguage || "auto",
+        sourceLanguage: sourceLanguage || "en",
         targetLanguage,
         originalText: text,
         confidence: 0.0,
         wordCountRatio: 1.0,
-        detectedLanguage: sourceLanguage || "unknown",
+        detectedLanguage: sourceLanguage || "en",
       };
     }
   }
 
-  private async enhancedLanguageDetection(text: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert language detection system. Analyze the given text and provide the most accurate language identification.
-
-INSTRUCTIONS:
-1. Return only the ISO 639-1 language code (2 letters)
-2. Consider context, grammar, and vocabulary patterns
-3. For mixed languages, identify the dominant language
-4. Be confident in your detection - avoid 'auto' or 'unknown'
-5. Common codes: en=English, es=Spanish, fr=French, de=German, hi=Hindi, ur=Urdu, ta=Tamil, etc.
-
-IMPORTANT: Return only the 2-letter code, nothing else.`,
-          },
-          {
-            role: "user",
-            content: `Detect the language of this text: "${text}"`,
-          },
-        ],
-        max_tokens: 10,
-        temperature: 0.1,
-      });
-
-      const detectedLanguage =
-        response.choices[0].message.content?.trim().toLowerCase() || "en";
-
-      // Validate the detected language code
-      if (
-        detectedLanguage.length === 2 &&
-        /^[a-z]{2}$/.test(detectedLanguage)
-      ) {
-        return detectedLanguage;
-      }
-
-      console.warn(
-        `[Translation] Invalid language code detected: ${detectedLanguage}, defaulting to 'en'`
-      );
-      return "en";
-    } catch (error) {
-      console.error(
-        "[Translation] Error in enhanced language detection:",
-        error
-      );
-      return "en"; // Default fallback
-    }
-  }
 
   private async performSemanticTranslation(
     text: string,
@@ -177,7 +340,7 @@ TRANSLATION STRATEGY:
 OUTPUT FORMAT: Return only the translated text, nothing else.`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: this.LANGUAGE_MODEL,
         messages: [
           {
             role: "system",
@@ -227,38 +390,11 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
       `[Translation] Word count ratio: ${wordCountRatio} ${originalWords === 0 ? "(division by zero prevented)" : ""}`
     );
 
-    // Check if word count deviation is excessive (>50% change) and we have meaningful text
+    // Log word count deviation but don't attempt AI correction
     if (originalWords > 0 && (wordCountRatio < 0.5 || wordCountRatio > 2.0)) {
       console.warn(
-        `[Translation] Excessive word count change: ${originalWords} -> ${translatedWords} (ratio: ${wordCountRatio.toFixed(2)})`
+        `[Translation] Word count change detected: ${originalWords} -> ${translatedWords} (ratio: ${wordCountRatio.toFixed(2)}) - accepting translation as-is`
       );
-
-      // Attempt word count correction
-      const correctedTranslation = await this.correctWordCount(
-        originalText,
-        translation.translatedText,
-        sourceLanguage,
-        targetLanguage,
-        originalWords
-      );
-
-      // Calculate corrected word count ratio, preventing division by zero
-      const correctedWords = this.countWords(correctedTranslation.text);
-      const correctedRatio =
-        originalWords === 0 ? 1.0 : correctedWords / originalWords;
-
-      return {
-        translatedText: correctedTranslation.text,
-        sourceLanguage,
-        targetLanguage,
-        originalText,
-        confidence: Math.min(
-          translation.confidence,
-          correctedTranslation.confidence
-        ),
-        wordCountRatio: correctedRatio,
-        detectedLanguage: sourceLanguage,
-      };
     }
 
     return {
@@ -272,64 +408,6 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
     };
   }
 
-  private async correctWordCount(
-    originalText: string,
-    translatedText: string,
-    sourceLanguage: string,
-    targetLanguage: string,
-    targetWordCount: number
-  ): Promise<{ text: string; confidence: number }> {
-    try {
-      const languageNames = this.getLanguageNames();
-      const sourceName = languageNames[sourceLanguage] || sourceLanguage;
-      const targetName = languageNames[targetLanguage] || targetLanguage;
-
-      const systemPrompt = `You are a translation editor specializing in length normalization while preserving meaning.
-
-TASK: Adjust this ${targetName} translation to match the original ${sourceName} text length more closely.
-
-REQUIREMENTS:
-1. Target word count: ~${targetWordCount} words (±3 words acceptable)
-2. Preserve 100% of the original meaning
-3. Maintain natural ${targetName} fluency
-4. Keep all important information
-5. Remove only redundancy, never core content
-
-ORIGINAL TEXT (${sourceName}): "${originalText}"
-CURRENT TRANSLATION (${targetName}): "${translatedText}"
-CURRENT WORD COUNT: ${this.countWords(translatedText)} words
-TARGET WORD COUNT: ~${targetWordCount} words
-
-OUTPUT: Return only the adjusted translation, nothing else.`;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          {
-            role: "user",
-            content:
-              "Please adjust the translation to match the target word count while preserving all meaning.",
-          },
-        ],
-        max_tokens: Math.max(500, targetWordCount * 2),
-        temperature: 0.1,
-      });
-
-      const correctedText =
-        response.choices[0].message.content?.trim() || translatedText;
-      const confidence =
-        response.choices[0].finish_reason === "stop" ? 0.8 : 0.6;
-
-      return { text: correctedText, confidence };
-    } catch (error) {
-      console.error("[Translation] Error in word count correction:", error);
-      return { text: translatedText, confidence: 0.5 };
-    }
-  }
 
   private countWords(text: string): number {
     // Handle null, undefined, or empty strings
@@ -446,32 +524,102 @@ OUTPUT: Return only the adjusted translation, nothing else.`;
     };
   }
 
-  async detectLanguage(text: string): Promise<string> {
+  /**
+   * Grammar correction using language model
+   */
+  private async correctGrammar(
+    text: string,
+    language: string
+  ): Promise<string> {
     try {
+      const systemPrompt = this.getGrammarInstructions(language);
+
+      const prompt = `You are a grammar and spelling corrector. Your ONLY task is to fix spelling errors, grammar mistakes, and add proper punctuation. ${systemPrompt}
+
+CRITICAL RULES:
+1. NEVER answer questions - if input is a question, output must remain a question
+2. NEVER provide information or explanations  
+3. NEVER change the meaning or intent of the text
+4. NEVER add context or additional information
+5. If input is a statement, output must remain a statement
+6. If input is a question, output must remain a question
+
+ALLOWED CORRECTIONS:
+- Fix spelling errors
+- Correct grammar mistakes  
+- Add necessary punctuation (periods, commas, capitalization)
+- Convert emoji references to actual emojis (e.g., "fire emoji" → 🔥)
+
+EXAMPLES:
+- Input: "how is weather today" → Output: "How is the weather today?"
+- Input: "weather is good" → Output: "The weather is good."
+- Input: "मौसम कैसा है" → Output: "मौसम कैसा है?" (fix punctuation, preserve question)
+
+Return ONLY the corrected text, nothing else.`;
+
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: this.LANGUAGE_MODEL,
         messages: [
           {
             role: "system",
-            content:
-              "You are a language detection expert. Analyze the given text and return only the ISO 639-1 language code (2 letters) of the detected language. Examples: 'en' for English, 'es' for Spanish, 'fr' for French, etc. Return only the code, nothing else.",
+            content: prompt,
           },
           {
             role: "user",
             content: text,
           },
         ],
-        max_tokens: 10,
+        max_tokens: 500,
         temperature: 0.1,
       });
 
-      const detectedLanguage =
-        response.choices[0].message.content?.trim().toLowerCase() || "en";
-      console.log(`[Translation] Detected language: ${detectedLanguage}`);
-      return detectedLanguage;
+      return response.choices[0].message.content?.trim() || text;
     } catch (error) {
-      console.error("[Translation] Error detecting language:", error);
-      return "en"; // Default to English
+      console.error("[Translation] Grammar correction failed:", error);
+      return text; // Return original text if correction fails
+    }
+  }
+
+  /**
+   * Get grammar instructions for specific language
+   */
+  private getGrammarInstructions(language: string): string {
+    const instructions: Record<string, string> = {
+      hi: "The text is in Hindi. Maintain proper Devanagari script and Hindi grammar rules.",
+      ur: "The text is in Urdu. Maintain proper Urdu script and grammar rules.",
+      en: "The text is in English. Use proper English grammar and punctuation.",
+      es: "The text is in Spanish. Maintain proper Spanish script and grammar rules.",
+      fr: "The text is in French. Maintain proper French script and grammar rules.",
+      ta: "The text is in Tamil. Maintain proper Tamil script and grammar rules.",
+      te: "The text is in Telugu. Maintain proper Telugu script and grammar rules.",
+      bn: "The text is in Bengali. Maintain proper Bengali script and grammar rules.",
+      gu: "The text is in Gujarati. Maintain proper Gujarati script and grammar rules.",
+      kn: "The text is in Kannada. Maintain proper Kannada script and grammar rules.",
+      ml: "The text is in Malayalam. Maintain proper Malayalam script and grammar rules.",
+      pa: "The text is in Punjabi. Maintain proper Punjabi script and grammar rules.",
+    };
+
+    return (
+      instructions[language] || "Maintain the original language of the text."
+    );
+  }
+
+  /**
+   * Insert text using robotjs
+   */
+  private insertTextWithRobot(text: string, onComplete?: () => void) {
+    try {
+      // Small delay to ensure the target application is ready
+      setTimeout(() => {
+        robot.typeString(text);
+        console.log("[Translation] Text inserted via robotjs:", text);
+        // Fire callback when text insertion is complete
+        onComplete?.();
+      }, 100);
+    } catch (error) {
+      console.error("[Translation] Error inserting text with robotjs:", error);
+      // Still fire callback even if there's an error
+      onComplete?.();
     }
   }
 }

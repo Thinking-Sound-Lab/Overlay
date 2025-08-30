@@ -102,8 +102,12 @@ export class AuthStateManager {
       const settingsResult = await this.apiManager.supabase.getUserSettings();
       
       if (settingsResult.data && !settingsResult.error) {
-        authState.settings = settingsResult.data;
-        console.log(`[AuthStateManager] ${source}: Settings loaded successfully`);
+        // Extract the actual settings object from the database row
+        authState.settings = settingsResult.data.settings || settingsResult.data;
+        console.log(`[AuthStateManager] ${source}: Settings loaded successfully:`, {
+          hasSettings: !!authState.settings,
+          settingsKeys: authState.settings ? Object.keys(authState.settings) : []
+        });
       } else {
         console.warn(`[AuthStateManager] ${source}: Failed to load settings:`, settingsResult.error?.message);
       }

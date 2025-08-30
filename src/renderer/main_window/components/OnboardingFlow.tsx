@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { AuthPage } from "./AuthPage";
+import { LanguageSelectionPage } from "./LanguageSelectionPage";
 import { PermissionsPage } from "./PermissionsPage";
 import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
-import { analytics, auth } from "../lib/api_client";
+import { analytics, auth, db } from "../lib/api_client";
 import { Button } from "./ui/button";
 
-type OnboardingStep = "auth" | "permissions" | "guide";
+type OnboardingStep = "auth" | "language" | "permissions" | "guide";
 
 interface OnboardingFlowProps {
   onStepChange?: (step: number, stepName: string) => void;
@@ -15,48 +16,51 @@ interface OnboardingFlowProps {
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   onStepChange,
 }) => {
-  const { state, dispatch, setUser, setAuthenticated, completeOnboarding } =
+  const { state, dispatch, setUser, setAuthenticated, completeOnboarding, setSettings } =
     useAppContext();
-  const { user, isAuthenticated, hasCompletedOnboarding } = state;
+  const { user, isAuthenticated, hasCompletedOnboarding, settings } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
   const [isLoading, setIsLoading] = useState(true);
+  const [signUpEmail, setSignUpEmail] = useState<string>("");
 
   // Determine which flow to show based on authentication state
-  //   useEffect(() => {
-  //     console.log("OnboardingFlow: Determining flow based on auth state:", {
-  //       isAuthenticated,
-  //       hasUser: !!user,
-  //       userEmail: user?.email,
-  //       hasCompletedOnboarding,
-  //       timestamp: new Date().toISOString(),
-  //     });
+  useEffect(() => {
+    console.log("OnboardingFlow: Determining flow based on auth state:", {
+      isAuthenticated,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasCompletedOnboarding,
+      timestamp: new Date().toISOString(),
+    });
 
-  //     if (isAuthenticated && user && hasCompletedOnboarding) {
-  //       console.log(
-  //         "OnboardingFlow: User completed onboarding, navigating to home"
-  //       );
-  //       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
-  //     } else if (isAuthenticated && user) {
-  //       console.log("OnboardingFlow: User authenticated, showing permissions");
-  //       setCurrentStep("permissions");
-  //     } else {
-  //       console.log("OnboardingFlow: User not authenticated, showing auth");
-  //       setCurrentStep("auth");
-  //     }
-  //     setIsLoading(false);
-  //   }, [isAuthenticated, user, hasCompletedOnboarding, dispatch]);
+    if (isAuthenticated && user && hasCompletedOnboarding) {
+      console.log(
+        "OnboardingFlow: User completed onboarding, navigating to home"
+      );
+      dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
+    } else if (isAuthenticated && user && !hasCompletedOnboarding) {
+      console.log("OnboardingFlow: User authenticated but onboarding incomplete, showing language selection");
+      setCurrentStep("language");
+    } else {
+      console.log("OnboardingFlow: User not authenticated, showing auth");
+      setCurrentStep("auth");
+    }
+    setIsLoading(false);
+  }, [isAuthenticated, user, hasCompletedOnboarding, dispatch]);
 
   // Notify parent about step changes
   useEffect(() => {
     if (onStepChange) {
       const stepNumber =
-        ["auth", "permissions", "guide"].indexOf(currentStep) + 1;
+        ["auth", "language", "permissions", "guide"].indexOf(currentStep) + 1;
       const stepName =
         currentStep === "auth"
           ? "Authentication"
-          : currentStep === "permissions"
-            ? "Permissions"
-            : "Quick Guide";
+          : currentStep === "language"
+            ? "Language Selection"
+            : currentStep === "permissions"
+              ? "Permissions"
+              : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -76,7 +80,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       await analytics.identify(authenticatedUser.id, {
         email: authenticatedUser.email,
       });
-      await analytics.track("user_signed_in");
+      await analytics.track("user_authenticated_via_magic_link");
 
       // User data and navigation will be handled by AuthStateManager
     } catch (error) {
@@ -84,31 +88,70 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
-  const handleSignUp = async (authenticatedUser: any) => {
+  const handleSignUp = async (signUpData: { user?: any, email: string, needsVerification: boolean }) => {
     console.log(
-      "OnboardingFlow: Sign up success with user:",
-      authenticatedUser
+      "OnboardingFlow: Sign up response:",
+      {
+        hasUser: !!signUpData.user,
+        email: signUpData.email,
+        needsVerification: signUpData.needsVerification
+      }
     );
 
-    // Update app state
-    // setUser(authenticatedUser);
-    // setAuthenticated(true);
+    // Store email for verification step
+    setSignUpEmail(signUpData.email);
 
+    if (signUpData.user) {
+      console.log("OnboardingFlow: User verified during sign-up, proceeding to language selection");
+      
+      try {
+        // Track successful sign up
+        await analytics.identify(signUpData.user.id, {
+          email: signUpData.user.email,
+        });
+        await analytics.track("user_signed_up_via_magic_link");
+      } catch (error) {
+        console.error("OnboardingFlow: Error tracking sign up:", error);
+      }
+      
+      setCurrentStep("language");
+    } else {
+      console.error("OnboardingFlow: Unexpected sign-up state - no user returned");
+      setCurrentStep("auth"); // Go back to auth step
+    }
+  };
+
+
+  const handleLanguageSelection = async (languageCode: string) => {
+    console.log("OnboardingFlow: Language selected:", languageCode);
+    
     try {
-      // Track successful sign up
-      await analytics.identify(authenticatedUser.id, {
-        email: authenticatedUser.email,
+      // Update settings with selected language
+      const updatedSettings = { ...settings, language: languageCode };
+      setSettings(updatedSettings);
+      
+      // Save to database
+      const result = await db.saveUserSettings(updatedSettings);
+      if (result.success) {
+        // Also save to electron store for offline access
+        await window.electronAPI.updateSettings(
+          updatedSettings as unknown as Record<string, unknown>
+        );
+        console.log("OnboardingFlow: Language setting saved:", languageCode);
+      } else {
+        throw new Error(result.error || "Failed to save language setting");
+      }
+      
+      // Track language selection
+      await analytics.track("language_selected", {
+        language_code: languageCode
       });
-      await analytics.track("user_signed_up");
-
-      // For new users, always go to permissions (onboardingCompleted is false by default)
-      console.log(
-        "OnboardingFlow: New user signed up, navigating to permissions"
-      );
+      
+      // Navigate to permissions
       setCurrentStep("permissions");
     } catch (error) {
-      console.error("OnboardingFlow: Error tracking sign up:", error);
-      // Still proceed to permissions even if analytics fails
+      console.error("OnboardingFlow: Error saving language selection:", error);
+      // Still proceed to avoid blocking the user
       setCurrentStep("permissions");
     }
   };
@@ -161,22 +204,52 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
-  //   if (isLoading) {
-  //     return (
-  //       <div className="h-screen bg-gray-50 flex items-center justify-center">
-  //         <div className="text-center">
-  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-  //           <p className="text-gray-600">Loading...</p>
-  //         </div>
-  //       </div>
-  //     );
-  //   }
+  useEffect(() => {
+    console.log("OnboardingFlow: Current step changed to:", currentStep, {
+      isAuthenticated,
+      hasUser: !!user,
+      userEmail: user?.email,
+      hasCompletedOnboarding,
+      timestamp: new Date().toISOString(),
+    });
+  }, [currentStep, isAuthenticated, user, hasCompletedOnboarding]);
+
+  useEffect(() => {
+    if (onStepChange) {
+      const stepNumber =
+        ["auth", "language", "permissions", "guide"].indexOf(currentStep) + 1;
+      const stepName =
+        currentStep === "auth"
+          ? "Authentication"
+          : currentStep === "language"
+            ? "Language Selection"
+            : currentStep === "permissions"
+              ? "Permissions"
+              : "Quick Guide";
+      onStepChange(stepNumber, stepName);
+    }
+  }, [currentStep, onStepChange]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col">
       <div className="flex-1 overflow-y-auto">
         {currentStep === "auth" && (
           <AuthPage onSignIn={handleSignIn} onSignUp={handleSignUp} />
+        )}
+
+        {currentStep === "language" && (
+          <LanguageSelectionPage onLanguageSelected={handleLanguageSelection} />
         )}
 
         {currentStep === "permissions" && (

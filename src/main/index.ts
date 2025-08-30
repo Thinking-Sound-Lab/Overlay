@@ -8,7 +8,6 @@ import {
   Tray,
   nativeImage,
   screen,
-  clipboard,
   shell,
 } from "electron";
 import Store from "electron-store";
@@ -33,6 +32,7 @@ import { AuthUtils } from "./utils/auth";
 import { validateTranscriptData } from "./utils/validation";
 import { config } from "../../config/environment";
 import { AuthStateManager } from "./auth/auth-state-manager";
+import { SystemAudioManager } from "./services/system_audio_manager";
 // Webpack entry points
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -46,25 +46,18 @@ const WINDOW_SIZES = {
   expanded: { width: 100, height: 40 },
 };
 
-let robot: any = null;
-try {
-  robot = require("robotjs");
-} catch {
-  console.warn("robotjs not available");
-}
-
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let recordingWindow: BrowserWindow | null = null;
 let isRecording = false;
 let isProcessing = false;
 let hoverTimeout: NodeJS.Timeout | null = null;
-let isAuthenticated = false;
 
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
 let authStateManager: AuthStateManager | null = null;
+let systemAudioManager: SystemAudioManager | null = null;
 
 // Processing state
 let processingStage = "";
@@ -153,10 +146,23 @@ let lastActivityDate: string | null = null;
 
 const store = new Store({
   defaults: {
+    // General section
+    defaultMicrophone: "default",
     language: "auto",
-    outputMode: "clipboard",
+
+    // System section
+    dictateSoundEffects: true,
+    muteMusicWhileDictating: true,
+
+    // Personalization section
+    outputMode: "both",
+    useAI: true,
     enableTranslation: false,
     targetLanguage: "en",
+    enableContextFormatting: true,
+
+    // Data and Privacy section
+    privacyMode: true,
   },
 });
 
@@ -371,6 +377,18 @@ const updateSTTSettings = async () => {
     useAI: store.get("useAI"),
   };
 
+  console.log("[Main] updateSTTSettings called with:", {
+    currentLanguage,
+    lastLanguageSetting,
+    currentSettings,
+    fromElectronStore: {
+      language: store.get("language"),
+      enableTranslation: store.get("enableTranslation"),
+      targetLanguage: store.get("targetLanguage"),
+      useAI: store.get("useAI"),
+    },
+  });
+
   // Check if language setting has changed
   if (lastLanguageSetting !== null && lastLanguageSetting !== currentLanguage) {
     console.log(
@@ -386,10 +404,12 @@ const updateSTTSettings = async () => {
   }
 
   // Update settings
+  console.log("[Main] Updating STT service settings:", currentSettings);
   sttService.updateSettings(currentSettings);
 
   // Update tracked language
   lastLanguageSetting = currentLanguage;
+  console.log("[Main] Updated lastLanguageSetting to:", lastLanguageSetting);
 };
 
 // ----------- Window & Tray Functions -----------
@@ -619,7 +639,7 @@ const registerGlobalHotkey = () => {
 
 const startRecording = async () => {
   // Don't allow recording if user is not authenticated
-  if (!AuthUtils.isUserAuthenticated) {
+  if (!AuthUtils.isUserAuthenticated()) {
     console.log("[Main] Recording blocked - user not authenticated");
     return;
   }
@@ -630,6 +650,11 @@ const startRecording = async () => {
   }
   if (isRecording || isProcessing) return;
   isRecording = true;
+
+  // Mute system audio BEFORE starting recording
+  if (systemAudioManager) {
+    await systemAudioManager.muteSystemAudio();
+  }
 
   // Ensure recording window exists (should be created after authentication)
   if (!recordingWindow) {
@@ -666,34 +691,27 @@ const stopRecording = async () => {
   }
 
   // Update processing stage and send to UI
-  processingStage = "Transcribing audio...";
   recordingWindow?.webContents.send("recording-stopped");
-  recordingWindow?.webContents.send("processing-stage", processingStage);
+
+  // Restore system audio as soon as recording stops and transcription begins
+  if (systemAudioManager) {
+    await systemAudioManager.restoreSystemAudio();
+  }
 
   try {
     // Stage 1: Transcribing
-    processingStage = "Transcribing speech...";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
-
     await sttService.finalizeDictation();
     console.log("[Main] Dictation finalized successfully");
-
-    // The actual processing (translation, grammar correction, text insertion)
-    // happens in the STT service. The STT service will handle completion timing
-    // via the onMetricsUpdate callback, so no artificial delay is needed here.
-    processingStage = "Finalizing...";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
   } catch (error) {
     console.error("[Main] Error finalizing dictation:", error);
-    processingStage = "Error occurred";
-    recordingWindow?.webContents.send("processing-stage", processingStage);
+
+    // Ensure audio is restored even in error cases
+    if (systemAudioManager) {
+      await systemAudioManager.restoreSystemAudio();
+    }
   } finally {
     // Reset processing state - window management moved to handleMetricsUpdate
     isProcessing = false;
-    processingStage = "";
-    console.log(
-      "[Main] Dictation processing completed - window state will be managed by STT callback"
-    );
   }
 };
 
@@ -889,13 +907,11 @@ const handleOAuthCallback = async (url: string) => {
           }
 
           // Update main process state
-          isAuthenticated = true;
           AuthUtils.setAuthenticationState(true);
 
-          // Note: Don't send auth-state-changed event here anymore
-          // The auth state change listener will handle this automatically
+          // Note: Auth state will be sent to renderer by the auth state change listener
           console.log(
-            "[Main] OAuth: Authentication successful, auth-state-changed event will be sent by auth state listener"
+            "[Main] OAuth: Authentication successful, auth state will be sent by listener"
           );
 
           // Focus main window
@@ -945,6 +961,9 @@ app.whenReady().then(async () => {
       updateTrayMenu,
       updateSpeechMetrics
     );
+
+    // Initialize system audio manager
+    systemAudioManager = new SystemAudioManager();
 
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
@@ -1000,28 +1019,24 @@ app.whenReady().then(async () => {
       }
     );
 
-    // Set up auth state change listener (for all authentications - email/password and provider)
+    // Set up auth state change listener (for all authentications - magic links and OAuth)
     externalAPIManager.supabase.setAuthStateChangeListener(async (user) => {
       if (user) {
         console.log("[Main] User authenticated via external API:", user.email);
-
         // Use AuthStateManager to load and send complete auth state
         await authStateManager?.loadAndSendAuthState(
           mainWindow,
           user,
           "Auth State Change"
         );
-
         // Create recording window now that user is authenticated
         if (!recordingWindow) {
           createRecordingWindow();
         }
       } else {
         console.log("[Main] User signed out via external API");
-
         // Clear all user caches when user signs out
         clearUserCaches();
-
         // Send sign-out state to renderer
         authStateManager?.sendUnauthenticatedState(
           mainWindow,
@@ -1079,6 +1094,12 @@ app.on("will-quit", async () => {
 
   globalShortcut.unregisterAll();
 
+  // Restore system audio before shutdown
+  if (systemAudioManager) {
+    await systemAudioManager.restoreSystemAudio();
+    systemAudioManager = null;
+  }
+
   // Cleanup external API services
   if (apiHandlers) {
     apiHandlers.removeAllHandlers();
@@ -1108,8 +1129,41 @@ ipcMain.handle(
 );
 
 ipcMain.handle("update-settings", async (event, settings) => {
+  console.log("[Main] Settings update requested:", {
+    settingsKeys: Object.keys(settings),
+    useAI: settings.useAI,
+    language: settings.language,
+    enableTranslation: settings.enableTranslation,
+    targetLanguage: settings.targetLanguage,
+    outputMode: settings.outputMode,
+    hasContextFormatting: !!settings.contextFormatting,
+  });
+
+  // Log current electron store values before update
+  console.log("[Main] Current electron store values:", {
+    useAI: store.get("useAI"),
+    language: store.get("language"),
+    enableTranslation: store.get("enableTranslation"),
+    targetLanguage: store.get("targetLanguage"),
+    outputMode: store.get("outputMode"),
+  });
+
   Object.entries(settings).forEach(([key, value]) => {
-    if (key !== "hotkey") store.set(key, value);
+    if (key !== "hotkey") {
+      console.log(
+        `[Main] Setting electron store: ${key} = ${JSON.stringify(value)}`
+      );
+      store.set(key, value);
+    }
+  });
+
+  // Log electron store values after update
+  console.log("[Main] Updated electron store values:", {
+    useAI: store.get("useAI"),
+    language: store.get("language"),
+    enableTranslation: store.get("enableTranslation"),
+    targetLanguage: store.get("targetLanguage"),
+    outputMode: store.get("outputMode"),
   });
 
   // Update STT service with new settings
@@ -1160,14 +1214,35 @@ const clearUserCaches = () => {
   store.clear();
 
   // Set default values back for app settings only
+  // General section
+  store.set("defaultMicrophone", "default");
   store.set("language", "auto");
-  store.set("outputMode", "clipboard");
+
+  // System section
+  store.set("dictateSoundEffects", true);
+  store.set("muteMusicWhileDictating", true);
+
+  // Personalization section
+  store.set("outputMode", "both");
+  store.set("useAI", true);
   store.set("enableTranslation", false);
   store.set("targetLanguage", "en");
+  store.set("enableContextFormatting", true);
+
+  // Data and Privacy section
+  store.set("privacyMode", true);
 
   // Reset authentication state
-  isAuthenticated = false;
   AuthUtils.setAuthenticationState(false);
+
+  // Close and destroy recording window to prevent unauthorized access
+  if (recordingWindow && !recordingWindow.isDestroyed()) {
+    console.log(
+      "[Main] Closing recording window due to sign out/account deletion"
+    );
+    recordingWindow.close();
+    recordingWindow = null;
+  }
 
   // Notify renderer about cleared data
   mainWindow?.webContents.send("statistics-updated", speechMetrics);
@@ -1243,7 +1318,6 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
     return { success: false, error: "No user data provided" };
   }
 
-  isAuthenticated = true;
   AuthUtils.setAuthenticationState(true);
   console.log("[Main] User authenticated:", user.email);
 

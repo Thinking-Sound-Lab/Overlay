@@ -28,3 +28,47 @@ export interface AuthStateData {
   recentTranscripts: any[] | null;
   error?: string;
 }
+
+export interface ActiveApplicationInfo {
+  processName: string;
+  applicationName: string;
+  windowTitle: string;
+  bundleId?: string;
+  processId: number;
+  contextType: ApplicationContextType;
+}
+
+export enum ApplicationContextType {
+  EMAIL = "email",
+  NOTES = "notes",
+  CODE_EDITOR = "code_editor", 
+  MESSAGING = "messaging",
+  DOCUMENT = "document",
+  BROWSER = "browser",
+  TERMINAL = "terminal",
+  PRESENTATION = "presentation",
+  UNKNOWN = "unknown"
+}
+
+export interface FormattingResult {
+  formattedText: string;
+  originalText: string;
+  contextType: ApplicationContextType;
+  appliedTransformations: string[];
+  confidence: number;
+}
+
+export interface ContextFormattingSettings {
+  enableContextFormatting: boolean;
+  contextSettings: {
+    [key in ApplicationContextType]?: {
+      enabled: boolean;
+      transformations: {
+        [transformationName: string]: boolean;
+      };
+    };
+  };
+  customAppMappings: {
+    [appName: string]: ApplicationContextType;
+  };
+}

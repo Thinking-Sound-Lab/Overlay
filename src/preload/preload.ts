@@ -72,10 +72,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // External API methods (Supabase & Analytics)
   // Authentication
   auth: {
-    signIn: (email: string, password: string) =>
-      ipcRenderer.invoke("auth:signIn", { email, password }),
-    signUp: (email: string, password: string, name?: string) =>
-      ipcRenderer.invoke("auth:signUp", { email, password, name }),
+    signInWithMagicLink: (email: string) =>
+      ipcRenderer.invoke("auth:signInWithMagicLink", { email }),
+    signUpWithMagicLink: (email: string, name: string) =>
+      ipcRenderer.invoke("auth:signUpWithMagicLink", { email, name }),
     signInWithGoogle: () => ipcRenderer.invoke("auth:signInWithGoogle"),
     signOut: () => ipcRenderer.invoke("auth:signOut"),
     getCurrentUser: () => ipcRenderer.invoke("auth:getCurrentUser"),
@@ -215,6 +215,10 @@ declare global {
       onStatisticsUpdate: (callback: (stats: any) => void) => () => void;
       onActivityUpdate: (callback: (activity: any) => void) => () => void;
 
+      // Direct window control methods
+      expandRecordingWindow: () => Promise<{ success: boolean }>;
+      compactRecordingWindow: () => Promise<{ success: boolean }>;
+
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
       refreshAuthState: () => Promise<{
@@ -256,11 +260,10 @@ declare global {
 
       // External API methods (Supabase & Analytics)
       auth: {
-        signIn: (email: string, password: string) => Promise<any>;
-        signUp: (
+        signInWithMagicLink: (email: string) => Promise<any>;
+        signUpWithMagicLink: (
           email: string,
-          password: string,
-          name?: string
+          name: string
         ) => Promise<any>;
         signInWithGoogle: () => Promise<any>;
         signOut: () => Promise<any>;

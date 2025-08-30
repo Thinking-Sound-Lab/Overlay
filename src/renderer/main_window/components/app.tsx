@@ -3,8 +3,6 @@ import { NavigationBar } from "./NavigationBar";
 import { Layout } from "./Layout";
 import { HomePage } from "./HomePage";
 import { OnboardingFlow } from "./OnboardingFlow";
-import { SettingsPage } from "./SettingsPage";
-import { ProfilePage } from "./ProfilePage";
 import { HelpPage } from "./HelpPage";
 import { ReferralPage } from "./ReferralPage";
 import { DictionaryPage } from "./DictionaryPage";
@@ -95,8 +93,6 @@ const AppContent: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         <Layout activeView={state.activeView} setActiveView={setActiveView}>
           {state.activeView === "home" && <HomePage />}
-          {state.activeView === "settings" && <SettingsPage />}
-          {state.activeView === "profile" && <ProfilePage />}
           {state.activeView === "help" && <HelpPage />}
           {state.activeView === "referral" && <ReferralPage />}
           {state.activeView === "dictionary" && <DictionaryPage />}

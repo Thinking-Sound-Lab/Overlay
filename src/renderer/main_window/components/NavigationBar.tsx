@@ -3,6 +3,8 @@ import { Tooltip } from "./Tooltip";
 import { ViewType } from "../types";
 import { Button } from "./ui/button";
 import { Settings, User, X, Minus, Square, Maximize2 } from "lucide-react";
+import { SettingsDialog } from "./SettingsDialog";
+import { ProfilePopover } from "./ProfilePopover";
 
 interface NavigationBarProps {
   showAuthButtons?: boolean;
@@ -20,10 +22,11 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
   onViewChange,
   isOnboarding = false,
   currentStep = 1,
-  totalSteps = 3,
+  totalSteps = 4,
   stepName = "",
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     // Get initial window state - check if API is available first
@@ -137,36 +140,44 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
       )}
 
       {/* Settings and Profile Buttons - Right Side (Conditional) */}
-      {showAuthButtons && onViewChange && (
+      {showAuthButtons && (
         <div
           className="flex items-center"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           <Tooltip content="Settings" side="bottom">
             <Button
-              variant={activeView === "settings" ? "default" : "ghost"}
+              variant="ghost"
               size="icon"
               className="hover:bg-gray-200 hover:rounded-xl"
-              onClick={() => onViewChange("settings")}
+              onClick={() => setSettingsOpen(true)}
             >
               <Settings className="h-4 w-4" />
             </Button>
           </Tooltip>
-          <Tooltip content="Profile" side="bottom">
-            <Button
-              variant={activeView === "profile" ? "default" : "ghost"}
-              size="icon"
-              className="hover:bg-gray-200 hover:rounded-xl"
-              onClick={() => onViewChange("profile")}
-            >
-              <User className="h-4 w-4" />
-            </Button>
-          </Tooltip>
+          
+          <ProfilePopover
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hover:bg-gray-200 hover:rounded-xl"
+              >
+                <User className="h-4 w-4" />
+              </Button>
+            }
+          />
         </div>
       )}
 
       {/* Empty div to maintain spacing when auth buttons are not shown */}
       {!showAuthButtons && <div></div>}
+      
+      {/* Settings Dialog */}
+      <SettingsDialog 
+        open={settingsOpen} 
+        onOpenChange={setSettingsOpen} 
+      />
     </div>
   );
 };

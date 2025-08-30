@@ -3,19 +3,19 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: "Version to release (e.g., v1.0.0)"
         required: true
-        default: 'v1.0.0'
+        default: "v1.0.0"
 
 jobs:
   release:
     name: Release ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -45,8 +45,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -76,18 +76,34 @@ jobs:
         run: |
           npm run make:win
         env:
+          CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.REACT_APP_POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
           # PRODUCTION CODE SIGNING (commented for testing)
           # Uncomment these lines and set secrets for production releases
           # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
           # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
 
-      # macOS Release Build  
+      # macOS Release Build
       - name: Build and publish macOS
         if: matrix.platform == 'darwin'
         run: |
           npm run make:mac
         env:
+          CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.REACT_APP_POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
           # PRODUCTION CODE SIGNING (commented for testing)
           # Uncomment these lines and set secrets for production releases
           # APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -95,7 +111,6 @@ jobs:
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
           # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          CI: true
 
       # Linux Release Build
       - name: Build Linux
@@ -104,6 +119,13 @@ jobs:
           npm run make
         env:
           CI: true
+          NODE_ENV: production
+          # Environment variables for the application
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_POSTHOG_KEY: ${{ secrets.REACT_APP_POSTHOG_KEY }}
+          REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
 
       # Upload release artifacts
       - name: Upload release artifacts
@@ -118,7 +140,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     if: always() && (needs.release.result == 'success')
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -152,30 +174,30 @@ jobs:
           generate_release_notes: true
           body: |
             ## Overlay ${{ steps.version.outputs.version }}
-            
+
             ### 📦 Downloads
-            
+
             - **Windows**: Download `OverlaySetup.exe` from the assets below
             - **macOS**: Download the `.dmg` file from the assets below  
             - **Linux**: Download `.deb` or `.rpm` files from the assets below
-            
+
             ### ⚠️ Security Note
-            
+
             **Current builds are unsigned for testing purposes.**
-            
+
             - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway"
             - **macOS**: You may need to allow the app in System Preferences → Privacy & Security
             - **Linux**: No issues expected
-            
+
             ### 🚀 Production Ready
-            
+
             For production deployment with code signing:
             1. Configure certificates in repository secrets
             2. Uncomment signing configuration in workflows
             3. Re-run the release workflow
-            
+
             ---
-            
+
             **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ github.event.before }}...v${{ steps.version.outputs.tag }}
           files: |
             release-artifacts/**/*
@@ -187,7 +209,7 @@ jobs:
     needs: [release, create-release]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Deployment Summary
         run: |
