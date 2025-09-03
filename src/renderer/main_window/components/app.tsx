@@ -10,7 +10,7 @@ import { AppProvider, useAppContext } from "../contexts/AppContext";
 
 const AppContent: React.FC = () => {
   const { state, setActiveView } = useAppContext();
-  const { isAuthenticated, hasCompletedOnboarding, isLoading, user } = state;
+  const { isAuthenticated, isLoading, user } = state;
 
   // Track onboarding step for NavigationBar
   const [onboardingStep, setOnboardingStep] = React.useState(1);
@@ -32,7 +32,7 @@ const AppContent: React.FC = () => {
     isLoading,
     shouldShowLoading,
     isAuthenticated,
-    hasCompletedOnboarding,
+    hasCompletedOnboarding: user?.onboarding_completed,
     user: user?.email || null,
     loadingMessage,
     timestamp: new Date().toISOString(),
@@ -59,7 +59,7 @@ const AppContent: React.FC = () => {
   }
 
   // Show onboarding flow if user is not authenticated or hasn't completed onboarding
-  if (!isAuthenticated || !hasCompletedOnboarding) {
+  if (!isAuthenticated || !user?.onboarding_completed) {
     console.log("AppContent: Showing onboarding flow", {
       reason: !isAuthenticated
         ? "not authenticated"

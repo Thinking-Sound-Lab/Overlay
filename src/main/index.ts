@@ -9,6 +9,7 @@ import {
   nativeImage,
   screen,
   shell,
+  dialog,
 } from "electron";
 import Store from "electron-store";
 import { autoUpdater } from "electron-updater";
@@ -23,32 +24,33 @@ if (process.platform === "win32") {
   }
 }
 import STTService from "./services/stt_service";
-import { updateGlobalMetrics } from "./helpers/speech_analytics";
-import { GlobalMetrics, Settings } from "../shared/types";
+import {
+  Settings,
+  DatabaseTranscriptEntry,
+  SpeechMetrics,
+  TranslationResult,
+} from "../shared/types";
 import { WindowAnimator } from "./helpers/windowAnimator";
+import { WindowManager } from "./windows/window-manager";
 import { ExternalAPIManager } from "./services/external_api_manager";
 import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
 import { validateTranscriptData } from "./utils/validation";
 import { config } from "../../config/environment";
-import { AuthStateManager } from "./auth/auth-state-manager";
 import { SystemAudioManager } from "./services/system_audio_manager";
+import { DataLoaderService } from "./services/data_loader_service";
+import { DEFAULT_SETTINGS } from "../shared/constants/default-settings";
+import MicrophoneService from "./services/microphone_service";
 // Webpack entry points
-declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
-declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
-declare const RECORDING_WINDOW_WEBPACK_ENTRY: string;
-declare const RECORDING_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+// declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
+// declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+// declare const RECORDING_WINDOW_WEBPACK_ENTRY: string;
+// declare const RECORDING_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+// declare const INFORMATION_WINDOW_WEBPACK_ENTRY: string;
+// declare const INFORMATION_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
-const windowAnimator = new WindowAnimator();
-
-const WINDOW_SIZES = {
-  compact: { width: 50, height: 10 },
-  expanded: { width: 100, height: 40 },
-};
-
-let mainWindow: BrowserWindow | null = null;
+let windowManager: WindowManager;
 let tray: Tray | null = null;
-let recordingWindow: BrowserWindow | null = null;
 let isRecording = false;
 let isProcessing = false;
 let hoverTimeout: NodeJS.Timeout | null = null;
@@ -56,11 +58,8 @@ let hoverTimeout: NodeJS.Timeout | null = null;
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
-let authStateManager: AuthStateManager | null = null;
+// AuthStateManager replaced by DataLoaderService
 let systemAudioManager: SystemAudioManager | null = null;
-
-// Processing state
-let processingStage = "";
 
 // Auto-updater configuration
 autoUpdater.checkForUpdatesAndNotify =
@@ -106,7 +105,7 @@ autoUpdater.on("checking-for-update", () => {
 
 autoUpdater.on("update-available", (info) => {
   console.log("[AutoUpdater] Update available:", info.version);
-  mainWindow?.webContents.send("update-available", {
+  windowManager.sendToMain("update-available", {
     version: info.version,
     releaseNotes: info.releaseNotes,
   });
@@ -122,432 +121,258 @@ autoUpdater.on("error", (error) => {
 
 autoUpdater.on("download-progress", (progress) => {
   console.log(`[AutoUpdater] Download progress: ${progress.percent}%`);
-  mainWindow?.webContents.send("update-download-progress", progress.percent);
+  windowManager.sendToMain("update-download-progress", progress.percent);
 });
 
 autoUpdater.on("update-downloaded", (info) => {
   console.log("[AutoUpdater] Update downloaded:", info.version);
-  mainWindow?.webContents.send("update-downloaded", {
+  windowManager.sendToMain("update-downloaded", {
     version: info.version,
   });
 });
 
-let speechMetrics: GlobalMetrics = {
-  totalWordCount: 0,
-  averageWPM: 0,
-  totalRecordings: 0,
-  lastRecordingWords: 0,
-  lastRecordingWPM: 0,
-  streakDays: 0,
-};
+// Initialize DataLoaderService - will be created when ExternalAPIManager is initialized
+let dataLoaderService: DataLoaderService | null = null;
 
-let transcriptHistory: any[] = [];
-let lastActivityDate: string | null = null;
+// Enhanced Auth State Management Helper Functions with Type Safety
+import type { UserStats, UITranscriptEntry, UserRecord } from "../shared/types";
+import { User } from "@supabase/auth-js/dist/module";
 
-const store = new Store<Settings>({
-  defaults: {
-    // General section
-    defaultMicrophone: "default",
-    language: "en",
+interface AuthStateEventData {
+  user: UserRecord | null;
+  authenticated: boolean;
+  statistics: UserStats | null;
+  settings: Settings | null;
+  recentTranscripts: UITranscriptEntry[];
+  error?: string;
+  source?: string;
+}
 
-    // System section
-    dictateSoundEffects: true,
-    muteMusicWhileDictating: true,
-
-    // Personalization section
-    outputMode: "both",
-    useAI: true,
-    enableRealtimeMode: false,
-    enableTranslation: false,
-    targetLanguage: "en",
-    enableContextFormatting: true,
-
-    // Data and Privacy section
-    privacyMode: true,
-  },
-});
-
-// Initialize metrics to defaults - will be synced from database when user is authenticated
-
-// Using centralized validation utility
-
-// Function to save transcript to database
-const saveTranscriptToDatabase = async (transcriptData: any) => {
-  if (!externalAPIManager?.supabase) {
+/**
+ * Send authenticated user state to renderer with error handling
+ */
+const sendAuthStateToRenderer = async (
+  userData: AuthStateEventData,
+  source: string = "Unknown"
+): Promise<void> => {
+  const mainWindow = windowManager.getMainWindow();
+  if (!mainWindow || !userData) {
     console.warn(
-      "[Main] Cannot save transcript: Supabase service not available"
+      `[Main] Cannot send auth state - missing window or userData (source: ${source})`
     );
-    return false;
-  }
-
-  const currentUser = externalAPIManager.supabase.getCurrentUser();
-  if (!currentUser) {
-    console.warn("[Main] Cannot save transcript: No authenticated user");
-    return false;
-  }
-
-  // Validate transcript data
-  const validation = validateTranscriptData(transcriptData);
-  if (!validation.isValid) {
-    console.error("[Main] Transcript validation failed:", validation.errors);
-    return false;
+    return;
   }
 
   try {
-    // Format transcript data for database according to TranscriptEntry interface
-    const dbTranscriptData = {
-      user_id: currentUser.id,
-      text: transcriptData.text.trim(),
-      original_text: transcriptData.originalText || null,
-      language: store.get("language"),
-      target_language: transcriptData.targetLanguage || null,
-      was_translated: Boolean(transcriptData.wasTranslated),
-      confidence:
-        typeof transcriptData.confidence === "number"
-          ? transcriptData.confidence
-          : null,
-      word_count: transcriptData.wordCount,
-      wpm: transcriptData.wpm,
-      metadata: {
-        ...transcriptData.metadata,
-        localId: transcriptData.id,
-        timestamp: transcriptData.timestamp,
-        detectedLanguage: transcriptData.detectedLanguage,
-        wordCountRatio: transcriptData.wordCountRatio,
-      },
+    const eventData: AuthStateEventData = {
+      user: userData.user,
+      authenticated: userData.authenticated,
+      statistics: userData.statistics,
+      settings: userData.settings,
+      recentTranscripts: userData.recentTranscripts || [],
+      error: userData.error,
+      source,
     };
 
-    console.log("[Main] Saving transcript to database:", {
-      user_id: dbTranscriptData.user_id,
-      text_length: dbTranscriptData.text.length,
-      word_count: dbTranscriptData.word_count,
-      was_translated: dbTranscriptData.was_translated,
-      language: dbTranscriptData.language,
-      target_language: dbTranscriptData.target_language,
+    console.log(`[Main] Sending auth state to renderer (${source}):`, {
+      authenticated: eventData.authenticated,
+      hasUser: !!eventData.user,
+      userEmail: eventData.user?.email,
+      onboardingCompleted: eventData.user?.onboarding_completed,
+      settingsCount: Object.keys(eventData.settings || {}).length,
+      transcriptCount: eventData.recentTranscripts.length,
+      hasError: !!eventData.error,
+      statistics: eventData.statistics,
     });
 
-    const result =
-      await externalAPIManager.supabase.saveTranscript(dbTranscriptData);
-
-    if (result.error) {
-      console.error(
-        "[Main] Failed to save transcript to database:",
-        result.error
-      );
-      return false;
-    }
-
-    console.log(
-      "[Main] Transcript successfully saved to database with ID:",
-      result.data?.id
-    );
-    return true;
+    windowManager.sendToMain("auth-state-changed", eventData);
   } catch (error) {
-    console.error("[Main] Error saving transcript to database:", error);
-    return false;
+    console.error(
+      `[Main] Error sending auth state to renderer (${source}):`,
+      error
+    );
   }
 };
 
-// transcriptHistory will be loaded from database when user is authenticated
-transcriptHistory = [];
-lastActivityDate = null;
-
-// Streak calculation will be handled by database sync when user is authenticated
-
-// ----------- Metrics Update Handler -----------
-const handleMetricsUpdate = (
-  metrics: any,
-  transcript?: string,
-  translationMeta?: any
-) => {
-  speechMetrics = updateGlobalMetrics(
-    speechMetrics,
-    metrics.wordCount,
-    metrics.wordsPerMinute
-  );
-
-  // Update last activity date for local tracking
-  // Note: Streak calculation is handled by database service for consistency
-  const today = new Date().toDateString();
-  if (lastActivityDate !== today) {
-    lastActivityDate = today;
+/**
+ * Send unauthenticated state to renderer
+ */
+const sendUnauthenticatedStateToRenderer = (
+  error?: string,
+  source: string = "Unknown"
+): void => {
+  const mainWindow = windowManager.getMainWindow();
+  if (!mainWindow) {
+    console.warn(
+      `[Main] Cannot send unauthenticated state - missing window (source: ${source})`
+    );
+    return;
   }
 
-  // Store transcript if provided
-  if (transcript && transcript.trim()) {
-    const transcriptEntry = {
-      id: Date.now().toString(),
-      text: transcript.trim(),
-      timestamp: new Date(),
-      wordCount: metrics.wordCount,
-      wpm: metrics.wordsPerMinute,
-      // Include translation metadata
-      ...translationMeta,
+  try {
+    const eventData: AuthStateEventData = {
+      user: null,
+      authenticated: false,
+      statistics: null,
+      settings: null,
+      recentTranscripts: [],
+      error,
+      source,
     };
 
-    // Add to local cache for immediate UI updates
-    transcriptHistory.unshift(transcriptEntry);
-    // Keep only last 100 transcripts in cache
-    if (transcriptHistory.length > 100) {
-      transcriptHistory = transcriptHistory.slice(0, 100);
-    }
-
-    // Save to database if user is authenticated
-    if (AuthUtils.isUserAuthenticated()) {
-      saveTranscriptToDatabase(transcriptEntry)
-        .then((success) => {
-          console.log("[Main] Transcript saved to database:", success);
-          if (success) {
-            // Notify renderer about successful database save
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow?.webContents.send(
-                "transcript-saved-to-database",
-                transcriptEntry
-              );
-            }
-          } else {
-            console.warn(
-              "[Main] Failed to save transcript to database - skipping (app requires internet)"
-            );
-          }
-        })
-        .catch((error) => {
-          console.error("[Main] Failed to save transcript to database:", error);
-        });
-    } else {
-      console.log(
-        "[Main] User not authenticated, transcript will not be saved to database"
-      );
-    }
-
-    // Notify renderer about new activity
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow?.webContents.send("activity-updated", {
-        type: "transcript",
-        data: transcriptEntry,
-      });
-    }
-  }
-
-  // speechMetrics and lastActivityDate are managed in memory and database only
-
-  console.log("[Main] Updated metrics:", speechMetrics);
-
-  // Notify renderer about stats update
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow?.webContents.send("statistics-updated", speechMetrics);
-  }
-
-  // Update tray menu with new metrics
-  updateTrayMenu();
-
-  // Handle window state management AFTER all processing is complete
-  // This ensures text insertion and metrics update happen before window state changes
-  if (recordingWindow && !recordingWindow.isDestroyed()) {
     console.log(
-      "[Main] Processing complete, switching recording window to compact state"
-    );
-    isProcessing = false;
-    processingStage = "";
-
-    // Animate window to compact size
-    windowAnimator.animateResize(
-      recordingWindow,
-      WINDOW_SIZES.compact.width,
-      WINDOW_SIZES.compact.height,
-      150
+      `[Main] Sending unauthenticated state to renderer (${source}):`,
+      {
+        error: error || "No error",
+      }
     );
 
-    // Send processing-complete event
-    recordingWindow.webContents.send("processing-complete");
+    windowManager.sendToMain("auth-state-changed", eventData);
+  } catch (error) {
+    console.error(
+      `[Main] Error sending unauthenticated state (${source}):`,
+      error
+    );
   }
+};
+
+/**
+ * Handle successful authentication with improved error handling and optimizations
+ */
+const handleAuthenticationSuccess = async (
+  user: User,
+  source: string
+): Promise<void> => {
+  if (!user?.id) {
+    console.error(
+      `[Main] Authentication success handler called without valid user (${source})`
+    );
+    sendUnauthenticatedStateToRenderer("Invalid user data", source);
+    return;
+  }
+
+  console.log(
+    `[Main] Handling authentication success for ${user.email} (${source})`
+  );
+
+  try {
+    // Check if we already have data for this user to avoid unnecessary reloading
+    const cachedUserId = dataLoaderService?.getCacheInfo()?.userId;
+    let userData;
+
+    if (cachedUserId === user.id) {
+      console.log(`[Main] Using existing data for user ${user.id} (cache hit)`);
+      // Still refresh to ensure we have latest data, but log it as optimization opportunity
+      userData = await dataLoaderService?.loadUserData(user.id);
+    } else {
+      console.log(`[Main] Loading fresh data for new user ${user.id}`);
+      userData = await dataLoaderService?.initializeUserData(user.id);
+    }
+
+    if (userData) {
+      AuthUtils.setAuthenticationState(true);
+      await sendAuthStateToRenderer(userData, source);
+
+      // Initialize authenticated services
+      if (!windowManager.getRecordingWindow()) {
+        windowManager.createRecordingWindow();
+      }
+
+      // Create information window for user notifications (hidden by default)
+      if (!windowManager.getInformationWindow()) {
+        windowManager.createInformationWindow();
+      }
+
+      if (config.isDevelopment) {
+        windowManager.openDevTools("recording");
+        windowManager.openDevTools("information");
+      }
+
+      // Update tray menu for authenticated state
+      updateTrayMenu();
+    } else {
+      throw new Error("DataLoaderService returned no data");
+    }
+  } catch (error) {
+    console.error(
+      `[Main] Error during authentication success handling (${source}):`,
+      error
+    );
+    sendUnauthenticatedStateToRenderer(
+      `Failed to load user data: ${error.message}`,
+      source
+    );
+  }
+};
+
+/**
+ * Handle authentication failure or sign-out
+ */
+const handleAuthenticationFailure = (
+  error?: string,
+  source: string = "Unknown"
+): void => {
+  console.log(
+    `[Main] Handling authentication failure (${source}):`,
+    error || "No error provided"
+  );
+
+  // Clear all user data
+  dataLoaderService?.clearUserData();
+
+  // Send unauthenticated state
+  sendUnauthenticatedStateToRenderer(error, source);
+
+  // Update tray menu for unauthenticated state
+  updateTrayMenu();
 };
 
 // STT Service will be initialized after external API manager is ready
 let sttService: STTService;
 
-// Track the last language setting to detect changes
-let lastLanguageSetting: string | null = null;
-
-// Update STT service with current settings
-const updateSTTSettings = async () => {
-  const currentLanguage = store.get("language") as string;
-  const currentSettings = {
-    enableTranslation: store.get("enableTranslation"),
-    targetLanguage: store.get("targetLanguage"),
-    useAI: store.get("useAI"),
-    enableRealtimeMode: store.get("enableRealtimeMode"),
-  };
-
-  console.log("[Main] updateSTTSettings called with:", {
-    currentLanguage,
-    lastLanguageSetting,
-    currentSettings,
-    fromElectronStore: {
-      language: store.get("language"),
-      enableTranslation: store.get("enableTranslation"),
-      targetLanguage: store.get("targetLanguage"),
-      useAI: store.get("useAI"),
-    },
-  });
-
-  // Check if language setting has changed
-  if (lastLanguageSetting !== null && lastLanguageSetting !== currentLanguage) {
-    console.log(
-      `[Main] Language setting changed from ${lastLanguageSetting} to ${currentLanguage}, reinitializing STT service`
-    );
-
-    // Clear any cached language state
-    console.log(
-      "[Main] Clearing language cache and reinitializing STT service"
-    );
-
-    await sttService.reinitialize(currentLanguage);
-  }
-
-  // Update settings
-  console.log("[Main] Updating STT service settings:", currentSettings);
-  sttService.updateSettings(currentSettings);
-
-  // Handle realtime mode switching
-  const isRealtimeModeEnabled = currentSettings.enableRealtimeMode;
-  const isCurrentlyInRealtimeMode = sttService.isRealtime;
-
-  console.log("[Main] Realtime mode check:", {
-    isRealtimeModeEnabled,
-    isCurrentlyInRealtimeMode,
-  });
-
-  if (isRealtimeModeEnabled && !isCurrentlyInRealtimeMode) {
-    console.log("[Main] Enabling realtime mode");
-    try {
-      await sttService.enableRealtimeMode(currentLanguage);
-      console.log("[Main] Successfully enabled realtime mode");
-    } catch (error) {
-      console.error("[Main] Failed to enable realtime mode:", error);
-    }
-  } else if (!isRealtimeModeEnabled && isCurrentlyInRealtimeMode) {
-    console.log("[Main] Disabling realtime mode");
-    try {
-      await sttService.disableRealtimeMode(currentLanguage);
-      console.log("[Main] Successfully disabled realtime mode");
-    } catch (error) {
-      console.error("[Main] Failed to disable realtime mode:", error);
-    }
-  }
-
-  // Update tracked language
-  lastLanguageSetting = currentLanguage;
-  console.log("[Main] Updated lastLanguageSetting to:", lastLanguageSetting);
-};
-
 // ----------- Window & Tray Functions -----------
 
 const createMainWindow = () => {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minHeight: 600,
-    minWidth: 800,
-    frame: false, // Remove native window frame for custom navigation bar
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      webSecurity: true, // Re-enable web security, handle CSP properly
-      allowRunningInsecureContent: false,
-      experimentalFeatures: true,
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    },
-  });
+  const mainWindow = windowManager.createMainWindow();
 
-  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  // Set main window for microphone service after creation
+  MicrophoneService.getInstance().setMainWindow(mainWindow);
 
-  // Send initial session restoration status to renderer when window is ready
+  // Window ready - check if we need to send current auth state to new window
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log(
-      "[Main] New window loaded, session restoration will handle auth state"
-    );
+    console.log("[Main] Main window loaded, checking auth state...");
 
-    // Check if session restoration has already completed
+    // If initial session restoration has completed, send current state to this window
+    // This handles window recreation from tray menu
     if (externalAPIManager?.supabase.isSessionRestorationComplete()) {
       console.log(
-        "[Main] Session restoration already completed, checking current auth state"
+        "[Main] Session restoration already completed, sending current auth state"
       );
       const currentUser = externalAPIManager?.supabase.getCurrentUser();
 
       if (currentUser) {
-        // Session restoration completed with user
         console.log(
-          "[Main] Session already restored for user, loading complete auth state"
+          "[Main] User already authenticated, sending auth state to new window"
         );
-
-        mainWindow.webContents.send("session-restoration-status", {
-          status: "completed",
-          authenticated: true,
-        });
-
-        // Use AuthStateManager to load and send complete auth state
-        await authStateManager?.loadAndSendAuthState(
-          mainWindow,
-          currentUser,
-          "Window Load - Existing Session"
-        );
-
-        // Initialize authenticated services
-        if (!recordingWindow) {
-          createRecordingWindow();
-        }
+        await handleAuthenticationSuccess(currentUser, "Window Recreation");
       } else {
-        // Session restoration completed without user
-        console.log("[Main] Session restoration completed without user");
-
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
-          undefined,
-          "Window Load - No Session"
+        console.log(
+          "[Main] No authenticated user, sending unauthenticated state to new window"
+        );
+        sendUnauthenticatedStateToRenderer(
+          "No active session",
+          "Window Recreation"
         );
       }
     } else {
       console.log(
-        "[Main] Session restoration still in progress, window will receive events when complete"
+        "[Main] Session restoration in progress, will be handled by auth state change listener"
       );
     }
   });
 
   if (config.isDevelopment) {
-    mainWindow.webContents.openDevTools({
-      mode: "detach",
-    });
-  }
-};
-
-const createRecordingWindow = () => {
-  const { width: screenWidth, height: screenHeight } =
-    screen.getPrimaryDisplay().workAreaSize;
-  recordingWindow = new BrowserWindow({
-    width: WINDOW_SIZES.compact.width,
-    height: WINDOW_SIZES.compact.height,
-    x: Math.round((screenWidth - WINDOW_SIZES.compact.width) / 2),
-    y: screenHeight,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    transparent: true,
-    resizable: false,
-    hasShadow: false,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: RECORDING_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    },
-  });
-  recordingWindow.loadURL(RECORDING_WINDOW_WEBPACK_ENTRY);
-  recordingWindow.show();
-
-  if (config.isDevelopment) {
-    recordingWindow.webContents.openDevTools({
-      mode: "detach",
-    });
+    windowManager.openDevTools("main");
   }
 };
 
@@ -570,75 +395,104 @@ const createTray = () => {
   tray.setToolTip("Overlay");
 };
 
-const updateTrayMenu = () => {
+// Helper function to build microphone submenu
+const buildMicrophoneSubmenu = async (): Promise<
+  Electron.MenuItemConstructorOptions[]
+> => {
+  try {
+    const micService = MicrophoneService.getInstance();
+    const devices = await micService.getAvailableDevices();
+
+    const currentMicrophone = DEFAULT_SETTINGS.defaultMicrophone;
+
+    return devices.map((device: any) => ({
+      label: device.label || `Unknown Device`,
+      type: "radio" as const,
+      checked: currentMicrophone === device.deviceId,
+      click: () => {
+        updateTrayMenu(); // Refresh menu
+      },
+    }));
+  } catch (error) {
+    console.error("[Tray] Failed to load microphones for menu:", error);
+
+    // Fallback to default option
+    const currentMicrophone = DEFAULT_SETTINGS.defaultMicrophone;
+    return [
+      {
+        label: "Default Microphone",
+        type: "radio" as const,
+        checked: currentMicrophone === "default",
+        click: () => {
+          updateTrayMenu();
+        },
+      },
+    ];
+  }
+};
+
+const updateTrayMenu = async () => {
   if (!tray) return;
+
+  // Get dynamic microphone submenu
+  const microphoneSubmenu = await buildMicrophoneSubmenu();
+  const userStats = dataLoaderService.getUserStats();
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: "Open Overlay",
       click: () => {
-        if (!mainWindow || mainWindow?.isDestroyed()) {
+        if (!windowManager.getMainWindow()) {
           createMainWindow();
-        } else if (mainWindow && !mainWindow.isVisible()) {
+        } else if (
+          windowManager.getMainWindow() &&
+          !windowManager.getMainWindow().isVisible()
+        ) {
           // Window exists but is hidden, just show it without reloading
-          mainWindow.show();
-          mainWindow.focus();
+          windowManager.getMainWindow().show();
+          windowManager.getMainWindow().focus();
 
           if (process.platform === "darwin") {
             app.dock.show();
           }
-        } else if (mainWindow) {
+        } else if (
+          windowManager.getMainWindow() &&
+          windowManager.getMainWindow().isVisible()
+        ) {
           // Window is already visible, just focus it
-          mainWindow.focus();
+          windowManager.getMainWindow().focus();
           if (process.platform === "darwin") {
             app.dock.show();
           }
         }
       },
     },
-    { label: `Total Words: ${speechMetrics.totalWordCount}`, enabled: false },
+    { label: `Total Words: ${userStats.totalWordCount}`, enabled: false },
     {
-      label: `Average WPM: ${speechMetrics.averageWPM.toFixed(1)}`,
+      label: `Average WPM: ${userStats.averageWPM.toFixed(1)}`,
       enabled: false,
     },
     {
-      label: `Total Recordings: ${speechMetrics.totalRecordings}`,
+      label: `Total Recordings: ${userStats.totalRecordings}`,
       enabled: false,
     },
     {
-      label: `Streak: ${speechMetrics.streakDays} days`,
+      label: `Streak: ${userStats.streakDays} days`,
       enabled: false,
     },
 
     { type: "separator" },
     {
       label: "Share Feedback",
-      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement feedback functionality
-    },
-    {
-      label: "Settings",
-      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement settings functionality
+      click: () => {
+        shell.openExternal("https://github.com/anthropics/claude-code/issues");
+      },
     },
 
     { type: "separator" },
     {
       label: "Select microphone",
-      click: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement microphone selection
-    },
-
-    { type: "separator" },
-    {
-      label: "Reset Statistics",
-      click: () => {
-        speechMetrics = {
-          totalWordCount: 0,
-          averageWPM: 0,
-          totalRecordings: 0,
-          lastRecordingWords: 0,
-          lastRecordingWPM: 0,
-          streakDays: 0,
-        };
-        updateTrayMenu();
-      },
+      submenu: microphoneSubmenu,
     },
     { type: "separator" },
     {
@@ -648,7 +502,25 @@ const updateTrayMenu = () => {
       },
     },
     { type: "separator" },
-    { label: "About Overlay", click: () => {} }, // eslint-disable-line @typescript-eslint/no-empty-function -- TODO: Implement about dialog
+    {
+      label: "About Overlay",
+      click: () => {
+        dialog.showMessageBox({
+          type: "info",
+          title: "About Overlay",
+          message: `Overlay v${app.getVersion()}`,
+          detail: `A powerful voice-to-text application that helps you dictate text efficiently.
+
+Platform: ${process.platform}
+Electron: ${process.versions.electron}
+Chrome: ${process.versions.chrome}
+Node.js: ${process.versions.node}
+
+© ${new Date().getFullYear()} Overlay. All rights reserved.`,
+          buttons: ["OK"],
+        });
+      },
+    },
     { label: "Quit Overlay", click: () => app.quit() },
   ]);
   tray.setContextMenu(contextMenu);
@@ -686,21 +558,16 @@ const startRecording = async () => {
   }
 
   // Ensure recording window exists (should be created after authentication)
-  if (!recordingWindow) {
-    createRecordingWindow();
+  if (!windowManager.getRecordingWindow()) {
+    windowManager.createRecordingWindow();
   }
 
-  if (recordingWindow) {
-    windowAnimator.animateResize(
-      recordingWindow,
-      WINDOW_SIZES.expanded.width,
-      WINDOW_SIZES.expanded.height,
-      100
-    );
+  if (windowManager.getRecordingWindow()) {
+    windowManager.expandRecordingWindow();
   }
 
   // Show recording UI
-  recordingWindow?.webContents.send("recording-started");
+  windowManager.sendToRecording("recording-started");
 
   // Start batch STT session logic
   await sttService.startDictation();
@@ -720,7 +587,7 @@ const stopRecording = async () => {
   }
 
   // Update processing stage and send to UI
-  recordingWindow?.webContents.send("recording-stopped");
+  windowManager.sendToRecording("recording-stopped");
 
   // Restore system audio as soon as recording stops and transcription begins
   if (systemAudioManager) {
@@ -743,23 +610,6 @@ const stopRecording = async () => {
     isProcessing = false;
   }
 };
-
-// ----------- Dictation Output -----------
-
-// const outputText = async (text: string) => {
-//   const outputMode = store.get("outputMode") as string;
-//   if (outputMode === "clipboard" || outputMode === "both")
-//     clipboard.writeText(text);
-
-//   if ((outputMode === "auto-insert" || outputMode === "both") && robot) {
-//     setTimeout(() => robot.typeString(text), 100); // Small delay for app focus
-//   }
-//   tray?.displayBalloon({
-//     title: "Transcription Complete",
-//     content: text,
-//     icon: "assets/icon.png",
-//   });
-// };
 
 // ----------- App Lifecycle -----------
 
@@ -788,8 +638,7 @@ const handleOAuthCallback = async (url: string) => {
         console.error(
           "[Main] OAuth callback missing hash fragment with tokens"
         );
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
+        sendUnauthenticatedStateToRenderer(
           "OAuth callback missing required token data",
           "OAuth Error - Missing Hash"
         );
@@ -803,8 +652,7 @@ const handleOAuthCallback = async (url: string) => {
       const errorDescription = hashParams.get("error_description");
       if (error) {
         console.error("[Main] OAuth error:", { error, errorDescription });
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
+        handleAuthenticationFailure(
           `OAuth error: ${error}${errorDescription ? ` - ${errorDescription}` : ""}`,
           "OAuth Error"
         );
@@ -826,8 +674,7 @@ const handleOAuthCallback = async (url: string) => {
 
       if (!accessToken || !refreshToken) {
         console.error("[Main] OAuth callback missing required tokens");
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
+        sendUnauthenticatedStateToRenderer(
           "OAuth callback missing access_token or refresh_token",
           "OAuth Error - Missing Tokens"
         );
@@ -836,8 +683,7 @@ const handleOAuthCallback = async (url: string) => {
 
       if (!externalAPIManager?.supabase) {
         console.error("[Main] Supabase service not available for OAuth");
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
+        sendUnauthenticatedStateToRenderer(
           "Authentication service not available",
           "OAuth Error - Service Unavailable"
         );
@@ -856,8 +702,7 @@ const handleOAuthCallback = async (url: string) => {
 
         if (error) {
           console.error("[Main] Error creating session with tokens:", error);
-          authStateManager?.sendUnauthenticatedState(
-            mainWindow,
+          sendUnauthenticatedStateToRenderer(
             `Authentication failed: ${error.message}`,
             "OAuth Error - Session Creation"
           );
@@ -865,93 +710,18 @@ const handleOAuthCallback = async (url: string) => {
         }
 
         if (data.session && data.user) {
-          console.log(
-            "[Main] OAuth authentication successful for user:",
-            data.user.email
-          );
-
-          // Check onboarding status and send complete auth state
-          let onboardingCompleted = false;
-          try {
-            console.log(
-              "[Main] OAuth: Checking onboarding status for user:",
-              data.user.email
-            );
-            const profileResult =
-              await externalAPIManager.supabase.getUserProfile();
-            console.log("[Main] OAuth: Profile result:", {
-              hasData: !!profileResult.data,
-              hasError: !!profileResult.error,
-              error: profileResult.error?.message,
-              profileData: profileResult.data
-                ? {
-                    id: profileResult.data.id,
-                    name: profileResult.data.name,
-                    onboarding_completed:
-                      profileResult.data.onboarding_completed,
-                  }
-                : null,
-              timestamp: new Date().toISOString(),
-            });
-
-            if (profileResult.data && !profileResult.error) {
-              // Profile exists - use the actual onboarding_completed value
-              onboardingCompleted = Boolean(
-                profileResult.data.onboarding_completed
-              );
-              console.log(
-                "[Main] OAuth: Existing user profile found, onboarding status:",
-                onboardingCompleted,
-                "- Raw value:",
-                profileResult.data.onboarding_completed
-              );
-            } else if (profileResult.error) {
-              // Error getting profile - this means profile exists but we couldn't fetch it
-              // For existing users with profile fetch errors, default to completed (skip onboarding)
-              // This prevents existing users from being forced through onboarding due to temporary DB issues
-              console.warn(
-                "[Main] OAuth: Error fetching existing profile, defaulting to onboarding completed:",
-                profileResult.error?.message
-              );
-              onboardingCompleted = true;
-            } else {
-              // No profile data and no error - this is handled by getUserProfile() calling createUserProfile()
-              // If we reach here, it means createUserProfile() was called and returned successfully
-              // New users get onboarding_completed: false from createUserProfile()
-              onboardingCompleted = Boolean(
-                profileResult.data?.onboarding_completed
-              );
-              console.log(
-                "[Main] OAuth: New user profile created, onboarding status:",
-                onboardingCompleted
-              );
-            }
-          } catch (profileError) {
-            console.error(
-              "[Main] OAuth: Critical error checking onboarding status:",
-              profileError
-            );
-            // For critical errors, default to completed to prevent existing users from being stuck
-            onboardingCompleted = true;
-          }
-
           // Update main process state
           AuthUtils.setAuthenticationState(true);
 
-          // Note: Auth state will be sent to renderer by the auth state change listener
-          console.log(
-            "[Main] OAuth: Authentication successful, auth state will be sent by listener"
-          );
-
           // Focus main window
+          const mainWindow = windowManager.getMainWindow();
           if (mainWindow) {
             mainWindow.show();
             mainWindow.focus();
           }
         } else {
           console.error("[Main] Session created but no user data received");
-          authStateManager?.sendUnauthenticatedState(
-            mainWindow,
+          sendUnauthenticatedStateToRenderer(
             "Authentication completed but no user session received",
             "OAuth Error - No User Data"
           );
@@ -961,8 +731,7 @@ const handleOAuthCallback = async (url: string) => {
           "[Main] Exception during token session creation:",
           tokenError
         );
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
+        sendUnauthenticatedStateToRenderer(
           `Token authentication failed: ${tokenError.message}`,
           "OAuth Error - Token Exception"
         );
@@ -970,8 +739,7 @@ const handleOAuthCallback = async (url: string) => {
     }
   } catch (error) {
     console.error("[Main] Error handling OAuth callback:", error);
-    authStateManager?.sendUnauthenticatedState(
-      mainWindow,
+    sendUnauthenticatedStateToRenderer(
       "Unexpected error during OAuth processing",
       "OAuth Error - Unexpected"
     );
@@ -982,15 +750,14 @@ app.whenReady().then(async () => {
   try {
     console.log("[Main] Initializing external API services...");
 
+    // Initialize window manager first
+    windowManager = new WindowManager();
+
     // Initialize external API manager and handlers
     externalAPIManager = new ExternalAPIManager();
     apiHandlers = new APIHandlers(externalAPIManager);
-    authStateManager = new AuthStateManager(
-      externalAPIManager,
-      store,
-      updateTrayMenu,
-      updateSpeechMetrics,
-      updateSTTSettings
+    dataLoaderService = DataLoaderService.getInstance(
+      externalAPIManager.supabase
     );
 
     // Initialize system audio manager
@@ -1001,79 +768,131 @@ app.whenReady().then(async () => {
 
     // Initialize STT service with analytics support
     sttService = new STTService(
-      (metrics: any, transcript?: string, translationMeta?: any) => {
-        handleMetricsUpdate(metrics, transcript, translationMeta);
-      },
-      externalAPIManager.analytics
-    );
+      dataLoaderService,
+      async (
+        metrics: SpeechMetrics,
+        transcript?: string,
+        translationMeta?: TranslationResult
+      ) => {
+        console.log("[Main] STT metrics received:", {
+          wordCount: metrics.wordCount,
+          wpm: metrics.wordsPerMinute,
+          hasTranscript: !!transcript,
+          wasTranslated: !!translationMeta?.translatedText,
+        });
 
-    // // Set up session restoration status listener
-    externalAPIManager.supabase.setSessionRestorationStatusListener(
-      async (status, user) => {
-        console.log(
-          "[Main] Session restoration status:",
-          status,
-          "user:",
-          user?.email || null
-        );
+        // Handle transcript saving if provided and user is authenticated
+        if (
+          transcript &&
+          transcript.trim() &&
+          AuthUtils.isUserAuthenticated() &&
+          dataLoaderService
+        ) {
+          const userId = dataLoaderService.getCacheInfo().userId;
 
-        if (status === "starting") {
-          // Notify renderer that session restoration is starting
-        } else if (status === "completed") {
-          // Session restoration is complete - load and send complete auth state
-          if (user) {
-            console.log("[Main] Session restored for user:", user.email);
+          if (userId) {
+            const transcriptData: Omit<
+              DatabaseTranscriptEntry,
+              "id" | "created_at"
+            > = {
+              user_id: userId,
+              text: transcript.trim(),
+              original_text: translationMeta?.originalText,
+              language: translationMeta?.sourceLanguage || "en",
+              target_language: translationMeta?.targetLanguage,
+              was_translated: !!translationMeta?.translatedText,
+              confidence: translationMeta?.confidence,
+              word_count: metrics.wordCount,
+              wpm: metrics.wordsPerMinute,
+              metadata: {
+                localId: Date.now().toString(),
+                detectedLanguage: translationMeta?.detectedLanguage,
+                wordCountRatio: translationMeta?.wordCountRatio,
+              },
+            };
 
-            // Use AuthStateManager to load and send complete auth state
-            await authStateManager?.loadAndSendAuthState(
-              mainWindow,
-              user,
-              "Session Restoration"
-            );
+            try {
+              // Save transcript using DataLoaderService (DB-first approach)
+              const result =
+                await dataLoaderService.addTranscript(transcriptData);
 
-            // Initialize other authenticated services
-            if (!recordingWindow) {
-              createRecordingWindow();
+              if (result.success) {
+                console.log("[Main] Transcript saved to database successfully");
+
+                // Create UI transcript for renderer notification
+                const uiTranscript = {
+                  id: transcriptData.metadata.localId,
+                  text: transcript.trim(),
+                  timestamp: new Date(),
+                  wordCount: metrics.wordCount,
+                  wpm: metrics.wordsPerMinute,
+                  originalText: translationMeta?.originalText,
+                  sourceLanguage: translationMeta?.sourceLanguage,
+                  targetLanguage: translationMeta?.targetLanguage,
+                  wasTranslated: !!translationMeta?.translatedText,
+                  confidence: translationMeta?.confidence,
+                  detectedLanguage: translationMeta?.detectedLanguage,
+                  wordCountRatio: translationMeta?.wordCountRatio,
+                };
+
+                if (
+                  windowManager.getMainWindow() &&
+                  !windowManager.getMainWindow().isDestroyed()
+                ) {
+                  // Send activity-updated event for immediate UI transcript display
+                  windowManager.sendToMain("transcript-updated", uiTranscript);
+
+                  // Send statistics-updated event for stats refresh
+                  const currentStats = dataLoaderService.getUserStats();
+                  windowManager.sendToMain("statistics-updated", currentStats);
+                }
+
+                // Send processing-complete event to recording window
+                if (
+                  windowManager.getRecordingWindow() &&
+                  !windowManager.getRecordingWindow().isDestroyed()
+                ) {
+                  windowManager.sendToRecording("processing-complete");
+
+                  // Reset processing state and animate window back to compact
+                  isProcessing = false;
+                  windowManager.compactRecordingWindow();
+                }
+
+                // Update tray with latest stats
+                updateTrayMenu();
+              } else {
+                console.error(
+                  "[Main] Failed to save transcript:",
+                  result.error
+                );
+              }
+            } catch (error) {
+              console.error("[Main] Error saving transcript:", error);
             }
           } else {
-            // No user found after restoration - send unauthenticated state
-            console.log(
-              "[Main] Session restoration: No user found, sending unauthenticated state"
-            );
-            authStateManager?.sendUnauthenticatedState(
-              mainWindow,
-              undefined,
-              "Session Restoration"
-            );
+            console.warn("[Main] Cannot save transcript: no user ID available");
           }
+        } else if (
+          transcript &&
+          transcript.trim() &&
+          !AuthUtils.isUserAuthenticated()
+        ) {
+          console.log(
+            "[Main] User not authenticated, transcript will not be saved to database"
+          );
         }
-      }
+      },
+      externalAPIManager.analytics,
+      windowManager
     );
 
-    // Set up auth state change listener (for all authentications - magic links and OAuth)
-    externalAPIManager.supabase.setAuthStateChangeListener(async (user) => {
+    // Set up callback to receive auth state changes from SupabaseService native listener
+    externalAPIManager.supabase.setAuthStateChangeCallback(async (user) => {
       if (user) {
-        console.log("[Main] User authenticated via external API:", user.email);
-        // Use AuthStateManager to load and send complete auth state
-        await authStateManager?.loadAndSendAuthState(
-          mainWindow,
-          user,
-          "Auth State Change"
-        );
-        // Create recording window now that user is authenticated
-        if (!recordingWindow) {
-          createRecordingWindow();
-        }
+        await handleAuthenticationSuccess(user, "Auth State Change");
       } else {
-        console.log("[Main] User signed out via external API");
-        // Clear all user caches when user signs out
-        clearUserCaches();
-        // Send sign-out state to renderer
-        authStateManager?.sendUnauthenticatedState(
-          mainWindow,
-          undefined,
-          "Auth State Change - Sign Out"
-        );
+        handleAuthenticationFailure("User signed out", "Auth State Change");
       }
     });
     updateTrayMenu();
@@ -1084,15 +903,14 @@ app.whenReady().then(async () => {
 
   createMainWindow();
 
-  // Note: Recording window will be created after authentication
-  const initialLanguage = store.get("language") as string;
-  await sttService.initialize(initialLanguage);
+  await sttService.initialize();
 
-  // Initialize language tracking
-  lastLanguageSetting = initialLanguage;
+  // STT settings will be updated via DataLoaderService when user authenticates
+  console.log(
+    "[Main] STT service initialized - settings will be loaded after authentication"
+  );
 
-  // Initialize STT service with current settings
-  await updateSTTSettings();
+  // Export sttService for use by other modules
 
   setTimeout(() => {
     createTray();
@@ -1118,7 +936,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (!mainWindow) createMainWindow();
+  if (
+    !windowManager.getMainWindow() ||
+    windowManager.getMainWindow().isDestroyed()
+  )
+    createMainWindow();
 });
 app.on("will-quit", async () => {
   console.log("[Main] App shutting down, cleaning up services...");
@@ -1141,7 +963,7 @@ app.on("will-quit", async () => {
   }
 
   // Clear auth state manager reference
-  authStateManager = null;
+  // AuthStateManager replaced with DataLoaderService
 
   console.log("[Main] Services cleanup completed");
 });
@@ -1159,165 +981,18 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("update-settings", async (event, settings) => {
-  console.log("[Main] Settings update requested:", {
-    settingsKeys: Object.keys(settings),
-    useAI: settings.useAI,
-    language: settings.language,
-    enableTranslation: settings.enableTranslation,
-    targetLanguage: settings.targetLanguage,
-    outputMode: settings.outputMode,
-    hasContextFormatting: !!settings.contextFormatting,
-  });
-
-  // Log current electron store values before update
-  console.log("[Main] Current electron store values:", {
-    useAI: store.get("useAI"),
-    language: store.get("language"),
-    enableTranslation: store.get("enableTranslation"),
-    targetLanguage: store.get("targetLanguage"),
-    outputMode: store.get("outputMode"),
-  });
-
-  Object.entries(settings).forEach(([key, value]) => {
-    if (key !== "hotkey") {
-      console.log(
-        `[Main] Setting electron store: ${key} = ${JSON.stringify(value)}`
-      );
-      store.set(key, value);
-    }
-  });
-
-  // Log electron store values after update
-  console.log("[Main] Updated electron store values:", {
-    useAI: store.get("useAI"),
-    language: store.get("language"),
-    enableTranslation: store.get("enableTranslation"),
-    targetLanguage: store.get("targetLanguage"),
-    outputMode: store.get("outputMode"),
-  });
-
-  // Update STT service with new settings
-  await updateSTTSettings();
-
-  return { success: true };
-});
-
-// Function to update local speechMetrics from database statistics
-const updateSpeechMetrics = (stats: any) => {
-  console.log(
-    "[Main] Updating local speechMetrics with database stats:",
-    stats
-  );
-  speechMetrics = {
-    totalWordCount: stats.totalWordCount || 0,
-    averageWPM: stats.averageWPM || 0,
-    totalRecordings: stats.totalRecordings || 0,
-    streakDays: stats.streakDays || 0,
-    lastRecordingWords: speechMetrics.lastRecordingWords, // Keep local recent recording data
-    lastRecordingWPM: speechMetrics.lastRecordingWPM, // Keep local recent recording data
-  };
-  console.log("[Main] Local speechMetrics updated:", {
-    totalWords: speechMetrics.totalWordCount,
-    totalRecordings: speechMetrics.totalRecordings,
-    averageWPM: speechMetrics.averageWPM.toFixed(1),
-    streakDays: speechMetrics.streakDays,
-  });
-};
-
-// Function to clear all user-related caches and data
-const clearUserCaches = () => {
-  console.log("[Main] Clearing all user caches and stored data");
-
-  // Reset metrics and transcripts
-  speechMetrics = {
-    totalWordCount: 0,
-    averageWPM: 0,
-    totalRecordings: 0,
-    lastRecordingWords: 0,
-    lastRecordingWPM: 0,
-    streakDays: 0,
-  } as GlobalMetrics;
-  transcriptHistory = [];
-  lastActivityDate = null;
-
-  // Clear stored data in electron-store
-  store.clear();
-
-  // Set default values back for app settings only
-  // General section
-  store.set("defaultMicrophone", "default");
-  store.set("language", "en");
-
-  // System section
-  store.set("dictateSoundEffects", true);
-  store.set("muteMusicWhileDictating", true);
-
-  // Personalization section
-  store.set("outputMode", "both");
-  store.set("useAI", true);
-  store.set("enableRealtimeMode", false);
-  store.set("enableTranslation", false);
-  store.set("targetLanguage", "en");
-  store.set("enableContextFormatting", true);
-
-  // Data and Privacy section
-  store.set("privacyMode", true);
-
-  // Reset authentication state
-  AuthUtils.setAuthenticationState(false);
-
-  // Close and destroy recording window to prevent unauthorized access
-  if (recordingWindow && !recordingWindow.isDestroyed()) {
-    console.log(
-      "[Main] Closing recording window due to sign out/account deletion"
-    );
-    recordingWindow.close();
-    recordingWindow = null;
-  }
-
-  // Notify renderer about cleared data
-  mainWindow?.webContents.send("statistics-updated", speechMetrics);
-  mainWindow?.webContents.send("transcripts-loaded", []);
-
-  updateTrayMenu();
-
-  console.log("[Main] All user caches cleared successfully");
-};
-
-ipcMain.handle("reset-statistics", () => {
-  speechMetrics = {
-    totalWordCount: 0,
-    averageWPM: 0,
-    totalRecordings: 0,
-    lastRecordingWords: 0,
-    lastRecordingWPM: 0,
-    streakDays: 0,
-  } as GlobalMetrics;
-  transcriptHistory = [];
-  lastActivityDate = null;
-  // speechMetrics and transcriptHistory are managed in memory and database only
-
-  // Notify renderer about reset
-  mainWindow?.webContents.send("statistics-updated", speechMetrics);
-  updateTrayMenu();
-
-  return { success: true };
-});
-
 ipcMain.handle("window-hover-enter", (event) => {
-  if (recordingWindow && !isRecording) {
-    windowAnimator.animateResize(
-      recordingWindow,
-      WINDOW_SIZES.expanded.width,
-      WINDOW_SIZES.expanded.height,
-      200
-    );
+  if (windowManager.getRecordingWindow() && !isRecording) {
+    windowManager.expandRecordingWindow();
   }
 });
 
 ipcMain.handle("window-hover-leave", (event) => {
-  if (!recordingWindow) return;
+  if (
+    !windowManager.getRecordingWindow() ||
+    windowManager.getRecordingWindow().isDestroyed()
+  )
+    return;
 
   if (isProcessing) return;
 
@@ -1327,13 +1002,8 @@ ipcMain.handle("window-hover-leave", (event) => {
       hoverTimeout = null;
     }
     hoverTimeout = setTimeout(() => {
-      if (!isRecording && !isProcessing && recordingWindow) {
-        windowAnimator.animateResize(
-          recordingWindow,
-          WINDOW_SIZES.compact.width,
-          WINDOW_SIZES.compact.height,
-          200
-        );
+      if (!isRecording && !isProcessing && windowManager.getRecordingWindow()) {
+        windowManager.compactRecordingWindow();
       }
     }, 500);
   }
@@ -1354,8 +1024,19 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
   console.log("[Main] User authenticated:", user.email);
 
   // Create recording window now that user is authenticated
-  if (!recordingWindow) {
-    createRecordingWindow();
+  if (
+    !windowManager.getRecordingWindow() ||
+    windowManager.getRecordingWindow().isDestroyed()
+  ) {
+    windowManager.createRecordingWindow();
+  }
+
+  // Create information window for user notifications (hidden by default)
+  if (
+    !windowManager.getInformationWindow() ||
+    windowManager.getInformationWindow().isDestroyed()
+  ) {
+    windowManager.createInformationWindow();
   }
 
   return { success: true };
@@ -1374,12 +1055,8 @@ ipcMain.handle("refresh-auth-state", async (event) => {
     const currentUser = externalAPIManager.supabase.getCurrentUser();
     console.log("[Main] Refreshing auth state for user:", currentUser?.email);
 
-    // Use AuthStateManager to load and send refreshed auth state
-    await authStateManager?.loadAndSendAuthState(
-      mainWindow,
-      currentUser,
-      "Auth Refresh"
-    );
+    // Use enhanced authentication handling for refresh
+    await handleAuthenticationSuccess(currentUser, "Auth Refresh");
 
     // Load fresh profile to get onboarding status for return value
     const profileResult = await externalAPIManager.supabase.getUserProfile();
@@ -1395,25 +1072,21 @@ ipcMain.handle("refresh-auth-state", async (event) => {
 
 // Recording window control handlers
 ipcMain.handle("expand-recording-window", () => {
-  if (recordingWindow) {
-    windowAnimator.animateResize(
-      recordingWindow,
-      WINDOW_SIZES.expanded.width,
-      WINDOW_SIZES.expanded.height,
-      200 // Smooth animation duration
-    );
+  if (
+    windowManager.getRecordingWindow() &&
+    !windowManager.getRecordingWindow().isDestroyed()
+  ) {
+    windowManager.expandRecordingWindow();
   }
   return { success: true };
 });
 
 ipcMain.handle("compact-recording-window", () => {
-  if (recordingWindow) {
-    windowAnimator.animateResize(
-      recordingWindow,
-      WINDOW_SIZES.compact.width,
-      WINDOW_SIZES.compact.height,
-      200 // Smooth animation duration
-    );
+  if (
+    windowManager.getRecordingWindow() &&
+    !windowManager.getRecordingWindow().isDestroyed()
+  ) {
+    windowManager.compactRecordingWindow();
   }
   return { success: true };
 });
@@ -1453,28 +1126,37 @@ ipcMain.handle("install-update", () => {
 
 // Window control handlers for custom navigation bar
 ipcMain.handle("window:close", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.close();
+  if (
+    windowManager.getMainWindow() &&
+    !windowManager.getMainWindow().isDestroyed()
+  ) {
+    windowManager.getMainWindow().close();
     return { success: true };
   }
   return { success: false, error: "Main window not available" };
 });
 
 ipcMain.handle("window:minimize", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.minimize();
+  if (
+    windowManager.getMainWindow() &&
+    !windowManager.getMainWindow().isDestroyed()
+  ) {
+    windowManager.getMainWindow().minimize();
     return { success: true };
   }
   return { success: false, error: "Main window not available" };
 });
 
 ipcMain.handle("window:maximize", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMaximized()) {
-      mainWindow.restore();
+  if (
+    windowManager.getMainWindow() &&
+    !windowManager.getMainWindow().isDestroyed()
+  ) {
+    if (windowManager.getMainWindow().isMaximized()) {
+      windowManager.getMainWindow().restore();
       return { success: true, action: "restored" };
     } else {
-      mainWindow.maximize();
+      windowManager.getMainWindow().maximize();
       return { success: true, action: "maximized" };
     }
   }
@@ -1482,8 +1164,13 @@ ipcMain.handle("window:maximize", () => {
 });
 
 ipcMain.handle("window:get-maximized-state", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    return { isMaximized: mainWindow.isMaximized() };
+  if (
+    windowManager.getMainWindow() &&
+    !windowManager.getMainWindow().isDestroyed()
+  ) {
+    return { isMaximized: windowManager.getMainWindow().isMaximized() };
   }
   return { isMaximized: false };
 });
+
+export { sttService };

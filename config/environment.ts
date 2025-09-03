@@ -46,6 +46,9 @@ export const config = {
   // OpenAI configuration
   openaiApiKey: process.env.OPENAI_API_KEY || "",
 
+  // Deepgram configuration
+  deepgramApiKey: process.env.DEEPGRAM_API_KEY || "",
+
   // Supabase configuration
   supabaseUrl: process.env.REACT_APP_SUPABASE_URL || "",
   supabaseAnonKey: process.env.REACT_APP_SUPABASE_ANON_KEY || "",
@@ -122,6 +125,7 @@ console.log("Environment config loaded:", {
   envFile,
   loadedFromFile: !result.error,
   hasOpenAIKey: !!config.openaiApiKey,
+  hasDeepgramKey: !!config.deepgramApiKey,
   hasSupabaseUrl: !!config.supabaseUrl,
   hasSupabaseKey: !!config.supabaseAnonKey,
   hasPosthogKey: !!config.posthogKey,
@@ -130,6 +134,7 @@ console.log("Environment config loaded:", {
   processEnvKeys: Object.keys(process.env).filter(
     (key) =>
       key.includes("OPENAI") ||
+      key.includes("DEEPGRAM") ||
       key.includes("SUPABASE") ||
       key.includes("POSTHOG") ||
       key.includes("REACT_APP")

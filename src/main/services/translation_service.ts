@@ -1,40 +1,42 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-import {
-  TranslationResult,
-  ApplicationContextType,
-  ContextFormattingSettings,
-  FormattingResult,
-} from "../../shared/types";
+import { TranslationResult, ApplicationContextType, Settings, SpeechMetrics } from "../../shared/types";
 import * as robot from "robotjs";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
-import { ContextFormatter } from "./context_formatter";
+import { DataLoaderService } from "./data_loader_service";
 
 export class TranslationService {
   private static instance: TranslationService;
   private applicationDetector: ApplicationDetector;
-  private contextFormatter: ContextFormatter;
-  private contextFormattingSettings: ContextFormattingSettings;
+  private dataLoaderService: DataLoaderService | null = null;
 
   // Single language model configuration
   private readonly LANGUAGE_MODEL = "gpt-4.1";
 
-  constructor() {
-    this.applicationDetector = ApplicationDetector.getInstance();
-    this.contextFormatter = ContextFormatter.getInstance();
+  // Application context to mode mapping for auto-detection
+  private readonly CONTEXT_TO_MODE_MAPPING = {
+    [ApplicationContextType.EMAIL]: "email",
+    [ApplicationContextType.NOTES]: "notes",
+    [ApplicationContextType.MESSAGING]: "messages",
+    [ApplicationContextType.CODE_EDITOR]: "code_comments",
+    [ApplicationContextType.DOCUMENT]: "notes",
+    [ApplicationContextType.PRESENTATION]: "meeting_notes",
+    [ApplicationContextType.BROWSER]: "notes",
+    [ApplicationContextType.TERMINAL]: "code_comments",
+    [ApplicationContextType.UNKNOWN]: "notes", // fallback
+  };
 
-    // Initialize default context formatting settings
-    this.contextFormattingSettings = {
-      enableContextFormatting: true,
-      contextSettings: {},
-      customAppMappings: {},
-    };
+  constructor(dataLoaderService?: DataLoaderService) {
+    this.applicationDetector = ApplicationDetector.getInstance();
+    this.dataLoaderService = dataLoaderService || null;
   }
 
-  public static getInstance(): TranslationService {
+  public static getInstance(dataLoaderService?: DataLoaderService): TranslationService {
     if (!TranslationService.instance) {
-      TranslationService.instance = new TranslationService();
+      TranslationService.instance = new TranslationService(dataLoaderService);
+    } else if (dataLoaderService && !TranslationService.instance.dataLoaderService) {
+      TranslationService.instance.dataLoaderService = dataLoaderService;
     }
     return TranslationService.instance;
   }
@@ -42,22 +44,34 @@ export class TranslationService {
   /**
    * Main text processing pipeline - handles complete language model processing
    * @param transcript Raw transcript from STT service
-   * @param sourceLanguage Source language of the transcript
-   * @param settings User settings for processing options
    * @param recordingDuration Duration of the recording for metrics
    * @param onComplete Callback when processing and insertion is complete
    */
   async processText(
     transcript: string,
-    sourceLanguage: string,
-    settings: any,
     recordingDuration: number,
-    onComplete?: (metrics: any, finalText: string, metadata: any) => void
+    onComplete?: (metrics: SpeechMetrics, finalText: string, metadata: any) => void
   ): Promise<void> {
     if (!transcript || transcript.trim().length === 0) {
       console.log("[Translation] Empty transcript received");
       return;
     }
+
+    // Get current settings from DataLoaderService
+    if (!this.dataLoaderService) {
+      console.error("[Translation] DataLoaderService not available");
+      return;
+    }
+    
+    const settings: Settings = this.dataLoaderService.getUserSettings();
+    const sourceLanguage: string = settings.language;
+    
+    console.log("[Translation] Using settings from DataLoaderService:", {
+      language: settings.language,
+      targetLanguage: settings.targetLanguage,
+      enableTranslation: settings.enableTranslation,
+      useAI: settings.useAI
+    });
 
     console.log("[Translation] Processing transcript:", transcript);
     console.log("[Translation] Source language:", sourceLanguage);
@@ -88,14 +102,18 @@ export class TranslationService {
         }
       }
 
-      // Step 2: Grammar correction (if AI enhancement is enabled)
+      // Step 2: Grammar correction and mode-based formatting (if AI enhancement is enabled)
       const finalLanguage =
         settings.enableTranslation && settings.targetLanguage
           ? settings.targetLanguage
           : sourceLanguage;
 
       const correctedText = settings.useAI
-        ? await this.correctGrammar(processedText, finalLanguage)
+        ? await this.correctGrammarWithMode(
+            processedText,
+            finalLanguage,
+            settings
+          )
         : processedText;
       console.log(
         "[Translation] Grammar corrected text:",
@@ -103,60 +121,8 @@ export class TranslationService {
         settings.useAI ? "(AI enhanced)" : "(no AI enhancement)"
       );
 
-      // Step 3: Apply context-aware formatting
-      let finalText = correctedText;
-      let formattingResult: FormattingResult | null = null;
-
-      if (this.contextFormattingSettings.enableContextFormatting) {
-        try {
-          console.log(
-            "[Translation] Detecting active application for context formatting..."
-          );
-          const activeApp =
-            await this.applicationDetector.getActiveApplication();
-
-          if (activeApp) {
-            console.log("[Translation] Active application detected:", {
-              name: activeApp.applicationName,
-              contextType: activeApp.contextType,
-              windowTitle: activeApp.windowTitle,
-            });
-
-            formattingResult = this.contextFormatter.formatText(
-              correctedText,
-              activeApp,
-              {
-                detectedLanguage: finalLanguage,
-                settings: settings,
-              }
-            );
-
-            finalText = formattingResult.formattedText;
-            console.log("[Translation] Context formatting applied:", {
-              originalText: correctedText,
-              formattedText: finalText,
-              contextType: formattingResult.contextType,
-              transformations: formattingResult.appliedTransformations,
-              confidence: formattingResult.confidence,
-            });
-          } else {
-            console.log(
-              "[Translation] Could not detect active application, using original text"
-            );
-          }
-        } catch (error) {
-          console.error(
-            "[Translation] Error during context formatting:",
-            error
-          );
-          // Fallback to original text if formatting fails
-          finalText = correctedText;
-        }
-      } else {
-        console.log(
-          "[Translation] Context formatting disabled, using original text"
-        );
-      }
+      // Use corrected text as final output
+      const finalText = correctedText;
 
       console.log("[Translation] Final text:", finalText);
 
@@ -186,19 +152,18 @@ export class TranslationService {
               }
             : { wasTranslated: false, detectedLanguage: sourceLanguage };
 
-          const contextFormattingMeta = formattingResult
+          const modeFormattingMeta = settings.enableAutoDetection
             ? {
-                contextFormattingApplied: true,
-                contextType: formattingResult.contextType,
-                appliedTransformations: formattingResult.appliedTransformations,
-                formattingConfidence: formattingResult.confidence,
-                preFormattingText: correctedText,
+                modeBasedFormattingApplied: true,
+                selectedMode: settings.selectedMode,
+                autoDetectionEnabled: settings.enableAutoDetection,
+                customPromptUsed: !!settings.customPrompt?.trim(),
               }
-            : { contextFormattingApplied: false };
+            : { modeBasedFormattingApplied: false };
 
           const combinedMeta = {
             ...translationMeta,
-            ...contextFormattingMeta,
+            ...modeFormattingMeta,
           };
 
           onComplete(metrics, finalText, combinedMeta);
@@ -207,31 +172,6 @@ export class TranslationService {
     } catch (error) {
       console.error("[Translation] Error in text processing pipeline:", error);
     }
-  }
-
-  /**
-   * Update context formatting settings
-   */
-  updateContextFormattingSettings(
-    settings: Partial<ContextFormattingSettings>
-  ) {
-    this.contextFormattingSettings = {
-      ...this.contextFormattingSettings,
-      ...settings,
-    };
-
-    this.contextFormatter.updateOptions({
-      enableContextFormatting:
-        this.contextFormattingSettings.enableContextFormatting,
-      userOverrides: new Map(
-        Object.entries(this.contextFormattingSettings.customAppMappings)
-      ),
-    });
-
-    console.log(
-      "[Translation] Context formatting settings updated:",
-      this.contextFormattingSettings
-    );
   }
 
   async translateText(
@@ -535,14 +475,78 @@ OUTPUT FORMAT: Return only the translated text, nothing else.`;
   }
 
   /**
-   * Grammar correction using language model
+   * Grammar correction with optional mode-based formatting using language model
    */
-  private async correctGrammar(
+  private async correctGrammarWithMode(
     text: string,
-    language: string
+    language: string,
+    settings: Settings
   ): Promise<string> {
     try {
       const systemPrompt = this.getGrammarInstructions(language);
+
+      // Build the formatting prompt based on mode settings
+      let formattingPrompt = "";
+      let selectedMode = settings.selectedMode;
+
+      if (settings.enableAutoDetection) {
+        try {
+          // Auto-detect application and map to appropriate mode
+          const activeApp =
+            await this.applicationDetector.getActiveApplication();
+          const detectedMode =
+            this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
+
+          if (detectedMode) {
+            selectedMode = detectedMode;
+            console.log(
+              "[Translation] Auto-detected mode:",
+              detectedMode,
+              "for app:",
+              activeApp.applicationName
+            );
+          } else {
+            console.log(
+              "[Translation] Using fallback mode:",
+              selectedMode,
+              "for unrecognized context:",
+              activeApp.contextType
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "[Translation] Auto-detection failed, using fallback mode:",
+            selectedMode,
+            error
+          );
+        }
+
+        // Get the appropriate prompt based on selected mode or use customPrompt
+        let activePrompt = settings.customPrompt;
+
+        // If not custom mode, use the per-mode prompt if available
+        if (selectedMode && selectedMode !== "custom") {
+          const modePromptMap = {
+            notes: settings.notesPrompt,
+            messages: settings.messagesPrompt,
+            emails: settings.emailsPrompt,
+            code_comments: settings.codeCommentsPrompt,
+            meeting_notes: settings.meetingNotesPrompt,
+            creative_writing: settings.creativeWritingPrompt,
+          };
+
+          const modeSpecificPrompt =
+            modePromptMap[selectedMode as keyof typeof modePromptMap];
+          if (modeSpecificPrompt && modeSpecificPrompt.trim()) {
+            activePrompt = modeSpecificPrompt;
+          }
+        }
+
+        // Use the determined active prompt
+        if (activePrompt && activePrompt.trim()) {
+          formattingPrompt = `\n\nADDITIONAL FORMATTING INSTRUCTIONS:\n${activePrompt}`;
+        }
+      }
 
       const prompt = `You are a grammar and spelling corrector. Your ONLY task is to fix spelling errors, grammar mistakes, and add proper punctuation. ${systemPrompt}
 
@@ -558,37 +562,53 @@ ALLOWED CORRECTIONS:
 - Fix spelling errors
 - Correct grammar mistakes  
 - Add necessary punctuation (periods, commas, capitalization)
-- Convert emoji references to actual emojis (e.g., "fire emoji" → 🔥)
+- Convert emoji references to actual emojis (e.g., "fire emoji" → 🔥)${formattingPrompt}
 
-EXAMPLES:
-- Input: "how is weather today" → Output: "How is the weather today?"
-- Input: "weather is good" → Output: "The weather is good."
-- Input: "मौसम कैसा है" → Output: "मौसम कैसा है?" (fix punctuation, preserve question)
+IMPORTANT: Apply formatting instructions only AFTER ensuring grammar and spelling are correct. The original meaning and intent must be preserved.
 
-Return ONLY the corrected text, nothing else.`;
+Text to process: "${text}"
 
-      const response = await openai.chat.completions.create({
+Return ONLY the corrected and formatted text, nothing else.`;
+
+      const completion = await openai.chat.completions.create({
         model: this.LANGUAGE_MODEL,
         messages: [
           {
-            role: "system",
+            role: "user",
             content: prompt,
           },
-          {
-            role: "user",
-            content: text,
-          },
         ],
-        max_tokens: 500,
         temperature: 0.1,
+        max_tokens: 1000,
       });
 
-      return response.choices[0].message.content?.trim() || text;
+      const correctedText = completion.choices[0]?.message?.content?.trim();
+
+      if (!correctedText) {
+        console.warn("[Translation] Empty response from grammar correction");
+        return text;
+      }
+
+      console.log("[Translation] Grammar and formatting applied:", {
+        original: text,
+        corrected: correctedText,
+        mode: selectedMode,
+        autoDetected:
+          settings.enableAutoDetection &&
+          selectedMode !== settings.selectedMode,
+        customPromptUsed: !!settings.customPrompt?.trim(),
+      });
+
+      return correctedText;
     } catch (error) {
-      console.error("[Translation] Grammar correction failed:", error);
-      return text; // Return original text if correction fails
+      console.error(
+        "[Translation] Error in grammar correction with mode:",
+        error
+      );
+      return text;
     }
   }
+
 
   /**
    * Get grammar instructions for specific language

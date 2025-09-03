@@ -3,7 +3,6 @@
  * Interfaces for UI components and application state
  */
 
-import { ContextFormattingSettings } from "./services";
 
 export interface Settings {
   // General section
@@ -20,7 +19,19 @@ export interface Settings {
   enableRealtimeMode: boolean;
   enableTranslation: boolean;
   targetLanguage: string;
-  enableContextFormatting: boolean;
+  
+  // Modes section
+  selectedMode: string;
+  customPrompt: string;
+  enableAutoDetection: boolean;
+  
+  // Per-mode prompts (remembers user customizations for each mode)
+  notesPrompt: string;
+  messagesPrompt: string;
+  emailsPrompt: string;
+  codeCommentsPrompt: string;
+  meetingNotesPrompt: string;
+  creativeWritingPrompt: string;
   
   // Data and Privacy section
   privacyMode: boolean;

@@ -6,32 +6,22 @@ import {
 } from "@supabase/supabase-js";
 import Store from "electron-store";
 import {
-  UserRecord,
   DatabaseTranscriptEntry,
-  UserSettings,
+  Settings,
+  UserStats,
 } from "../../shared/types";
-
-// Re-export for backward compatibility
-export type TranscriptEntry = DatabaseTranscriptEntry;
+import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
 export class SupabaseService {
   private supabase: SupabaseClient;
   private currentUser: User | null = null;
   private currentSession: Session | null = null;
   private sessionStore: Store;
-  private onAuthStateChangeCallback?: (user: User | null) => void;
-  private onSessionRestorationStatusCallback?: (
-    status: "starting" | "completed",
-    user?: User | null
-  ) => void;
-  private sessionRestorationPromise: Promise<void> | null = null;
-  private isSessionRestored = false;
   private tempUserName: string | null = null; // Store name for magic link signup
+  private authStateChangeCallback?: (user: User | null) => void;
+  private isInitialRestorationComplete = false;
 
   constructor() {
-    // Import centralized config
-    // const { config } = require("../../../config/environment");
-
     console.log("SupabaseService: Initializing with config:", {
       url: process.env.REACT_APP_SUPABASE_URL,
       keyLength: process.env.REACT_APP_SUPABASE_ANON_KEY?.length,
@@ -60,46 +50,51 @@ export class SupabaseService {
       },
     });
 
-    // Try to restore session on startup and track completion
-    this.sessionRestorationPromise = this.restoreSession();
+    // Set up native Supabase auth state change listener
+    this.supabase.auth.onAuthStateChange((event, session) => {
+      console.log(`SupabaseService: Auth state changed: ${event}`, {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        userEmail: session?.user?.email,
+      });
+
+      if (session?.user) {
+        // Store session for persistence and update current state
+        this.currentSession = session;
+        this.currentUser = session.user;
+        this.storeSession(session, session.user);
+
+        // Notify auth state change
+        this.notifyAuthStateChange(session.user);
+      } else {
+        // Clear session and notify sign out
+        this.clearStoredSession();
+        this.notifyAuthStateChange(null);
+      }
+    });
+
+    // Try to restore session from storage on startup
+    this.attemptSessionRestore();
   }
 
-  private async restoreSession() {
+  private async attemptSessionRestore() {
     try {
-      console.log("SupabaseService: Starting session restoration...");
-
-      // Notify that restoration is starting
-      if (this.onSessionRestorationStatusCallback) {
-        this.onSessionRestorationStatusCallback("starting");
-      }
+      console.log(
+        "SupabaseService: Attempting to restore session from storage..."
+      );
 
       const storedSession = this.sessionStore.get("session") as Session | null;
 
       if (storedSession) {
-        console.log(
-          "SupabaseService: Found stored session, attempting to restore..."
-        );
-        const { data, error } = await this.supabase.auth.setSession({
+        console.log("SupabaseService: Found stored session, restoring...");
+
+        // Use setSession to restore - onAuthStateChange will handle the validation
+        await this.supabase.auth.setSession({
           access_token: storedSession.access_token,
           refresh_token: storedSession.refresh_token,
         });
 
-        if (data.session && data.user && !error) {
-          this.currentSession = data.session;
-          this.currentUser = data.user;
-          console.log(
-            "SupabaseService: Session restored successfully for user:",
-            data.user.email
-          );
-          // Don't notify auth state change immediately - wait for profile data to be loaded in main process
-        } else {
-          // Clear invalid session
-          console.log(
-            "SupabaseService: Stored session is invalid, clearing...",
-            error?.message
-          );
-          this.clearStoredSession();
-        }
+        // onAuthStateChange listener will handle success/failure automatically
       } else {
         console.log("SupabaseService: No stored session found");
       }
@@ -107,16 +102,9 @@ export class SupabaseService {
       console.error("SupabaseService: Failed to restore session:", error);
       this.clearStoredSession();
     } finally {
-      this.isSessionRestored = true;
-      console.log(
-        "SupabaseService: Session restoration completed. User authenticated:",
-        !!this.currentUser
-      );
-
-      // Notify that restoration is complete (with or without user)
-      if (this.onSessionRestorationStatusCallback) {
-        this.onSessionRestorationStatusCallback("completed", this.currentUser);
-      }
+      // Mark initial restoration as complete
+      this.isInitialRestorationComplete = true;
+      console.log("SupabaseService: Initial session restoration completed");
     }
   }
 
@@ -195,21 +183,15 @@ export class SupabaseService {
       }
     }
 
-    if (this.onAuthStateChangeCallback) {
-      this.onAuthStateChangeCallback(user);
+    // Notify main process about auth state change
+    if (this.authStateChangeCallback) {
+      this.authStateChangeCallback(user);
     }
   }
 
-  // Set auth state change listener
-  setAuthStateChangeListener(callback: (user: User | null) => void) {
-    this.onAuthStateChangeCallback = callback;
-  }
-
-  // Set session restoration status listener
-  setSessionRestorationStatusListener(
-    callback: (status: "starting" | "completed", user?: User | null) => void
-  ) {
-    this.onSessionRestorationStatusCallback = callback;
+  // Set callback for auth state changes (called by main process)
+  setAuthStateChangeCallback(callback: (user: User | null) => void) {
+    this.authStateChangeCallback = callback;
   }
 
   // Magic Link Authentication methods
@@ -402,17 +384,9 @@ export class SupabaseService {
     return this.currentSession;
   }
 
-  // Check if session restoration has completed
+  // Check if initial session restoration has completed
   isSessionRestorationComplete() {
-    return this.isSessionRestored;
-  }
-
-  // Wait for session restoration to complete
-  async waitForSessionRestoration() {
-    if (this.sessionRestorationPromise) {
-      await this.sessionRestorationPromise;
-    }
-    return this.isSessionRestored;
+    return this.isInitialRestorationComplete;
   }
 
   async getUserProfile() {
@@ -516,6 +490,7 @@ export class SupabaseService {
           name: userName,
           subscription_tier: "free",
           onboarding_completed: false,
+          email: this.currentUser.email,
         })
         .select()
         .single();
@@ -535,7 +510,9 @@ export class SupabaseService {
   }
 
   // Database operations
-  async saveTranscript(transcript: Omit<TranscriptEntry, "id" | "created_at">) {
+  async saveTranscript(
+    transcript: Omit<DatabaseTranscriptEntry, "id" | "created_at">
+  ) {
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
@@ -574,7 +551,7 @@ export class SupabaseService {
     }
   }
 
-  async saveUserSettings(settings: UserSettings["settings"]) {
+  async saveUserSettings(settings: Settings) {
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
@@ -591,7 +568,7 @@ export class SupabaseService {
         .upsert([
           {
             user_id: this.currentUser.id,
-            settings,
+            settings: settings,
             updated_at: new Date().toISOString(),
           },
         ])
@@ -611,39 +588,49 @@ export class SupabaseService {
     }
   }
 
-  async getUserSettings() {
+  async getUserSettings(): Promise<{
+    data: Settings | null;
+    error: Error | null;
+  }> {
+    // Maintain proper authentication boundary
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
 
     try {
       console.log(
-        "SupabaseService: Getting user settings for:",
+        "SupabaseService: Getting user settings from database for:",
         this.currentUser.id
       );
 
+      // Simple database fetch - caching handled by unified CacheService
       const { data, error } = await this.supabase
         .from("user_settings")
-        .select("*")
+        .select("settings")
         .eq("user_id", this.currentUser.id)
         .single();
 
       if (error) {
-        console.log(
-          "SupabaseService: Get user settings error:",
-          error?.message
-        );
-      } else {
-        console.log("SupabaseService: Settings retrieved successfully:", {
-          hasData: !!data,
-          settingsKeys: data?.settings ? Object.keys(data.settings) : [],
-        });
+        if (error.code === "PGRST116") {
+          // No settings found - return null (not an error)
+          console.log(
+            "SupabaseService: No user settings found, user will get defaults"
+          );
+          return { data: null, error: null };
+        }
+        throw error;
       }
 
-      return { data, error };
+      console.log(
+        "SupabaseService: Successfully retrieved user settings from database"
+      );
+      return { data: data?.settings || null, error: null };
     } catch (error) {
       console.error("SupabaseService: Get user settings error:", error);
-      return { data: null as any, error };
+      return {
+        data: null,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
     }
   }
 
@@ -658,27 +645,8 @@ export class SupabaseService {
         this.currentUser.id
       );
 
-      // Default settings based on electron store defaults
-      const defaultSettings = {
-        // General section
-        defaultMicrophone: "default",
-        language: "en",
-
-        // System section
-        dictateSoundEffects: true,
-        muteMusicWhileDictating: true,
-
-        // Personalization section
-        outputMode: "both" as const,
-        useAI: true,
-        enableRealtimeMode: false,
-        enableTranslation: false,
-        targetLanguage: "en",
-        enableContextFormatting: true,
-
-        // Data and Privacy section
-        privacyMode: true,
-      };
+      // Use shared default settings constants
+      const defaultSettings = DEFAULT_SETTINGS;
 
       const { data, error } = await this.supabase
         .from("user_settings")
@@ -708,7 +676,7 @@ export class SupabaseService {
     }
   }
 
-  async getUserStats() {
+  async getUserStats(): Promise<{ data: UserStats | null; error: any }> {
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
@@ -898,7 +866,6 @@ export class SupabaseService {
         this.currentUser.id
       );
 
-      // First, mark onboarding as completed
       const { data, error } = await this.supabase
         .from("user_profiles")
         .update({ onboarding_completed: true })
@@ -921,27 +888,30 @@ export class SupabaseService {
         error?.message
       );
 
-      // Create initial user settings
-      console.log(
-        "SupabaseService: Creating initial settings for completed onboarding"
-      );
-      const settingsResult = await this.createInitialUserSettings();
-
-      if (settingsResult.error) {
-        console.warn(
-          "SupabaseService: Failed to create initial settings:",
-          settingsResult.error?.message
-        );
-        // Don't fail the onboarding completion if settings creation fails
-        // The settings will be created later when first accessed
-      } else {
-        console.log("SupabaseService: Initial settings created successfully");
-      }
-
       return { data, error };
     } catch (error) {
       console.error("SupabaseService: Complete onboarding error:", error);
       return { data: null as any, error };
+    }
+  }
+
+  /**
+   * Clear all Supabase-related cache data
+   * Implements CacheableService interface
+   */
+  clearCache(): void {
+    console.log("[SupabaseService] Clearing Supabase cache data...");
+
+    try {
+      // Clear stored session data
+      this.clearStoredSession();
+
+      // Clear temporary user name
+      this.tempUserName = null;
+
+      console.log("[SupabaseService] Cache cleared successfully");
+    } catch (error) {
+      console.error("[SupabaseService] Error clearing cache:", error);
     }
   }
 }

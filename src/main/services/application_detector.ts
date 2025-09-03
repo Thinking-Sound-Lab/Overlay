@@ -6,6 +6,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { ActiveApplicationInfo, ApplicationContextType } from "../../shared/types";
+// Removed CacheableService interface since cache_manager_service was deleted
 
 const execAsync = promisify(exec);
 
@@ -341,5 +342,25 @@ export class ApplicationDetector {
    */
   public getApplicationMappings(): Map<string, ApplicationContextType> {
     return new Map(this.applicationMappings);
+  }
+
+  /**
+   * Clear user-specific application mappings and reset to defaults
+   * Implements CacheableService interface
+   */
+  clearCache(): void {
+    console.log("[ApplicationDetector] Clearing custom application mappings...");
+    
+    try {
+      // Clear the mappings map
+      this.applicationMappings.clear();
+      
+      // Reinitialize with default mappings only
+      this.initializeDefaultMappings();
+      
+      console.log("[ApplicationDetector] Custom mappings cleared, defaults restored");
+    } catch (error) {
+      console.error("[ApplicationDetector] Error clearing cache:", error);
+    }
   }
 }

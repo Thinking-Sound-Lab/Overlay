@@ -27,8 +27,8 @@ interface TranscriptEntry {
 
 export const HomePage: React.FC = () => {
   const { state } = useAppContext();
-  const { user, userProfile, userStats, transcripts } = state;
-  const userName = userProfile?.name || user?.email?.split("@")[0] || "User";
+  const { user, userStats, transcripts } = state;
+  const userName = user?.name || user?.email?.split("@")[0] || "User";
 
   const formatDate = (date: Date | string) => {
     // Ensure we have a proper Date object

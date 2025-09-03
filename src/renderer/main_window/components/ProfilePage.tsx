@@ -7,7 +7,7 @@ import { useAppContext } from "../contexts/AppContext";
 
 export const ProfilePage: React.FC = () => {
   const { state, resetAppState, signOut } = useAppContext();
-  const { user, userProfile, userStats, isLoading } = state;
+  const { user, userStats, isLoading } = state;
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -133,10 +133,10 @@ export const ProfilePage: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {userProfile?.name && (
+            {user?.name && (
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">Name</span>
-                <span className="text-sm text-gray-900">{userProfile.name}</span>
+                <span className="text-sm text-gray-900">{user.name}</span>
               </div>
             )}
             <div className="flex items-center justify-between">
@@ -146,12 +146,12 @@ export const ProfilePage: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">Member since</span>
               <span className="text-sm text-gray-900">
-                {userProfile?.created_at ? formatDate(userProfile.created_at) : (user as any)?.created_at ? formatDate((user as any).created_at) : 'Loading...'}
+                {user?.created_at ? formatDate(user.created_at) : 'Loading...'}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">Subscription</span>
-              <Badge variant="secondary">{userProfile?.subscription_tier === 'pro' ? 'Pro' : 'Free Tier'}</Badge>
+              <Badge variant="secondary">{user?.subscription_tier === 'pro' ? 'Pro' : 'Free Tier'}</Badge>
             </div>
           </CardContent>
         </Card>

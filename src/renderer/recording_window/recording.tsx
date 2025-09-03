@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import startSound from "../../../assets/sounds/start.wav";
 import stopSound from "../../../assets/sounds/stop.wav";
+import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
 const SAMPLE_RATE = 16000;
 const BUFFER_SIZE = 1024;
@@ -209,14 +210,18 @@ export const RecordingWindow: React.FC = () => {
       setIsRecording(true);
       setIsProcessing(false);
 
+      // Get selected microphone from settings
+      let audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: SAMPLE_RATE,
+        channelCount: 1,
+      };
+
+      // getUserMedia will handle device selection and permissions automatically
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: SAMPLE_RATE,
-          channelCount: 1,
-        },
+        audio: audioConstraints,
         video: false,
       });
 

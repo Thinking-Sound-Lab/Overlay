@@ -147,6 +147,14 @@ const config: ForgeConfig = {
               js: "./src/preload/preload.ts",
             },
           },
+          {
+            html: "./src/renderer/information_window/information.html",
+            js: "./src/renderer/information_window/information.tsx",
+            name: "information_window",
+            preload: {
+              js: "./src/preload/preload.ts",
+            },
+          },
         ],
       },
     }),

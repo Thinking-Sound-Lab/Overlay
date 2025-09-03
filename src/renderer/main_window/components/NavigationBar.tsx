@@ -40,6 +40,17 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
           console.warn("Failed to get window maximized state:", error);
         });
     }
+
+    // Listen for tray menu settings dialog open event
+    const handleOpenSettings = () => {
+      setSettingsOpen(true);
+    };
+
+    window.addEventListener("open-settings-dialog", handleOpenSettings);
+
+    return () => {
+      window.removeEventListener("open-settings-dialog", handleOpenSettings);
+    };
   }, []);
 
   const handleWindowClose = async () => {
@@ -88,7 +99,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
   return (
     <div
-      className="flex items-center justify-between px-4 bg-gray-100 border-b border-gray-200 h-12"
+      className="flex items-center justify-between px-6 bg-gray-50 border-b border-gray-200 h-14"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       onDoubleClick={handleNavBarDoubleClick}
     >
@@ -126,14 +137,14 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
       {/* Step Indicator - Center (Only during onboarding) */}
       {isOnboarding && (
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <span className="font-medium">
+        <div className="flex items-center gap-3 text-sm text-gray-700">
+          <span className="font-semibold">
             Step {currentStep} of {totalSteps}
           </span>
           {stepName && (
             <>
-              <span>•</span>
-              <span>{stepName}</span>
+              <span className="text-gray-400">•</span>
+              <span className="font-medium">{stepName}</span>
             </>
           )}
         </div>
@@ -149,10 +160,10 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="hover:bg-gray-200 hover:rounded-xl"
+              className="hover:bg-gray-200 hover:rounded-xl transition-all duration-200 p-2"
               onClick={() => setSettingsOpen(true)}
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-5 w-5 text-gray-600" />
             </Button>
           </Tooltip>
           
@@ -161,9 +172,9 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="hover:bg-gray-200 hover:rounded-xl"
+                className="hover:bg-gray-200 hover:rounded-xl transition-all duration-200 p-2"
               >
-                <User className="h-4 w-4" />
+                <User className="h-5 w-5 text-gray-600" />
               </Button>
             }
           />

@@ -1,15 +1,22 @@
 import { ipcMain } from "electron";
 import { ExternalAPIManager } from "../services/external_api_manager";
 import { IPCResponse } from "../../shared/types";
+import MicrophoneService from "../services/microphone_service";
+import { DataLoaderService } from "../services/data_loader_service";
+import { sttService } from "../index";
 
 // Re-export IPCResponse type for compatibility
 // export { IPCResponse } from "../utils/ipc-handler";
 
 export class APIHandlers {
   private apiManager: ExternalAPIManager;
+  private microphoneService: MicrophoneService;
+  private dataLoaderService: DataLoaderService;
 
   constructor(apiManager: ExternalAPIManager) {
     this.apiManager = apiManager;
+    this.microphoneService = MicrophoneService.getInstance();
+    this.dataLoaderService = DataLoaderService.getInstance(apiManager.supabase);
     this.setupHandlers();
   }
 
@@ -91,6 +98,29 @@ export class APIHandlers {
     ipcMain.handle(
       "analytics:trackAppLaunched",
       this.handleTrackAppLaunched.bind(this)
+    );
+
+    // Microphone management handlers
+    ipcMain.handle(
+      "microphone:getDevices",
+      this.handleGetMicrophoneDevices.bind(this)
+    );
+    // NOTE: testDevice handler removed - deprecated method that triggers unwanted microphone access
+    ipcMain.handle(
+      "microphone:validateDevice",
+      this.handleValidateMicrophoneDevice.bind(this)
+    );
+    ipcMain.handle(
+      "microphone:getConstraints",
+      this.handleGetMicrophoneConstraints.bind(this)
+    );
+    ipcMain.handle(
+      "microphone:requestPermissions",
+      this.handleRequestMicrophonePermissions.bind(this)
+    );
+    ipcMain.handle(
+      "microphone:checkPermissions",
+      this.handleCheckMicrophonePermissions.bind(this)
     );
 
     console.log("APIHandlers: All IPC handlers registered");
@@ -261,9 +291,26 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.completeOnboarding();
-      return this.createResponse(result);
+      // Use DataLoaderService for DB-first onboarding completion
+      const result = await this.dataLoaderService.completeOnboarding();
+      if (result.success && result.data) {
+        console.log(
+          "[APIHandlers] Onboarding completed successfully via DataLoaderService"
+        );
+
+        return this.createResponse({ success: true, data: result.data });
+      } else {
+        console.error(
+          "[APIHandlers] Failed to complete onboarding:",
+          result.error
+        );
+        return this.createResponse(
+          null,
+          new Error(result.error || "Failed to complete onboarding")
+        );
+      }
     } catch (error) {
+      console.error("[APIHandlers] Error in handleCompleteOnboarding:", error);
       return this.createResponse(null, error);
     }
   }
@@ -310,8 +357,19 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.saveUserSettings(settings);
-      return this.createResponse(result);
+      // Use DataLoaderService for DB-first settings update
+      const result = await this.dataLoaderService.updateUserSettings(settings);
+      if (result.success) {
+        // Reinitialize STT service if realtime mode changed
+        if (settings.hasOwnProperty('enableRealtimeMode') && sttService) {
+          console.log("[API] Realtime mode setting changed, reinitializing STT service");
+          await sttService.reinitialize();
+        }
+        
+        return this.createResponse({ success: true });
+      } else {
+        throw new Error(result.error || "Failed to save settings");
+      }
     } catch (error) {
       return this.createResponse(null, error);
     }
@@ -483,6 +541,110 @@ export class APIHandlers {
     }
   }
 
+  // Microphone handlers
+  private async handleGetMicrophoneDevices(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      const devices = await this.microphoneService.getAvailableDevices();
+      return this.createResponse({ devices });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // NOTE: handleTestMicrophoneDevice removed - deprecated method that triggers unwanted microphone access
+
+  private async handleValidateMicrophoneDevice(
+    event: any,
+    deviceId: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      const isAvailable =
+        await this.microphoneService.isDeviceAvailable(deviceId);
+      const device = isAvailable
+        ? await this.microphoneService.findDeviceById(deviceId)
+        : null;
+
+      return this.createResponse({
+        deviceId,
+        isAvailable,
+        device,
+      });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleGetMicrophoneConstraints(
+    event: any,
+    deviceId: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      const constraints =
+        await this.microphoneService.getDeviceConstraints(deviceId);
+
+      return this.createResponse({
+        deviceId,
+        constraints,
+      });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRequestMicrophonePermissions(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      const result =
+        await this.microphoneService.requestPermissionsAndRefreshDevices();
+
+      if (result.success) {
+        return this.createResponse({
+          devices: result.devices,
+          message: "Microphone permissions granted and device list refreshed",
+        });
+      } else {
+        return this.createResponse(
+          null,
+          result.error || "Failed to get microphone permissions"
+        );
+      }
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleCheckMicrophonePermissions(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      const hasPermissions = await this.microphoneService.checkPermissions();
+      return this.createResponse({ hasPermissions });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
   // Cleanup method
   removeAllHandlers() {
     console.log("APIHandlers: Removing all IPC handlers...");
@@ -508,5 +670,11 @@ export class APIHandlers {
     ipcMain.removeAllListeners("analytics:trackRecordingStopped");
     ipcMain.removeAllListeners("analytics:trackTranscriptionCompleted");
     ipcMain.removeAllListeners("analytics:trackAppLaunched");
+    ipcMain.removeAllListeners("microphone:getDevices");
+    // NOTE: testDevice listener removed - deprecated method
+    ipcMain.removeAllListeners("microphone:validateDevice");
+    ipcMain.removeAllListeners("microphone:getConstraints");
+    ipcMain.removeAllListeners("microphone:requestPermissions");
+    ipcMain.removeAllListeners("microphone:checkPermissions");
   }
 }

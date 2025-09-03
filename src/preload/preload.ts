@@ -3,10 +3,6 @@ import { contextBridge, ipcRenderer } from "electron";
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Settings management
-  updateSettings: (settings: Record<string, unknown>) =>
-    ipcRenderer.invoke("update-settings", settings),
-
   // Statistics and metrics
   resetStatistics: () => ipcRenderer.invoke("reset-statistics"),
 
@@ -30,6 +26,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     return () => {
       ipcRenderer.removeListener("activity-updated", subscription);
+    };
+  },
+
+  onTranscriptUpdate: (callback: (transcript: any) => void) => {
+    const subscription = (_: any, transcript: any) => callback(transcript);
+    ipcRenderer.on("transcript-updated", subscription);
+
+    return () => {
+      ipcRenderer.removeListener("transcript-updated", subscription);
     };
   },
 
@@ -121,6 +126,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     trackAppLaunched: () => ipcRenderer.invoke("analytics:trackAppLaunched"),
   },
 
+  // Microphone management
+  microphone: {
+    getDevices: () => ipcRenderer.invoke("microphone:getDevices"),
+    // NOTE: testDevice removed - deprecated method that triggers unwanted microphone access
+    validateDevice: (deviceId: string) =>
+      ipcRenderer.invoke("microphone:validateDevice", deviceId),
+    getConstraints: (deviceId: string) =>
+      ipcRenderer.invoke("microphone:getConstraints", deviceId),
+    requestPermissions: () =>
+      ipcRenderer.invoke("microphone:requestPermissions"),
+    checkPermissions: () => ipcRenderer.invoke("microphone:checkPermissions"),
+  },
+
   // Update event listeners
   onUpdateAvailable: (callback: (info: any) => void) => {
     const subscription = (_: any, info: any) => callback(info);
@@ -160,6 +178,11 @@ ipcRenderer.on("processing-complete", () => {
   window.dispatchEvent(new Event("processing-complete"));
 });
 
+// Information window messages
+ipcRenderer.on("show-message", (_, message) => {
+  window.dispatchEvent(new CustomEvent("show-message", { detail: message }));
+});
+
 ipcRenderer.on("processing-stage", (_, stage) => {
   window.dispatchEvent(new CustomEvent("processing-stage", { detail: stage }));
 });
@@ -170,7 +193,6 @@ ipcRenderer.on("auth-state-changed", (_, authState) => {
     new CustomEvent("auth-state-changed", { detail: authState })
   );
 });
-
 
 ipcRenderer.on("activity-updated", (_, activity) => {
   console.log("Preload: Received activity-updated event:", activity);
@@ -191,6 +213,10 @@ ipcRenderer.on("statistics-updated", (_, stats) => {
   );
 });
 
+ipcRenderer.on("open-settings-dialog", () => {
+  window.dispatchEvent(new Event("open-settings-dialog"));
+});
+
 ipcRenderer.on("session-restoration-status", (_, status) => {
   window.dispatchEvent(
     new CustomEvent("session-restoration-status", { detail: status })
@@ -201,9 +227,6 @@ ipcRenderer.on("session-restoration-status", (_, status) => {
 declare global {
   interface Window {
     electronAPI: {
-      updateSettings: (
-        settings: Record<string, unknown>
-      ) => Promise<{ success: boolean }>;
       resetStatistics: () => Promise<{ success: boolean }>;
       audioRecorded: (audioData: {
         data: string;
@@ -261,10 +284,7 @@ declare global {
       // External API methods (Supabase & Analytics)
       auth: {
         signInWithMagicLink: (email: string) => Promise<any>;
-        signUpWithMagicLink: (
-          email: string,
-          name: string
-        ) => Promise<any>;
+        signUpWithMagicLink: (email: string, name: string) => Promise<any>;
         signInWithGoogle: () => Promise<any>;
         signOut: () => Promise<any>;
         getCurrentUser: () => Promise<any>;
@@ -307,6 +327,15 @@ declare global {
           wasTranslated: boolean;
         }) => Promise<any>;
         trackAppLaunched: () => Promise<any>;
+      };
+
+      microphone: {
+        getDevices: () => Promise<any>;
+        // NOTE: testDevice removed - deprecated method that triggers unwanted microphone access
+        validateDevice: (deviceId: string) => Promise<any>;
+        getConstraints: (deviceId: string) => Promise<any>;
+        requestPermissions: () => Promise<any>;
+        checkPermissions: () => Promise<any>;
       };
     };
   }
