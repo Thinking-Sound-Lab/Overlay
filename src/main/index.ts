@@ -283,6 +283,12 @@ const handleAuthenticationSuccess = async (
         windowManager.createInformationWindow();
       }
 
+      // Initialize STT service for authenticated user
+      if (sttService) {
+        console.log("[Main] Initializing STT service for authenticated user");
+        await sttService.initialize();
+      }
+
       if (config.isDevelopment) {
         windowManager.openDevTools("recording");
         windowManager.openDevTools("information");
@@ -316,6 +322,13 @@ const handleAuthenticationFailure = (
     `[Main] Handling authentication failure (${source}):`,
     error || "No error provided"
   );
+
+  // Clean up STT service to stop any active connections and logging
+  if (sttService) {
+    console.log("[Main] Cleaning up STT service during logout...");
+    sttService.closeSession();
+    sttService.resetRuntimeData();
+  }
 
   // Clear all user data
   dataLoaderService?.clearUserData();
@@ -906,12 +919,8 @@ app.whenReady().then(async () => {
 
   createMainWindow();
 
-  await sttService.initialize();
-
-  // STT settings will be updated via DataLoaderService when user authenticates
-  console.log(
-    "[Main] STT service initialized - settings will be loaded after authentication"
-  );
+  // STT service will be initialized when user authenticates
+  console.log("[Main] STT service created but not initialized - waiting for user authentication");
 
   // Export sttService for use by other modules
 

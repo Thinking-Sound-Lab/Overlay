@@ -207,6 +207,13 @@ ipcRenderer.on("transcript-saved-to-database", (_, transcript) => {
   );
 });
 
+ipcRenderer.on("transcript-updated", (_, transcript) => {
+  console.log("Preload: Received transcript-updated event:", transcript);
+  window.dispatchEvent(
+    new CustomEvent("transcript-updated", { detail: transcript })
+  );
+});
+
 ipcRenderer.on("statistics-updated", (_, stats) => {
   window.dispatchEvent(
     new CustomEvent("statistics-updated", { detail: stats })
