@@ -6,9 +6,12 @@ import RealtimeSTTProvider, {
   RealtimeSTTCallback,
 } from "../providers/realtime_stt";
 import TranslationService from "./translation_service";
-import { ContextFormattingSettings } from "../../shared/types";
 import { AnalyticsService } from "./analytics_service";
 import { ApplicationMappingsConfig } from "../config/application_mappings";
+import { DataLoaderService } from "./data_loader_service";
+import { WindowManager } from "../windows/window-manager";
+import { InformationMessage } from "../windows/types";
+import { Settings, SpeechMetrics } from "../../shared/types";
 
 class STTService {
   private sttSession: STTClient;
@@ -18,48 +21,74 @@ class STTService {
   private lastRecordingDuration = 0;
   private recordingStartTime = 0;
   private onMetricsUpdate?: (
-    metrics: any,
+    metrics: SpeechMetrics,
     transcript?: string,
     translationMeta?: any
   ) => void;
   private translationService: TranslationService;
   private analyticsService?: AnalyticsService;
-  private settings: any = {};
-  private isRealtimeMode = false;
+  private dataLoaderService: DataLoaderService;
   private accumulatedTranscript = "";
-  private streamingDeltas: string[] = [];
+  private isProcessingTranscript = false;
+  private windowManager: WindowManager | null = null;
 
   constructor(
+    dataLoaderService: DataLoaderService,
     onMetricsUpdate?: (
-      metrics: any,
+      metrics: SpeechMetrics,
       transcript?: string,
       translationMeta?: any
     ) => void,
-    analyticsService?: AnalyticsService
+    analyticsService?: AnalyticsService,
+    windowManager?: WindowManager
   ) {
     this.sttSession = null;
     this.realtimeProvider = null;
+    this.dataLoaderService = dataLoaderService;
     this.onMetricsUpdate = onMetricsUpdate;
-    this.translationService = TranslationService.getInstance();
+    this.translationService = TranslationService.getInstance(dataLoaderService);
     this.analyticsService = analyticsService;
+    this.windowManager = windowManager || null;
   }
 
-  updateSettings(settings: any) {
-    this.settings = settings;
-    console.log("[STT] Settings updated:", {
-      enableTranslation: settings.enableTranslation,
-      targetLanguage: settings.targetLanguage,
-    });
+  /**
+   * Get current language from DataLoaderService settings
+   */
+  private getCurrentLanguage(): string {
+    const settings: Settings = this.dataLoaderService.getUserSettings();
+    const language: string = settings.language;
+    console.log("[STT] Using current language from settings:", language);
+    return language;
+  }
 
-    // Pass context formatting settings to Translation Service
-    if (settings.contextFormatting) {
-      this.translationService.updateContextFormattingSettings(
-        settings.contextFormatting
+  /**
+   * Check if realtime mode is enabled in user settings
+   */
+  private isRealtimeModeEnabled(): boolean {
+    const settings: Settings = this.dataLoaderService.getUserSettings();
+    const enabled: boolean = settings.enableRealtimeMode;
+    console.log("[STT] Realtime mode enabled in settings:", enabled);
+    return enabled;
+  }
+
+  async initialize(): Promise<void> {
+    // Auto-select mode based on user settings
+    if (this.isRealtimeModeEnabled()) {
+      console.log(
+        "[STT] Settings indicate realtime mode - initializing realtime"
       );
+      await this.initializeRealtime();
+    } else {
+      console.log(
+        "[STT] Settings indicate regular mode - initializing regular"
+      );
+      await this.initializeRegular();
     }
   }
 
-  async initialize(language: string) {
+  private async initializeRegular(): Promise<void> {
+    const language: string = this.getCurrentLanguage();
+
     const handleMessage = (message: any) => {
       if (message.type === "transcription.completed") {
         console.log("[STT] Final transcript:", message.transcript);
@@ -80,13 +109,14 @@ class STTService {
     });
   }
 
-  async initializeRealtime(language: string): Promise<void> {
+  async initializeRealtime(): Promise<void> {
+    const language: string = this.getCurrentLanguage();
     console.log(`[STT] Initializing realtime mode with language: ${language}`);
 
     const config: RealtimeConfig = {
       language: language,
-      apiKey: process.env.OPENAI_API_KEY || "",
-      model: "gpt-4o-realtime-preview",
+      apiKey: process.env.DEEPGRAM_API_KEY || "",
+      model: "nova-2",
     };
 
     const realtimeCallback: RealtimeSTTCallback = {
@@ -97,40 +127,59 @@ class STTService {
           "isFinal:",
           isFinal
         );
-        // Process streaming transcription
+        // In transcription-only mode, we only process final results for insertion
+        // Deltas are just accumulated for completeness
         this.processStreamingTranscript(delta, isFinal, language);
       },
       onTranscriptComplete: (transcript: string, language: string) => {
-        console.log("[STT] Realtime transcript complete:", transcript);
-        this.processTranscript(transcript, language);
+        console.log(
+          "[STT] Realtime final transcript from Finalize:",
+          transcript
+        );
+        // This is the complete transcript from the entire recording session
+        // if (transcript && transcript.trim()) {
+        //   this.accumulatedTranscript = transcript.trim();
+        //   console.log(
+        //     "[STT] Final transcript received:",
+        //     this.accumulatedTranscript.length,
+        //     "chars"
+        //   );
+        //   console.log("[STT] Complete transcript:", this.accumulatedTranscript);
+        // }
       },
       onSpeechStarted: () => {
         console.log("[STT] Realtime speech started");
         this.isRecording = true;
-        this.recordingStartTime = Date.now();
 
-        // Clear previous accumulation
-        this.accumulatedTranscript = "";
-        this.streamingDeltas = [];
+        // With Finalize approach, speech detection is just for logging
+        // The complete transcript will only come from the Finalize message
+        console.log(
+          "[STT] Speech detected - waiting for Finalize message for complete transcript"
+        );
 
         if (this.analyticsService) {
           this.analyticsService.trackRecordingStarted();
         }
       },
       onSpeechStopped: () => {
-        console.log("[STT] Realtime speech stopped");
+        console.log("[STT] Realtime speech stopped (natural pause)");
         this.isRecording = false;
 
-        const recordingDuration = (Date.now() - this.recordingStartTime) / 1000;
-        this.lastRecordingDuration = recordingDuration;
+        // With Finalize approach, speech stops are just natural pauses
+        // Processing only happens when Finalize message is sent
+        console.log(
+          "[STT] Natural speech pause - transcript will be complete when user stops recording"
+        );
 
         if (this.analyticsService) {
+          const recordingDuration =
+            (Date.now() - this.recordingStartTime) / 1000;
           this.analyticsService.trackRecordingStopped(recordingDuration);
         }
       },
       onError: (error: Error) => {
         console.error("[STT] Realtime error:", error);
-        this.handleRealtimeError(error, language);
+        this.handleRealtimeError(error);
       },
       onConnectionOpen: () => {
         console.log("[STT] Realtime connection opened");
@@ -142,14 +191,15 @@ class STTService {
 
     this.realtimeProvider = new RealtimeSTTProvider(config, realtimeCallback);
     await this.realtimeProvider.connect();
-    this.isRealtimeMode = true;
   }
 
-  async reinitialize(newLanguage: string) {
-    console.log(`[STT] Reinitializing with language: ${newLanguage}`);
-    console.log(`[STT] Current mode - isRealtimeMode: ${this.isRealtimeMode}`);
+  async reinitialize(): Promise<void> {
+    const newLanguage: string = this.getCurrentLanguage();
+    const isRealtimeEnabled: boolean = this.isRealtimeModeEnabled();
 
-    const wasInRealtimeMode = this.isRealtimeMode;
+    console.log(
+      `[STT] Reinitializing with language: ${newLanguage}, realtime: ${isRealtimeEnabled}`
+    );
 
     // Close existing sessions
     if (this.sttSession) {
@@ -158,6 +208,9 @@ class STTService {
     }
 
     if (this.realtimeProvider) {
+      console.log(
+        "[STT] Cleaning up existing realtime provider and stopping all reconnections"
+      );
       this.realtimeProvider.disconnect();
       this.realtimeProvider = null;
     }
@@ -166,19 +219,13 @@ class STTService {
     this.audioBuffer = [];
     this.isRecording = false;
     this.accumulatedTranscript = "";
-    this.streamingDeltas = [];
+    this.isProcessingTranscript = false;
 
-    // Initialize with new language - preserve the mode
-    if (wasInRealtimeMode) {
-      console.log(`[STT] Reinitializing in realtime mode with language: ${newLanguage}`);
-      await this.initializeRealtime(newLanguage);
-    } else {
-      console.log(`[STT] Reinitializing in regular mode with language: ${newLanguage}`);
-      await this.initialize(newLanguage);
-    }
+    // Initialize based on current settings
+    await this.initialize();
 
     console.log(
-      `[STT] Successfully reinitialized with language: ${newLanguage}, mode preserved: ${wasInRealtimeMode ? 'realtime' : 'regular'}`
+      `[STT] Successfully reinitialized with language: ${newLanguage}, mode: ${isRealtimeEnabled ? "realtime" : "regular"}`
     );
   }
 
@@ -189,9 +236,9 @@ class STTService {
     // Always buffer audio for fallback purposes, even in realtime mode
     this.audioBuffer.push(audioData);
 
-    if (this.isRealtimeMode && this.realtimeProvider?.isReady()) {
+    if (this.isRealtimeModeEnabled() && this.realtimeProvider?.isReady()) {
       // Send audio chunk immediately to realtime provider
-      this.realtimeProvider.sendStreamingAudioChunk(audioData);
+      this.realtimeProvider.sendAudioChunk(audioData);
       console.log(
         `[STT] Streaming audio chunk to realtime, buffer size: ${this.audioBuffer.length}`
       );
@@ -210,6 +257,11 @@ class STTService {
     this.audioBuffer = [];
     this.recordingStartTime = Date.now();
 
+    // Clear accumulated transcript for new manual recording session
+    this.accumulatedTranscript = "";
+    this.isProcessingTranscript = false;
+    console.log("[STT] Started new dictation session - cleared accumulation");
+
     console.log("[STT] Started dictation - speak now...");
 
     // Track recording started
@@ -221,6 +273,23 @@ class STTService {
   async finalizeDictation() {
     if (this.audioBuffer.length === 0) {
       console.log("[STT] No audio chunks to process");
+
+      // Notify information window about silent recording
+      if (this.windowManager) {
+        const message: InformationMessage = {
+          type: "silent-recording",
+          title: "Silent Recording",
+          message: "No audio was detected during recording",
+          duration: 3000,
+        };
+        this.windowManager.showInformation(message);
+      }
+
+      // Send processing-complete to recording window to reset UI
+      if (this.windowManager) {
+        this.windowManager.sendToRecording("processing-complete");
+      }
+
       return;
     }
 
@@ -243,20 +312,74 @@ class STTService {
     }
 
     try {
-      if (this.isRealtimeMode) {
-        // In realtime mode, commit the audio buffer to trigger transcription
-        console.log(
-          "[STT] Realtime mode - committing audio buffer for transcription"
-        );
-        if (this.realtimeProvider?.isReady()) {
+      // Set recording duration BEFORE processing transcript so metrics calculation is correct
+      this.lastRecordingDuration = recordingDuration;
+
+      if (this.isRealtimeModeEnabled()) {
+        // In realtime mode, send Finalize message and wait for response
+        console.log("[STT] Realtime mode - sending Finalize message");
+
+        if (this.realtimeProvider) {
           this.realtimeProvider.commitAudio();
         }
-        this.lastRecordingDuration = recordingDuration;
+
+        setTimeout(async () => {
+          if (
+            this.accumulatedTranscript &&
+            this.accumulatedTranscript.trim().length > 0 &&
+            !this.isProcessingTranscript
+          ) {
+            console.log(
+              "[STT] Processing final transcript from Finalize:",
+              this.accumulatedTranscript.length,
+              "chars"
+            );
+            this.isProcessingTranscript = true;
+
+            try {
+              await this.processTranscript(
+                this.accumulatedTranscript,
+                this.getCurrentLanguage()
+              );
+
+              // Clear after successful processing
+              this.accumulatedTranscript = "";
+            } finally {
+              this.isProcessingTranscript = false;
+            }
+          } else if (this.isProcessingTranscript) {
+            console.log(
+              "[STT] Transcript processing already in progress, skipping"
+            );
+          } else {
+            console.log("[STT] No final transcript received from Finalize");
+
+            // Notify information window about empty transcript
+            if (this.windowManager) {
+              console.log(
+                "[STT] Notifying information window about empty transcript"
+              );
+
+              const message: InformationMessage = {
+                type: "empty-transcript",
+                title: "Empty Transcript",
+                message: "No speech was detected in the recording",
+                duration: 3000,
+              };
+              this.windowManager.showInformation(message);
+            }
+
+            // Send processing-complete to recording window to reset UI
+            if (this.windowManager) {
+              this.windowManager.sendToRecording("processing-complete");
+              this.windowManager.compactRecordingWindow();
+            }
+          }
+        }, 500);
       } else {
         // In regular mode, send accumulated audio to Whisper
         if (this.sttSession) {
           await this.sttSession.processAudio(this.audioBuffer);
-          this.lastRecordingDuration = recordingDuration;
         } else {
           console.error("[STT] No STT session available for processing audio");
         }
@@ -285,19 +408,36 @@ class STTService {
   async processTranscript(transcript: string, language: string) {
     if (!transcript || transcript.trim().length === 0) {
       console.log("[STT] Empty transcript received");
+
+      // Notify information window about empty transcript
+      if (this.windowManager) {
+        const message: InformationMessage = {
+          type: "empty-transcript",
+          title: "Empty Transcript",
+          message: "No text could be transcribed from the audio",
+          duration: 3000,
+        };
+        this.windowManager.showInformation(message);
+      }
+
+      // Send processing-complete to recording window to reset UI
+      if (this.windowManager) {
+        this.windowManager.sendToRecording("processing-complete");
+        this.windowManager.compactRecordingWindow();
+      }
+
       return;
     }
 
     console.log("[STT] Raw transcript:", transcript);
     console.log("[STT] Source language:", language);
+    console.log("[STT] Last recording duration:", this.lastRecordingDuration);
 
     try {
       // STT Service now only handles voice-to-text conversion
-      // Pass the transcript and language to Translation Service for processing
+      // Pass the transcript to Translation Service for processing
       await this.translationService.processText(
         transcript,
-        language,
-        this.settings,
         this.lastRecordingDuration,
         this.onMetricsUpdate
       );
@@ -324,95 +464,15 @@ class STTService {
     if (!delta) return;
 
     if (isFinal) {
-      // For final transcripts, use the complete accumulated transcript, not just the delta
-      // But if there's no accumulated transcript yet, use the delta as the final transcript
-      if (this.accumulatedTranscript) {
-        // We have accumulated deltas, use the complete accumulated transcript
-        console.log("[STT] Using accumulated transcript from deltas");
+      if (
+        this.accumulatedTranscript &&
+        this.accumulatedTranscript.trim().length > 0
+      ) {
+        this.accumulatedTranscript += " " + delta.trim();
       } else {
-        // No deltas accumulated, use the final delta as the complete transcript
-        console.log("[STT] Using final delta as complete transcript");
-        this.accumulatedTranscript = delta;
+        this.accumulatedTranscript = delta.trim();
       }
-
-      console.log(
-        "[STT] Final accumulated transcript:",
-        this.accumulatedTranscript,
-        "(from accumulated:",
-        !!this.accumulatedTranscript,
-        "or delta:",
-        !!delta,
-        ")"
-      );
-
-      // Calculate duration for realtime streaming metrics (current time - recording start time)
-      const currentDuration = this.isRecording
-        ? (Date.now() - this.recordingStartTime) / 1000
-        : this.lastRecordingDuration || 0;
-
-      console.log(
-        "[STT] Calculated duration for streaming transcript:",
-        currentDuration
-      );
-
-      // Process the complete transcript with correct duration
-      await this.translationService.processText(
-        this.accumulatedTranscript,
-        language,
-        this.settings,
-        currentDuration,
-        this.onMetricsUpdate
-      );
-
-      // Clear accumulated data for next utterance
-      this.accumulatedTranscript = "";
-      this.streamingDeltas = [];
-    } else {
-      // Accumulate streaming delta
-      this.streamingDeltas.push(delta);
-      this.accumulatedTranscript += delta;
-
-      console.log(
-        "[STT] Accumulated transcript so far:",
-        this.accumulatedTranscript
-      );
-
-      // Emit intermediate results for real-time UI updates if callback exists
-      //   if (this.onMetricsUpdate) {
-      //     this.onMetricsUpdate(
-      //       {
-      //         type: "streaming_transcript",
-      //         partialTranscript: this.accumulatedTranscript,
-      //         delta: delta,
-      //         isFinal: false,
-      //         timestamp: Date.now(),
-      //       },
-      //       this.accumulatedTranscript
-      //     );
-      //   }
     }
-  }
-
-  /**
-   * Update context formatting settings (delegated to Translation Service)
-   */
-  updateContextFormattingSettings(
-    settings: Partial<ContextFormattingSettings>
-  ) {
-    this.translationService.updateContextFormattingSettings(settings);
-  }
-
-  /**
-   * Get current context formatting settings (delegated to Translation Service)
-   */
-  public getContextFormattingSettings(): ContextFormattingSettings {
-    // For backward compatibility, we'll need to get this from translation service
-    // For now, return default settings
-    return {
-      enableContextFormatting: true,
-      contextSettings: {},
-      customAppMappings: {},
-    };
   }
 
   /**
@@ -448,7 +508,6 @@ class STTService {
     }
 
     this.audioBuffer = [];
-    this.isRealtimeMode = false;
 
     console.log("[STT] Session closed, shortcuts unregistered");
   }
@@ -458,44 +517,8 @@ class STTService {
     return this.isRecording;
   }
 
-  // Mode management methods
-  async enableRealtimeMode(language: string): Promise<void> {
-    if (this.isRealtimeMode) {
-      console.log("[STT] Already in realtime mode");
-      return;
-    }
-
-    // Close existing regular session
-    if (this.sttSession) {
-      this.sttSession.close();
-      this.sttSession = null;
-    }
-
-    // Initialize realtime mode
-    await this.initializeRealtime(language);
-    console.log("[STT] Realtime mode enabled");
-  }
-
-  async disableRealtimeMode(language: string): Promise<void> {
-    if (!this.isRealtimeMode) {
-      console.log("[STT] Already in regular mode");
-      return;
-    }
-
-    // Close realtime provider
-    if (this.realtimeProvider) {
-      this.realtimeProvider.disconnect();
-      this.realtimeProvider = null;
-    }
-
-    // Initialize regular STT mode
-    await this.initialize(language);
-    this.isRealtimeMode = false;
-    console.log("[STT] Realtime mode disabled, switched to regular mode");
-  }
-
   get isRealtime(): boolean {
-    return this.isRealtimeMode;
+    return this.isRealtimeModeEnabled();
   }
 
   get realtimeConnectionStatus(): boolean {
@@ -506,66 +529,12 @@ class STTService {
     return this.accumulatedTranscript;
   }
 
-  get streamingDeltaHistory(): string[] {
-    return [...this.streamingDeltas];
-  }
-
   clearStreamingTranscript(): void {
     this.accumulatedTranscript = "";
-    this.streamingDeltas = [];
     console.log("[STT] Streaming transcript cleared");
   }
 
-  /**
-   * Update the language for real-time provider without full reinitialization
-   * This provides a more graceful way to change languages in real-time mode
-   */
-  async updateRealtimeLanguage(newLanguage: string): Promise<void> {
-    if (!this.isRealtimeMode) {
-      console.log("[STT] Not in realtime mode, using regular reinitialize");
-      await this.reinitialize(newLanguage);
-      return;
-    }
-
-    console.log(`[STT] Updating realtime language to: ${newLanguage}`);
-    
-    // Stop any ongoing recording
-    const wasRecording = this.isRecording;
-    if (wasRecording) {
-      this.isRecording = false;
-      console.log("[STT] Stopped recording for language update");
-    }
-
-    try {
-      // Close existing realtime provider
-      if (this.realtimeProvider) {
-        this.realtimeProvider.disconnect();
-        this.realtimeProvider = null;
-      }
-
-      // Clear accumulated state
-      this.accumulatedTranscript = "";
-      this.streamingDeltas = [];
-      this.audioBuffer = [];
-
-      // Initialize with new language
-      await this.initializeRealtime(newLanguage);
-      
-      console.log(`[STT] Successfully updated realtime language to: ${newLanguage}`);
-    } catch (error) {
-      console.error("[STT] Error updating realtime language:", error);
-      
-      // Fallback to regular reinitialize if realtime update fails
-      console.log("[STT] Falling back to full reinitialize");
-      await this.reinitialize(newLanguage);
-      throw error;
-    }
-  }
-
-  private async handleRealtimeError(
-    error: Error,
-    language: string
-  ): Promise<void> {
+  private async handleRealtimeError(error: Error): Promise<void> {
     console.error(
       "[STT] Realtime error occurred, attempting fallback:",
       error.message
@@ -581,7 +550,7 @@ class STTService {
 
       try {
         // Initialize regular STT for fallback
-        await this.initializeFallback(language);
+        await this.initializeFallback();
 
         // Process the buffered audio
         if (this.sttSession) {
@@ -594,12 +563,16 @@ class STTService {
 
     // Try to reconnect realtime after a delay
     setTimeout(() => {
-      this.attemptRealtimeReconnection(language);
+      this.attemptRealtimeReconnection();
     }, 5000);
   }
 
-  private async initializeFallback(language: string): Promise<void> {
-    console.log("[STT] Initializing fallback STT session");
+  private async initializeFallback(): Promise<void> {
+    const language: string = this.getCurrentLanguage();
+    console.log(
+      "[STT] Initializing fallback STT session with language:",
+      language
+    );
 
     const handleMessage = (message: any) => {
       if (message.type === "transcription.completed") {
@@ -620,8 +593,8 @@ class STTService {
     });
   }
 
-  private async attemptRealtimeReconnection(language: string): Promise<void> {
-    if (!this.isRealtimeMode) return;
+  private async attemptRealtimeReconnection(): Promise<void> {
+    if (!this.isRealtimeModeEnabled()) return;
 
     console.log("[STT] Attempting realtime reconnection...");
 
@@ -633,16 +606,38 @@ class STTService {
       }
 
       // Attempt to reinitialize realtime
-      await this.initializeRealtime(language);
+      await this.initializeRealtime();
       console.log("[STT] Realtime reconnection successful");
     } catch (error) {
       console.error("[STT] Realtime reconnection failed:", error);
       console.log("[STT] Falling back to regular STT mode permanently");
 
       // Permanently fall back to regular mode
-      this.isRealtimeMode = false;
-      await this.initializeFallback(language);
+      await this.initializeFallback();
     }
+  }
+
+  /**
+   * Reset STTService runtime data (for cache clearing)
+   */
+  public resetRuntimeData(): void {
+    console.log("[STT] Resetting runtime data...");
+
+    this.audioBuffer = [];
+    this.accumulatedTranscript = "";
+    this.isRecording = false;
+    this.lastRecordingDuration = 0;
+    this.recordingStartTime = 0;
+
+    // Close any active connections
+    if (this.realtimeProvider) {
+      this.realtimeProvider.disconnect();
+      this.realtimeProvider = null;
+    }
+
+    this.sttSession = null;
+
+    console.log("[STT] Runtime data reset completed");
   }
 }
 

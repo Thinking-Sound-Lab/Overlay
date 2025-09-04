@@ -9,6 +9,7 @@ export interface UserRecord {
   name: string;
   created_at: string;
   subscription_tier: "free" | "pro";
+  onboarding_completed: boolean;
 }
 
 export interface DatabaseTranscriptEntry {
@@ -32,23 +33,33 @@ export interface UserSettings {
     // General section
     defaultMicrophone?: string;
     language?: string;
-    
-    // System section  
+
+    // System section
     dictateSoundEffects?: boolean;
     muteMusicWhileDictating?: boolean;
-    
+
     // Personalization section
     outputMode?: "auto-insert" | "clipboard" | "both";
     useAI?: boolean;
+    enableRealtimeMode?: boolean;
     enableTranslation?: boolean;
     targetLanguage?: string;
-    enableContextFormatting?: boolean;
-    
+
+    // Modes section
+    selectedMode?: string;
+    customPrompt?: string; // For "custom" mode only
+    enableAutoDetection?: boolean;
+
+    // Per-mode prompts (remembers user customizations for each mode)
+    notesPrompt?: string;
+    messagesPrompt?: string;
+    emailsPrompt?: string;
+    codeCommentsPrompt?: string;
+    meetingNotesPrompt?: string;
+    creativeWritingPrompt?: string;
+
     // Data and Privacy section
     privacyMode?: boolean;
-    
-    // Legacy field (to be removed later)
-    openaiApiKey?: string;
   };
   updated_at: string;
 }

@@ -9,10 +9,11 @@ import {
 import { Button } from "./ui/button";
 import { auth } from "../lib/api_client";
 import { Mail, LogIn, UserPlus } from "lucide-react";
+import { UserRecord } from "../../../shared/types/database";
 
 interface AuthPageProps {
-  onSignIn: (user: any) => void;
-  onSignUp: (signUpData: { user?: any, email: string, needsVerification: boolean }) => void;
+  onSignIn: (user: UserRecord) => void;
+  onSignUp: (signUpData: { user?: UserRecord, email: string, needsVerification: boolean }) => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
@@ -27,7 +28,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
 
   // Listen for auth state changes to handle Google and magic link authentication
   useEffect(() => {
-    const handleAuthStateChanged = (event: any) => {
+    const handleAuthStateChanged = (event: CustomEvent) => {
       const { user, authenticated, error: authError } = event.detail;
       
       if (isGoogleLoading) {

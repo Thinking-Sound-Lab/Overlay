@@ -10,7 +10,6 @@ import {
 } from "../../shared/types";
 
 export interface FormattingOptions {
-  enableContextFormatting: boolean;
   customRules: Map<ApplicationContextType, FormattingRule>;
   userOverrides: Map<string, ApplicationContextType>; // app name -> context type
 }
@@ -44,7 +43,6 @@ export class ContextFormatter {
   private constructor() {
     this.formattingRules = new Map();
     this.options = {
-      enableContextFormatting: true,
       customRules: new Map(),
       userOverrides: new Map(),
     };
@@ -251,15 +249,14 @@ export class ContextFormatter {
     applicationInfo: ActiveApplicationInfo,
     additionalContext?: any
   ): FormattingResult {
-    if (!this.options.enableContextFormatting) {
-      return {
-        formattedText: text,
-        originalText: text,
-        contextType: ApplicationContextType.UNKNOWN,
-        appliedTransformations: [],
-        confidence: 1.0,
-      };
-    }
+    // Context formatting is now disabled - this class is kept for legacy compatibility
+    return {
+      formattedText: text,
+      originalText: text,
+      contextType: ApplicationContextType.UNKNOWN,
+      appliedTransformations: [],
+      confidence: 1.0,
+    };
 
     // Check for user overrides
     const overrideContext = this.options.userOverrides.get(
@@ -684,5 +681,34 @@ export class ContextFormatter {
    */
   public removeUserOverride(applicationName: string): void {
     this.options.userOverrides.delete(applicationName.toLowerCase());
+  }
+
+  /**
+   * Reset the ContextFormatter to default state (for cache clearing)
+   */
+  public reset(): void {
+    console.log("[ContextFormatter] Resetting to default state...");
+    
+    // Clear user-specific data
+    this.options.userOverrides.clear();
+    this.options.customRules.clear();
+    
+    // Reset formatting rules to default state
+    this.formattingRules.clear();
+    this.initializeDefaultRules();
+    
+    console.log("[ContextFormatter] Reset completed");
+  }
+
+  /**
+   * Clear user-specific customizations only (preserve default rules)
+   */
+  public clearUserCustomizations(): void {
+    console.log("[ContextFormatter] Clearing user customizations...");
+    
+    this.options.userOverrides.clear();
+    this.options.customRules.clear();
+    
+    console.log("[ContextFormatter] User customizations cleared");
   }
 }

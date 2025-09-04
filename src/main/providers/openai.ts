@@ -6,6 +6,10 @@ import OpenAI from "openai";
 import { analyzeAudioSilence } from "../helpers/audioAnalyzer";
 // import { config } from "../../../config/environment";
 import { STTClient } from "../../shared/types";
+import RealtimeSTTProvider, {
+  RealtimeConfig,
+  RealtimeSTTCallback,
+} from "./realtime_stt";
 
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -126,10 +130,10 @@ async function transcribeWithWhisper(
       file: fs.createReadStream(audioFilePath),
 
       model: "gpt-4o-mini-transcribe",
-      language: language === "auto" ? undefined : language,
+      language: language,
       response_format: "json",
       temperature: 0.0, // Lower temperature for more consistent results
-      prompt: `This is the audio of a person dictating something. ${language === "auto" ? "Detect the language automatically." : `The audio is in ${getLanguagePrompt(language)}.`} If there is no speech, return empty.`,
+      prompt: `This is the audio of a person dictating something. The audio is in ${getLanguagePrompt(language)}. If there is no speech, return empty.`,
     });
 
     return {

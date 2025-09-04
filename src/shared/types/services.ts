@@ -58,17 +58,3 @@ export interface FormattingResult {
   confidence: number;
 }
 
-export interface ContextFormattingSettings {
-  enableContextFormatting: boolean;
-  contextSettings: {
-    [key in ApplicationContextType]?: {
-      enabled: boolean;
-      transformations: {
-        [transformationName: string]: boolean;
-      };
-    };
-  };
-  customAppMappings: {
-    [appName: string]: ApplicationContextType;
-  };
-}

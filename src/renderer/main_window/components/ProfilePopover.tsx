@@ -23,7 +23,7 @@ interface ProfilePopoverProps {
 
 export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
   const { state, signOut } = useAppContext();
-  const { user, userProfile, userStats } = state;
+  const { user, userStats } = state;
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState('');
 
@@ -93,15 +93,15 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
             </div>
             <div className="flex-1">
               <div className="font-medium text-gray-900">
-                {userProfile?.name || 'User'}
+                {user?.name || 'User'}
               </div>
               <div className="text-sm text-gray-600">{user.email}</div>
             </div>
             <Badge 
               variant="secondary"
-              className={userProfile?.subscription_tier === 'pro' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}
+              className={user?.subscription_tier === 'pro' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}
             >
-              {userProfile?.subscription_tier === 'pro' ? 'Pro' : 'Free'}
+              {user?.subscription_tier === 'pro' ? 'Pro' : 'Free'}
             </Badge>
           </div>
 
@@ -110,7 +110,7 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-gray-500" />
               <span className="text-gray-600">
-                Member since {userProfile?.created_at ? formatDate(userProfile.created_at) : (user as any)?.created_at ? formatDate((user as any).created_at) : 'Unknown'}
+                Member since {user?.created_at ? formatDate(user.created_at) : 'Unknown'}
               </span>
             </div>
           </div>

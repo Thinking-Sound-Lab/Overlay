@@ -8,7 +8,6 @@ import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-nati
 import { WebpackPlugin } from "@electron-forge/plugin-webpack";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
-import * as path from "path";
 
 import { mainConfig } from "./webpack.main.config";
 import { rendererConfig } from "./webpack.renderer.config";
@@ -144,6 +143,14 @@ const config: ForgeConfig = {
             html: "./src/renderer/recording_window/index.html",
             js: "./src/renderer/recording_window/renderer.tsx",
             name: "recording_window",
+            preload: {
+              js: "./src/preload/preload.ts",
+            },
+          },
+          {
+            html: "./src/renderer/information_window/information.html",
+            js: "./src/renderer/information_window/information.tsx",
+            name: "information_window",
             preload: {
               js: "./src/preload/preload.ts",
             },

@@ -5,8 +5,8 @@ import { spawn } from "child_process";
  * Supports Windows and macOS platforms
  */
 export class SystemAudioManager {
-  private originalVolume: number = 50; // Default fallback volume
-  private isMuted: boolean = false;
+  private originalVolume = 50; // Default fallback volume
+  private isMuted = false;
   private platform: string = process.platform;
 
   constructor() {

@@ -46,7 +46,7 @@ export const RecordingWindow: React.FC = () => {
     startSoundRef.current = new Audio(startSound);
     stopSoundRef.current = new Audio(stopSound);
 
-    if (startSoundRef.current) startSoundRef.current.volume = 0.4;
+    if (startSoundRef.current) startSoundRef.current.volume = 0.8;
     if (stopSoundRef.current) stopSoundRef.current.volume = 0.2;
 
     return () => {
@@ -209,14 +209,18 @@ export const RecordingWindow: React.FC = () => {
       setIsRecording(true);
       setIsProcessing(false);
 
+      // Get selected microphone from settings
+      let audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: SAMPLE_RATE,
+        channelCount: 1,
+      };
+
+      // getUserMedia will handle device selection and permissions automatically
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: SAMPLE_RATE,
-          channelCount: 1,
-        },
+        audio: audioConstraints,
         video: false,
       });
 
@@ -326,8 +330,8 @@ export const RecordingWindow: React.FC = () => {
   useEffect(() => {
     const handleRecordingStarted = () => {
       playSound(startSoundRef);
-      setWindowState("expanded");
       startMediaRecording();
+      setWindowState("expanded");
     };
     const handleRecordingStopped = () => {
       playSound(stopSoundRef);

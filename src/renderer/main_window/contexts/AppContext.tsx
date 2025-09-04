@@ -7,68 +7,19 @@ import React, {
   useMemo,
 } from "react";
 import type { ViewType } from "../types";
-import type { ContextFormattingSettings } from "../../../shared/types";
+import type {
+  Settings,
+  UserStats,
+  UITranscriptEntry,
+} from "../../../shared/types";
+import type { UserRecord } from "../../../shared/types/database";
 import { auth, db, analytics } from "../lib/api_client";
-
-interface User {
-  id: string;
-  email: string;
-  subscription_tier?: "free" | "pro";
-}
-
-interface UserProfile {
-  id: string;
-  name: string;
-  subscription_tier: "free" | "pro";
-  created_at: string;
-  updated_at: string;
-  onboarding_completed?: boolean;
-}
-
-interface UserStats {
-  totalWordCount: number;
-  averageWPM: number;
-  totalRecordings: number;
-  streakDays: number;
-}
-
-interface TranscriptEntry {
-  id: string;
-  text: string;
-  timestamp: Date;
-  wordCount: number;
-  wpm: number;
-  originalText?: string;
-  wasTranslated?: boolean;
-  targetLanguage?: string;
-}
-
-interface Settings {
-  // General section
-  defaultMicrophone: string;
-  language: string;
-  
-  // System section  
-  dictateSoundEffects: boolean;
-  muteMusicWhileDictating: boolean;
-  
-  // Personalization section
-  outputMode: "auto-insert" | "clipboard" | "both";
-  useAI: boolean;
-  enableTranslation: boolean;
-  targetLanguage: string;
-  enableContextFormatting: boolean;
-  
-  // Data and Privacy section
-  privacyMode: boolean;
-}
+import { DEFAULT_SETTINGS } from "../../../shared/constants/default-settings";
 
 interface AppState {
   // Auth state
-  user: User | null;
-  userProfile: UserProfile | null;
+  user: UserRecord | null;
   isAuthenticated: boolean;
-  hasCompletedOnboarding: boolean;
 
   // UI state
   activeView: ViewType;
@@ -77,7 +28,7 @@ interface AppState {
 
   // Data state
   userStats: UserStats;
-  transcripts: TranscriptEntry[];
+  transcripts: UITranscriptEntry[];
   settings: Settings;
 
   // Recording state
@@ -88,14 +39,12 @@ interface AppState {
 type AppAction =
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "SET_USER"; payload: User | null }
-  | { type: "SET_USER_PROFILE"; payload: UserProfile | null }
+  | { type: "SET_USER"; payload: UserRecord | null }
   | { type: "SET_AUTHENTICATED"; payload: boolean }
-  | { type: "SET_ONBOARDING_COMPLETED"; payload: boolean }
   | { type: "SET_ACTIVE_VIEW"; payload: ViewType }
   | { type: "SET_USER_STATS"; payload: UserStats }
-  | { type: "SET_TRANSCRIPTS"; payload: TranscriptEntry[] }
-  | { type: "ADD_TRANSCRIPT"; payload: TranscriptEntry }
+  | { type: "SET_TRANSCRIPTS"; payload: UITranscriptEntry[] }
+  | { type: "ADD_TRANSCRIPT"; payload: UITranscriptEntry }
   | { type: "SET_SETTINGS"; payload: Settings }
   | {
       type: "SET_RECORDING_STATE";
@@ -105,9 +54,7 @@ type AppAction =
 
 const initialState: AppState = {
   user: null,
-  userProfile: null,
   isAuthenticated: false,
-  hasCompletedOnboarding: false,
   activeView: "home",
   isLoading: true,
   error: null,
@@ -118,25 +65,7 @@ const initialState: AppState = {
     streakDays: 0,
   },
   transcripts: [],
-  settings: {
-    // General section
-    defaultMicrophone: "default",
-    language: "en",
-    
-    // System section  
-    dictateSoundEffects: true,
-    muteMusicWhileDictating: true,
-    
-    // Personalization section
-    outputMode: "both",
-    useAI: true,
-    enableTranslation: false,
-    targetLanguage: "en",
-    enableContextFormatting: true,
-    
-    // Data and Privacy section
-    privacyMode: true,
-  },
+  settings: DEFAULT_SETTINGS,
   isRecording: false,
   isProcessing: false,
 };
@@ -149,12 +78,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, error: action.payload };
     case "SET_USER":
       return { ...state, user: action.payload };
-    case "SET_USER_PROFILE":
-      return { ...state, userProfile: action.payload };
     case "SET_AUTHENTICATED":
       return { ...state, isAuthenticated: action.payload };
-    case "SET_ONBOARDING_COMPLETED":
-      return { ...state, hasCompletedOnboarding: action.payload };
     case "SET_ACTIVE_VIEW":
       return { ...state, activeView: action.payload };
     case "SET_USER_STATS":
@@ -192,14 +117,12 @@ interface AppContextType {
   // Convenience actions
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  setUser: (user: User | null) => void;
-  setUserProfile: (profile: UserProfile | null) => void;
+  setUser: (user: UserRecord | null) => void;
   setAuthenticated: (authenticated: boolean) => void;
-  setOnboardingCompleted: (completed: boolean) => void;
   setActiveView: (view: ViewType) => void;
   setUserStats: (stats: UserStats) => void;
-  setTranscripts: (transcripts: TranscriptEntry[]) => void;
-  addTranscript: (transcript: TranscriptEntry) => void;
+  setTranscripts: (transcripts: UITranscriptEntry[]) => void;
+  addTranscript: (transcript: UITranscriptEntry) => void;
   setSettings: (settings: Settings) => void;
   setRecordingState: (isRecording: boolean, isProcessing: boolean) => void;
   resetAppState: () => void;
@@ -294,11 +217,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       }
 
       // Update local state
-      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: true });
-      if (state.userProfile) {
+      if (state.user) {
         dispatch({
-          type: "SET_USER_PROFILE",
-          payload: { ...state.userProfile, onboarding_completed: true },
+          type: "SET_USER",
+          payload: { ...state.user, onboarding_completed: true },
         });
       }
 
@@ -312,7 +234,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       console.error("AppContext: Error completing onboarding:", error);
       dispatch({ type: "SET_ERROR", payload: "Failed to complete onboarding" });
     }
-  }, [state.userProfile]);
+  }, [state.user]);
 
   const signOut = useCallback(async () => {
     try {
@@ -331,15 +253,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Removed old complex functions - using simple direct approach
-
   // Listen for main process events
   useEffect(() => {
-    const handleAuthStateChanged = (event: any) => {
+    const handleAuthStateChanged = (event: CustomEvent) => {
       const {
         user,
         authenticated,
-        profile,
         statistics,
         settings,
         recentTranscripts,
@@ -349,26 +268,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       console.log("AppContext: Enhanced auth state changed event received:", {
         user: user?.email,
         authenticated,
-        onboardingCompleted: profile?.onboarding_completed,
-        hasProfile: !!profile,
+        onboardingCompleted: user?.onboarding_completed,
         hasStatistics: !!statistics,
         hasSettings: !!settings,
         transcriptCount: recentTranscripts?.length || 0,
         error,
       });
 
-      // Update basic auth state
+      // Update auth state
       dispatch({ type: "SET_USER", payload: user });
       dispatch({ type: "SET_AUTHENTICATED", payload: authenticated });
-      dispatch({ type: "SET_USER_PROFILE", payload: profile });
-
-      // Update onboarding status from profile
-      if (profile && typeof profile.onboarding_completed !== "undefined") {
-        dispatch({
-          type: "SET_ONBOARDING_COMPLETED",
-          payload: profile.onboarding_completed,
-        });
-      }
 
       // Update statistics if provided
       if (statistics) {
@@ -402,7 +311,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
           useAI: settings.useAI,
           enableTranslation: settings.enableTranslation,
           targetLanguage: settings.targetLanguage,
-          enableContextFormatting: settings.enableContextFormatting,
           privacyMode: settings.privacyMode,
         });
       }
@@ -417,43 +325,53 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       dispatch({ type: "SET_LOADING", payload: false });
     };
 
-    const handleStatisticsUpdated = (event: any) => {
+    const handleStatisticsUpdated = (event: CustomEvent) => {
       dispatch({ type: "SET_USER_STATS", payload: event.detail });
+      console.log(
+        "AppContext: Statistics updated event received:",
+        event.detail
+      );
     };
 
-    const handleActivityUpdated = (event: any) => {
+    const handleActivityUpdated = (event: CustomEvent) => {
       console.log("AppContext: Activity updated event received:", event.detail);
-      if (event.detail.type === "transcript") {
-        console.log(
-          "AppContext: Adding new transcript to UI:",
-          event.detail.data
-        );
-        dispatch({ type: "ADD_TRANSCRIPT", payload: event.detail.data });
-      }
+      //   if (event.detail.type === "transcript") {
+      //     console.log(
+      //       "AppContext: Adding new transcript to UI:",
+      //       event.detail.data
+      //     );
+      //     dispatch({ type: "ADD_TRANSCRIPT", payload: event.detail.data });
+      //   }
     };
 
-    const handleTranscriptSaved = (event: any) => {
-      // Transcript was saved to database, could trigger a refresh if needed
-      console.log("Transcript saved to database:", event.detail);
+    const handleCacheCleared = (event: CustomEvent) => {
+      console.log(
+        "AppContext: Cache cleared event received - resetting app state"
+      );
+      dispatch({ type: "RESET_APP_STATE" });
+    };
+
+    const handleTranscriptUpdated = (event: CustomEvent) => {
+      console.log(
+        "AppContext: Transcript updated event received:",
+        event.detail
+      );
+      dispatch({ type: "ADD_TRANSCRIPT", payload: event.detail });
     };
 
     // Add event listeners
+    window.addEventListener("transcript-updated", handleTranscriptUpdated);
     window.addEventListener("auth-state-changed", handleAuthStateChanged);
     window.addEventListener("statistics-updated", handleStatisticsUpdated);
     window.addEventListener("activity-updated", handleActivityUpdated);
-    window.addEventListener(
-      "transcript-saved-to-database",
-      handleTranscriptSaved
-    );
+    window.addEventListener("cache-cleared", handleCacheCleared);
 
     return () => {
+      window.removeEventListener("transcript-updated", handleTranscriptUpdated);
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);
       window.removeEventListener("statistics-updated", handleStatisticsUpdated);
       window.removeEventListener("activity-updated", handleActivityUpdated);
-      window.removeEventListener(
-        "transcript-saved-to-database",
-        handleTranscriptSaved
-      );
+      window.removeEventListener("cache-cleared", handleCacheCleared);
     };
   }, []);
 
@@ -464,25 +382,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       dispatch,
       setLoading: (loading: boolean) =>
         dispatch({ type: "SET_LOADING", payload: loading }),
-      //   setInitializing: (initializing: boolean) =>
-      //     dispatch({ type: "SET_INITIALIZING", payload: initializing }),
       setError: (error: string | null) =>
         dispatch({ type: "SET_ERROR", payload: error }),
-      setUser: (user: User | null) =>
+      setUser: (user: UserRecord | null) =>
         dispatch({ type: "SET_USER", payload: user }),
-      setUserProfile: (profile: UserProfile | null) =>
-        dispatch({ type: "SET_USER_PROFILE", payload: profile }),
       setAuthenticated: (authenticated: boolean) =>
         dispatch({ type: "SET_AUTHENTICATED", payload: authenticated }),
-      setOnboardingCompleted: (completed: boolean) =>
-        dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: completed }),
       setActiveView: (view: ViewType) =>
         dispatch({ type: "SET_ACTIVE_VIEW", payload: view }),
       setUserStats: (stats: UserStats) =>
         dispatch({ type: "SET_USER_STATS", payload: stats }),
-      setTranscripts: (transcripts: TranscriptEntry[]) =>
+      setTranscripts: (transcripts: UITranscriptEntry[]) =>
         dispatch({ type: "SET_TRANSCRIPTS", payload: transcripts }),
-      addTranscript: (transcript: TranscriptEntry) =>
+      addTranscript: (transcript: UITranscriptEntry) =>
         dispatch({ type: "ADD_TRANSCRIPT", payload: transcript }),
       setSettings: (settings: Settings) =>
         dispatch({ type: "SET_SETTINGS", payload: settings }),

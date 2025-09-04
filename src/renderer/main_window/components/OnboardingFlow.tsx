@@ -6,6 +6,7 @@ import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
 import { analytics, auth, db } from "../lib/api_client";
 import { Button } from "./ui/button";
+import { UserRecord } from "../../../shared/types/database";
 
 type OnboardingStep = "auth" | "language" | "permissions" | "guide";
 
@@ -18,7 +19,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 }) => {
   const { state, dispatch, setUser, setAuthenticated, completeOnboarding, setSettings } =
     useAppContext();
-  const { user, isAuthenticated, hasCompletedOnboarding, settings } = state;
+  const { user, isAuthenticated, settings } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
   const [isLoading, setIsLoading] = useState(true);
   const [signUpEmail, setSignUpEmail] = useState<string>("");
@@ -29,16 +30,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       isAuthenticated,
       hasUser: !!user,
       userEmail: user?.email,
-      hasCompletedOnboarding,
+      hasCompletedOnboarding: user?.onboarding_completed,
       timestamp: new Date().toISOString(),
     });
 
-    if (isAuthenticated && user && hasCompletedOnboarding) {
+    if (isAuthenticated && user && user.onboarding_completed) {
       console.log(
         "OnboardingFlow: User completed onboarding, navigating to home"
       );
       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
-    } else if (isAuthenticated && user && !hasCompletedOnboarding) {
+    } else if (isAuthenticated && user && !user.onboarding_completed) {
       console.log("OnboardingFlow: User authenticated but onboarding incomplete, showing language selection");
       setCurrentStep("language");
     } else {
@@ -46,7 +47,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       setCurrentStep("auth");
     }
     setIsLoading(false);
-  }, [isAuthenticated, user, hasCompletedOnboarding, dispatch]);
+  }, [isAuthenticated, user, dispatch]);
 
   // Notify parent about step changes
   useEffect(() => {
@@ -65,7 +66,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   }, [currentStep, onStepChange]);
 
-  const handleSignIn = async (authenticatedUser: any) => {
+  const handleSignIn = async (authenticatedUser: UserRecord) => {
     console.log(
       "OnboardingFlow: Sign in success with user:",
       authenticatedUser
@@ -82,13 +83,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       });
       await analytics.track("user_authenticated_via_magic_link");
 
-      // User data and navigation will be handled by AuthStateManager
+      // User data and navigation will be handled by DataLoaderService
     } catch (error) {
       console.error("OnboardingFlow: Error tracking sign in:", error);
     }
   };
 
-  const handleSignUp = async (signUpData: { user?: any, email: string, needsVerification: boolean }) => {
+  const handleSignUp = async (signUpData: { user?: UserRecord, email: string, needsVerification: boolean }) => {
     console.log(
       "OnboardingFlow: Sign up response:",
       {
@@ -130,14 +131,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       const updatedSettings = { ...settings, language: languageCode };
       setSettings(updatedSettings);
       
-      // Save to database
+      // Save using unified DB-first approach
       const result = await db.saveUserSettings(updatedSettings);
       if (result.success) {
-        // Also save to electron store for offline access
-        await window.electronAPI.updateSettings(
-          updatedSettings as unknown as Record<string, unknown>
-        );
-        console.log("OnboardingFlow: Language setting saved:", languageCode);
+        console.log("OnboardingFlow: Language setting saved via DataLoaderService:", languageCode);
       } else {
         throw new Error(result.error || "Failed to save language setting");
       }
@@ -200,7 +197,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       console.error("OnboardingFlow: Error completing onboarding:", error);
       // Navigate to home anyway to prevent user getting stuck
       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
-      dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: true });
+      // Update user onboarding status in state
+      if (user) {
+        dispatch({ type: "SET_USER", payload: { ...user, onboarding_completed: true } });
+      }
     }
   };
 
@@ -209,10 +209,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       isAuthenticated,
       hasUser: !!user,
       userEmail: user?.email,
-      hasCompletedOnboarding,
+      hasCompletedOnboarding: user?.onboarding_completed,
       timestamp: new Date().toISOString(),
     });
-  }, [currentStep, isAuthenticated, user, hasCompletedOnboarding]);
+  }, [currentStep, isAuthenticated, user]);
 
   useEffect(() => {
     if (onStepChange) {

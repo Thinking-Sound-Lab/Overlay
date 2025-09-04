@@ -31,8 +31,8 @@ export const plugins = [
       process.env.REACT_APP_POSTHOG_HOST
     ),
     "process.env.OPENAI_API_KEY": JSON.stringify(process.env.OPENAI_API_KEY),
-    "process.env.WINDOWS_UPDATE_SERVER_URL": JSON.stringify(
-      process.env.WINDOWS_UPDATE_SERVER_URL
+    "process.env.DEEPGRAM_API_KEY": JSON.stringify(
+      process.env.DEEPGRAM_API_KEY
     ),
     "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
   }),
