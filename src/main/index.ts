@@ -330,6 +330,12 @@ const handleAuthenticationFailure = (
     sttService.resetRuntimeData();
   }
 
+  // Close authenticated-only windows
+  if (windowManager.getRecordingWindow() && !windowManager.getRecordingWindow().isDestroyed()) {
+    console.log("[Main] Closing recording window due to logout");
+    windowManager.getRecordingWindow().close();
+  }
+
   // Clear all user data
   dataLoaderService?.clearUserData();
 
@@ -571,10 +577,8 @@ const startRecording = async () => {
     await systemAudioManager.muteSystemAudio();
   }
 
-  // Ensure recording window exists (should be created after authentication)
-  if (!windowManager.getRecordingWindow()) {
-    windowManager.createRecordingWindow();
-  }
+  // Recording window should already exist after authentication
+  // Only use existing window, don't create for unauthorized users
 
   if (windowManager.getRecordingWindow()) {
     windowManager.expandRecordingWindow();
@@ -1035,21 +1039,8 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
   AuthUtils.setAuthenticationState(true);
   console.log("[Main] User authenticated:", user.email);
 
-  // Create recording window now that user is authenticated
-  if (
-    !windowManager.getRecordingWindow() ||
-    windowManager.getRecordingWindow().isDestroyed()
-  ) {
-    windowManager.createRecordingWindow();
-  }
-
-  // Create information window for user notifications (hidden by default)
-  if (
-    !windowManager.getInformationWindow() ||
-    windowManager.getInformationWindow().isDestroyed()
-  ) {
-    windowManager.createInformationWindow();
-  }
+  // Windows are already created in handleAuthenticationSuccess
+  // No need to create them here again
 
   return { success: true };
 });
