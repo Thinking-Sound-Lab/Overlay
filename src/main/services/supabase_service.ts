@@ -202,7 +202,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: "http://localhost:8080/oauth-success",
+          emailRedirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
           shouldCreateUser: false, // Don't create user for sign in
         },
       });
@@ -237,7 +237,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: "http://localhost:8080/oauth-success",
+          emailRedirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
           shouldCreateUser: true, // Allow user creation for sign up
         },
       });
@@ -268,7 +268,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: "http://localhost:8080/oauth-success",
+          redirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
           queryParams: {
             access_type: "offline",
             prompt: "consent",
