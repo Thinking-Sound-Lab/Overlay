@@ -50,6 +50,8 @@ export class RealtimeSTTProvider extends EventEmitter {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private keepAliveInterval: NodeJS.Timeout | null = null;
+  private isRecordingActive = false;
 
   constructor(config: RealtimeConfig, callback: RealtimeSTTCallback) {
     super();
@@ -64,7 +66,7 @@ export class RealtimeSTTProvider extends EventEmitter {
 
     this.config = {
       ...config,
-      model: config.model || "nova-2",
+      model: config.model || "nova-3",
     };
     this.callback = callback;
 
@@ -87,10 +89,12 @@ export class RealtimeSTTProvider extends EventEmitter {
       const liveOptions: LiveSchema = {
         model: this.config.model,
         language: this.config.language,
-        interim_results: false, // Only final results to prevent duplicate accumulation
+        interim_results: true,
         punctuate: true,
         smart_format: true,
-        endpointing: 300,
+        endpointing: 100, // Increased from 100 to allow longer natural pauses
+        vad_events: true, // Enable voice activity detection events for better speech tracking
+        utterance_end_ms: 1000, // Time to wait for utterance end detection
         encoding: "linear16",
         sample_rate: 16000,
       };
@@ -133,7 +137,33 @@ export class RealtimeSTTProvider extends EventEmitter {
     console.log("[RealtimeSTT] Deepgram WebSocket connection established");
     this.isConnected = true;
     this.reconnectAttempts = 0;
+    this.startKeepAlive();
     this.callback.onConnectionOpen();
+  }
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    this.keepAliveInterval = setInterval(() => {
+      if (this.connection && this.isConnected && !this.isRecordingActive) {
+        try {
+          this.connection.send(JSON.stringify({ type: "KeepAlive" }));
+          console.log(
+            "[RealtimeSTT] Sent KeepAlive message (recording inactive)"
+          );
+        } catch (error) {
+          console.error("[RealtimeSTT] Failed to send KeepAlive:", error);
+        }
+      } else if (this.isRecordingActive) {
+        console.log("[RealtimeSTT] Skipping KeepAlive - recording is active");
+      }
+    }, 4000); // Send every 4 seconds (within 3-5 second requirement)
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
   }
 
   private handleTranscriptResult(data: DeepgramTranscriptResult): void {
@@ -143,14 +173,25 @@ export class RealtimeSTTProvider extends EventEmitter {
       const alternative = data.channel.alternatives[0];
       const transcript = alternative.transcript;
       const isFinal = data.is_final || false;
+      const fromFinalize = (data as any).from_finalize || false;
 
       if (transcript && transcript.trim()) {
-        if (isFinal) {
-          console.log("[RealtimeSTT] Final transcript:", transcript);
-          this.callback.onTranscriptComplete(transcript, this.config.language);
+        if (fromFinalize) {
+          console.log(
+            "[RealtimeSTT] Final transcript from Finalize message:",
+            transcript
+          );
+          this.callback.onTranscriptDelta(transcript, true);
+        } else if (isFinal) {
+          console.log(
+            "[RealtimeSTT] Final transcript (speech segment):",
+            transcript
+          );
+          // Don't process individual segments - wait for Finalize message
+          this.callback.onTranscriptDelta(transcript, true);
         } else {
           console.log("[RealtimeSTT] Interim transcript:", transcript);
-          this.callback.onTranscriptDelta(transcript, false);
+          //   this.callback.onTranscriptDelta(transcript, false);
         }
       }
     }
@@ -168,6 +209,7 @@ export class RealtimeSTTProvider extends EventEmitter {
     console.log(`[RealtimeSTT] Connection closed: ${code} ${reason}`);
     this.isConnected = false;
     this.connection = null;
+    this.isRecordingActive = false; // Reset recording state on connection close
     this.callback.onConnectionClose();
 
     // Attempt reconnection if not intentionally closed
@@ -203,6 +245,12 @@ export class RealtimeSTTProvider extends EventEmitter {
       return;
     }
 
+    // Set recording active when first audio chunk is sent
+    if (!this.isRecordingActive) {
+      this.isRecordingActive = true;
+      console.log("[RealtimeSTT] Recording started - disabling KeepAlive");
+    }
+
     try {
       // Convert base64 string to ArrayBuffer for Deepgram
       const binaryString = atob(base64AudioData);
@@ -210,7 +258,7 @@ export class RealtimeSTTProvider extends EventEmitter {
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      
+
       this.connection.send(bytes.buffer);
     } catch (error) {
       console.error("[RealtimeSTT] Error sending audio chunk:", error);
@@ -224,21 +272,48 @@ export class RealtimeSTTProvider extends EventEmitter {
       return;
     }
 
-    console.log("[RealtimeSTT] Recording stopped - keeping connection alive for next session");
-    
+    console.log(
+      "[RealtimeSTT] Sending Finalize message to process remaining audio"
+    );
+
+    // Send Finalize message to force processing of all buffered audio
+    try {
+      const finalizeMessage = { type: "Finalize" };
+      this.connection.send(JSON.stringify(finalizeMessage));
+      console.log("[RealtimeSTT] Finalize message sent successfully");
+    } catch (error) {
+      console.error("[RealtimeSTT] Error sending Finalize message:", error);
+      this.callback.onError(error as Error);
+    }
+
+    console.log(
+      "[RealtimeSTT] Recording stopped - re-enabling KeepAlive for next session"
+    );
+
+    // Mark recording as inactive to re-enable KeepAlive messages
+    this.isRecordingActive = false;
+
     // Don't close connection - Deepgram processes audio in real-time automatically
     // Just stop sending audio chunks, but keep WebSocket connection open
     // This allows reuse for subsequent recordings without reconnection overhead
   }
 
   disconnect(): void {
-    console.log("[RealtimeSTT] Disconnecting...");
+    console.log(
+      "[RealtimeSTT] Disconnecting and stopping all reconnection attempts..."
+    );
+
+    // Stop KeepAlive messages
+    this.stopKeepAlive();
 
     // Clear reconnection timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+
+    // Reset reconnection attempts to prevent further reconnections
+    this.reconnectAttempts = this.maxReconnectAttempts;
 
     if (this.connection) {
       try {
@@ -250,6 +325,8 @@ export class RealtimeSTTProvider extends EventEmitter {
     }
 
     this.isConnected = false;
+    this.isRecordingActive = false; // Reset recording state on disconnect
+    console.log("[RealtimeSTT] Disconnection complete, reconnections disabled");
   }
 
   isReady(): boolean {

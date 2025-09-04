@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import startSound from "../../../assets/sounds/start.wav";
 import stopSound from "../../../assets/sounds/stop.wav";
-import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
 const SAMPLE_RATE = 16000;
 const BUFFER_SIZE = 1024;
@@ -47,7 +46,7 @@ export const RecordingWindow: React.FC = () => {
     startSoundRef.current = new Audio(startSound);
     stopSoundRef.current = new Audio(stopSound);
 
-    if (startSoundRef.current) startSoundRef.current.volume = 0.4;
+    if (startSoundRef.current) startSoundRef.current.volume = 0.8;
     if (stopSoundRef.current) stopSoundRef.current.volume = 0.2;
 
     return () => {
@@ -331,8 +330,8 @@ export const RecordingWindow: React.FC = () => {
   useEffect(() => {
     const handleRecordingStarted = () => {
       playSound(startSoundRef);
-      setWindowState("expanded");
       startMediaRecording();
+      setWindowState("expanded");
     };
     const handleRecordingStopped = () => {
       playSound(stopSoundRef);

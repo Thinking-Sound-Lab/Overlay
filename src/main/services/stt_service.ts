@@ -132,33 +132,29 @@ class STTService {
         this.processStreamingTranscript(delta, isFinal, language);
       },
       onTranscriptComplete: (transcript: string, language: string) => {
-        console.log("[STT] Realtime transcript complete:", transcript);
         console.log(
-          "[STT] Accumulating complete transcript, not processing immediately"
+          "[STT] Realtime final transcript from Finalize:",
+          transcript
         );
-        // Only accumulate, don't process - wait for manual finalizeDictation()
-        if (transcript && transcript.trim()) {
-          if (this.accumulatedTranscript && this.accumulatedTranscript.trim()) {
-            this.accumulatedTranscript += " " + transcript.trim();
-          } else {
-            this.accumulatedTranscript = transcript.trim();
-          }
-          console.log(
-            "[STT] Accumulated transcript length:",
-            this.accumulatedTranscript.length,
-            "chars"
-          );
-        }
+        // This is the complete transcript from the entire recording session
+        // if (transcript && transcript.trim()) {
+        //   this.accumulatedTranscript = transcript.trim();
+        //   console.log(
+        //     "[STT] Final transcript received:",
+        //     this.accumulatedTranscript.length,
+        //     "chars"
+        //   );
+        //   console.log("[STT] Complete transcript:", this.accumulatedTranscript);
+        // }
       },
       onSpeechStarted: () => {
         console.log("[STT] Realtime speech started");
         this.isRecording = true;
 
-        // Don't clear accumulated transcript - let manual recording control the session
-        // VAD speech_started just means user is speaking, not that it's a new session
+        // With Finalize approach, speech detection is just for logging
+        // The complete transcript will only come from the Finalize message
         console.log(
-          "[STT] Speech detected, continuing accumulation. Current length:",
-          this.accumulatedTranscript.length
+          "[STT] Speech detected - waiting for Finalize message for complete transcript"
         );
 
         if (this.analyticsService) {
@@ -169,9 +165,11 @@ class STTService {
         console.log("[STT] Realtime speech stopped (natural pause)");
         this.isRecording = false;
 
-        // Don't process here - this is just a natural pause
-        // Processing only happens on manual finalizeDictation()
-        console.log("[STT] Waiting for user to manually stop recording");
+        // With Finalize approach, speech stops are just natural pauses
+        // Processing only happens when Finalize message is sent
+        console.log(
+          "[STT] Natural speech pause - transcript will be complete when user stops recording"
+        );
 
         if (this.analyticsService) {
           const recordingDuration =
@@ -210,6 +208,9 @@ class STTService {
     }
 
     if (this.realtimeProvider) {
+      console.log(
+        "[STT] Cleaning up existing realtime provider and stopping all reconnections"
+      );
       this.realtimeProvider.disconnect();
       this.realtimeProvider = null;
     }
@@ -218,6 +219,7 @@ class STTService {
     this.audioBuffer = [];
     this.isRecording = false;
     this.accumulatedTranscript = "";
+    this.isProcessingTranscript = false;
 
     // Initialize based on current settings
     await this.initialize();
@@ -310,73 +312,74 @@ class STTService {
     }
 
     try {
+      // Set recording duration BEFORE processing transcript so metrics calculation is correct
+      this.lastRecordingDuration = recordingDuration;
+
       if (this.isRealtimeModeEnabled()) {
-        // In realtime mode, keep connection alive - no need to commit/close
-        console.log(
-          "[STT] Realtime mode - keeping connection alive for next recording"
-        );
+        // In realtime mode, send Finalize message and wait for response
+        console.log("[STT] Realtime mode - sending Finalize message");
 
-        // In realtime mode, process the accumulated transcript
-        console.log("[STT] Realtime mode - processing accumulated transcript");
-
-        if (
-          this.accumulatedTranscript &&
-          this.accumulatedTranscript.trim().length > 0 &&
-          !this.isProcessingTranscript
-        ) {
-          console.log(
-            "[STT] Processing accumulated transcript:",
-            this.accumulatedTranscript.length,
-            "chars"
-          );
-          this.isProcessingTranscript = true;
-
-          try {
-            await this.processTranscript(
-              this.accumulatedTranscript,
-              this.getCurrentLanguage()
-            );
-
-            // Clear after successful processing
-            this.accumulatedTranscript = "";
-          } finally {
-            this.isProcessingTranscript = false;
-          }
-        } else if (this.isProcessingTranscript) {
-          console.log(
-            "[STT] Transcript processing already in progress, skipping"
-          );
-        } else {
-          console.log("[STT] No accumulated transcript to process");
-
-          // Notify information window about empty transcript
-          if (this.windowManager) {
-            console.log(
-              "[STT] Notifying information window about empty transcript"
-            );
-
-            const message: InformationMessage = {
-              type: "empty-transcript",
-              title: "Empty Transcript",
-              message: "No speech was detected in the recording",
-              duration: 3000,
-            };
-            this.windowManager.showInformation(message);
-          }
-
-          // Send processing-complete to recording window to reset UI
-          if (this.windowManager) {
-            this.windowManager.sendToRecording("processing-complete");
-            this.windowManager.compactRecordingWindow();
-          }
+        if (this.realtimeProvider) {
+          this.realtimeProvider.commitAudio();
         }
 
-        this.lastRecordingDuration = recordingDuration;
+        setTimeout(async () => {
+          if (
+            this.accumulatedTranscript &&
+            this.accumulatedTranscript.trim().length > 0 &&
+            !this.isProcessingTranscript
+          ) {
+            console.log(
+              "[STT] Processing final transcript from Finalize:",
+              this.accumulatedTranscript.length,
+              "chars"
+            );
+            this.isProcessingTranscript = true;
+
+            try {
+              await this.processTranscript(
+                this.accumulatedTranscript,
+                this.getCurrentLanguage()
+              );
+
+              // Clear after successful processing
+              this.accumulatedTranscript = "";
+            } finally {
+              this.isProcessingTranscript = false;
+            }
+          } else if (this.isProcessingTranscript) {
+            console.log(
+              "[STT] Transcript processing already in progress, skipping"
+            );
+          } else {
+            console.log("[STT] No final transcript received from Finalize");
+
+            // Notify information window about empty transcript
+            if (this.windowManager) {
+              console.log(
+                "[STT] Notifying information window about empty transcript"
+              );
+
+              const message: InformationMessage = {
+                type: "empty-transcript",
+                title: "Empty Transcript",
+                message: "No speech was detected in the recording",
+                duration: 3000,
+              };
+              this.windowManager.showInformation(message);
+            }
+
+            // Send processing-complete to recording window to reset UI
+            if (this.windowManager) {
+              this.windowManager.sendToRecording("processing-complete");
+              this.windowManager.compactRecordingWindow();
+            }
+          }
+        }, 500);
       } else {
         // In regular mode, send accumulated audio to Whisper
         if (this.sttSession) {
           await this.sttSession.processAudio(this.audioBuffer);
-          this.lastRecordingDuration = recordingDuration;
         } else {
           console.error("[STT] No STT session available for processing audio");
         }
@@ -460,23 +463,16 @@ class STTService {
 
     if (!delta) return;
 
-    // Since interim_results is disabled, we should only receive final results
-    // Simply accumulate the final transcript
-    console.log("[STT] Adding final transcript to accumulation");
-    if (this.accumulatedTranscript && this.accumulatedTranscript.trim()) {
-      this.accumulatedTranscript += " " + delta.trim();
-    } else {
-      this.accumulatedTranscript = delta.trim();
+    if (isFinal) {
+      if (
+        this.accumulatedTranscript &&
+        this.accumulatedTranscript.trim().length > 0
+      ) {
+        this.accumulatedTranscript += " " + delta.trim();
+      } else {
+        this.accumulatedTranscript = delta.trim();
+      }
     }
-
-    console.log(
-      "[STT] Final accumulated transcript:",
-      this.accumulatedTranscript
-    );
-
-    // Don't process immediately - wait for manual finalizeDictation()
-    // This prevents duplicate processing when user stops recording
-    console.log("[STT] Final transcript accumulated, waiting for manual stop");
   }
 
   /**

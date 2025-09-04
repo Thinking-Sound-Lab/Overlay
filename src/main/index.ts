@@ -542,6 +542,7 @@ const startRecording = async () => {
   // Don't allow recording if user is not authenticated
   if (!AuthUtils.isUserAuthenticated()) {
     console.log("[Main] Recording blocked - user not authenticated");
+    windowManager.sendToInformation("User not authenticated");
     return;
   }
 
@@ -566,11 +567,10 @@ const startRecording = async () => {
     windowManager.expandRecordingWindow();
   }
 
-  // Show recording UI
   windowManager.sendToRecording("recording-started");
 
   // Start batch STT session logic
-  await sttService.startDictation();
+  sttService.startDictation();
   console.log("[Main] Recording session started");
 };
 
@@ -586,29 +586,32 @@ const stopRecording = async () => {
     hoverTimeout = null;
   }
 
-  // Update processing stage and send to UI
-  windowManager.sendToRecording("recording-stopped");
+  // add a delay of 1 second before finalizing dictation
+  setTimeout(async () => {
+    // Update processing stage and send to UI
+    windowManager.sendToRecording("recording-stopped");
 
-  // Restore system audio as soon as recording stops and transcription begins
-  if (systemAudioManager) {
-    await systemAudioManager.restoreSystemAudio();
-  }
-
-  try {
-    // Stage 1: Transcribing
-    await sttService.finalizeDictation();
-    console.log("[Main] Dictation finalized successfully");
-  } catch (error) {
-    console.error("[Main] Error finalizing dictation:", error);
-
-    // Ensure audio is restored even in error cases
+    // Restore system audio as soon as recording stops and transcription begins
     if (systemAudioManager) {
       await systemAudioManager.restoreSystemAudio();
     }
-  } finally {
-    // Reset processing state - window management moved to handleMetricsUpdate
-    isProcessing = false;
-  }
+
+    try {
+      // Stage 1: Transcribing
+      await sttService.finalizeDictation();
+      console.log("[Main] Dictation finalized successfully");
+    } catch (error) {
+      console.error("[Main] Error finalizing dictation:", error);
+
+      // Ensure audio is restored even in error cases
+      if (systemAudioManager) {
+        await systemAudioManager.restoreSystemAudio();
+      }
+    } finally {
+      // Reset processing state - window management moved to handleMetricsUpdate
+      isProcessing = false;
+    }
+  }, 500);
 };
 
 // ----------- App Lifecycle -----------
