@@ -11,6 +11,7 @@ export interface TranslationResult {
   confidence: number;
   wordCountRatio: number;
   semanticSimilarity?: number;
+  wasTranslated?: boolean;
   detectedLanguage?: string;
 }
 
@@ -41,13 +42,13 @@ export interface ActiveApplicationInfo {
 export enum ApplicationContextType {
   EMAIL = "email",
   NOTES = "notes",
-  CODE_EDITOR = "code_editor", 
+  CODE_EDITOR = "code_editor",
   MESSAGING = "messaging",
   DOCUMENT = "document",
   BROWSER = "browser",
   TERMINAL = "terminal",
   PRESENTATION = "presentation",
-  UNKNOWN = "unknown"
+  UNKNOWN = "unknown",
 }
 
 export interface FormattingResult {
@@ -57,4 +58,3 @@ export interface FormattingResult {
   appliedTransformations: string[];
   confidence: number;
 }
-

@@ -10,7 +10,7 @@ let App: React.ComponentType = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
           Loading Authentication...
         </h1>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 mx-auto"></div>
       </div>
     </div>
   );
@@ -34,7 +34,7 @@ try {
         </p>
         <button 
           onClick={() => window.location.reload()} 
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
         >
           Reload
         </button>

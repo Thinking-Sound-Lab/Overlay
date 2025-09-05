@@ -148,11 +148,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               {sidebarSections.map((section) => (
                 <Button
                   key={section.id}
-                  variant={activeSection === section.id ? "default" : "ghost"}
+                  variant="ghost"
                   onClick={() => setActiveSection(section.id)}
                   className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${
                     activeSection === section.id
-                      ? "bg-gray-200 text-gray-900"
+                      ? "bg-gray-200 text-gray-900 hover:bg-gray-200"
                       : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"
                   }`}
                 >
@@ -180,7 +180,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <Button
               onClick={saveSettings}
               disabled={isLoading}
-              className="px-8 bg-blue-600 hover:bg-blue-700"
+              className="px-8 bg-gray-800 hover:bg-gray-900"
             >
               {isLoading ? "Saving..." : "Save Changes"}
             </Button>

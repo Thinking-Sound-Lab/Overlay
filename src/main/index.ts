@@ -331,7 +331,10 @@ const handleAuthenticationFailure = (
   }
 
   // Close authenticated-only windows
-  if (windowManager.getRecordingWindow() && !windowManager.getRecordingWindow().isDestroyed()) {
+  if (
+    windowManager.getRecordingWindow() &&
+    !windowManager.getRecordingWindow().isDestroyed()
+  ) {
     console.log("[Main] Closing recording window due to logout");
     windowManager.getRecordingWindow().close();
   }
@@ -798,7 +801,7 @@ app.whenReady().then(async () => {
           wordCount: metrics.wordCount,
           wpm: metrics.wordsPerMinute,
           hasTranscript: !!transcript,
-          wasTranslated: !!translationMeta?.translatedText,
+          wasTranslated: !!translationMeta?.wasTranslated,
         });
 
         // Handle transcript saving if provided and user is authenticated
@@ -820,7 +823,7 @@ app.whenReady().then(async () => {
               original_text: translationMeta?.originalText,
               language: translationMeta?.sourceLanguage || "en",
               target_language: translationMeta?.targetLanguage,
-              was_translated: !!translationMeta?.translatedText,
+              was_translated: !!translationMeta?.wasTranslated,
               confidence: translationMeta?.confidence,
               word_count: metrics.wordCount,
               wpm: metrics.wordsPerMinute,
@@ -839,6 +842,12 @@ app.whenReady().then(async () => {
               if (result.success) {
                 console.log("[Main] Transcript saved to database successfully");
 
+                // Debug: Log the full translationMeta structure
+                console.log(
+                  "[Main] Full translationMeta received:",
+                  JSON.stringify(translationMeta, null, 2)
+                );
+
                 // Create UI transcript for renderer notification
                 const uiTranscript = {
                   id: transcriptData.metadata.localId,
@@ -849,7 +858,7 @@ app.whenReady().then(async () => {
                   originalText: translationMeta?.originalText,
                   sourceLanguage: translationMeta?.sourceLanguage,
                   targetLanguage: translationMeta?.targetLanguage,
-                  wasTranslated: !!translationMeta?.translatedText,
+                  wasTranslated: translationMeta?.wasTranslated,
                   confidence: translationMeta?.confidence,
                   detectedLanguage: translationMeta?.detectedLanguage,
                   wordCountRatio: translationMeta?.wordCountRatio,
@@ -924,7 +933,9 @@ app.whenReady().then(async () => {
   createMainWindow();
 
   // STT service will be initialized when user authenticates
-  console.log("[Main] STT service created but not initialized - waiting for user authentication");
+  console.log(
+    "[Main] STT service created but not initialized - waiting for user authentication"
+  );
 
   // Export sttService for use by other modules
 

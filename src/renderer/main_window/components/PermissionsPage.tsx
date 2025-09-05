@@ -95,7 +95,7 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
         return <AlertTriangle className="h-5 w-5 text-red-600" />;
       default:
         return (
-          <div className="h-5 w-5 rounded-full border-2 border-gray-300 animate-spin border-t-blue-600" />
+          <div className="h-5 w-5 rounded-full border-2 border-gray-300 animate-spin border-t-gray-600" />
         );
     }
   };
@@ -139,7 +139,7 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Mic className="h-6 w-6 text-blue-600" />
+                <Mic className="h-6 w-6 text-gray-600" />
                 <div>
                   <CardTitle className="text-lg">Microphone Access</CardTitle>
                   <CardDescription>
@@ -194,7 +194,7 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Settings className="h-6 w-6 text-blue-600" />
+                <Settings className="h-6 w-6 text-gray-600" />
                 <div>
                   <CardTitle className="text-lg">
                     Accessibility Access

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -14,9 +14,21 @@ interface GuidePageProps {
 }
 
 export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGetStarted = async () => {
+    setIsLoading(true);
+    try {
+      await onGuideComplete();
+    } finally {
+      // Keep loading state briefly to show user feedback
+      setTimeout(() => setIsLoading(false), 500);
+    }
+  };
+
   const steps = [
     {
-      icon: <Keyboard className="h-8 w-8 text-blue-600" />,
+      icon: <Keyboard className="h-8 w-8 text-gray-600" />,
       title: "Press the hotkey",
       description:
         "Use Option+Space (Mac) or Alt+Space (Windows) to start recording",
@@ -67,7 +79,7 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-sm font-bold rounded-full">
+                    <span className="inline-flex items-center justify-center w-6 h-6 bg-gray-800 text-white text-sm font-bold rounded-full">
                       {index + 1}
                     </span>
                     <CardTitle className="text-lg">{step.title}</CardTitle>
@@ -86,7 +98,7 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
       </div>
 
       {/* Quick Tips */}
-      <Card className="mb-8 bg-blue-50 border-blue-200">
+      <Card className="mb-8 bg-gray-50 border-gray-200">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             💡 Pro Tips
@@ -95,28 +107,28 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
         <CardContent>
           <ul className="space-y-2 text-sm text-gray-700">
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-gray-600 font-bold">•</span>
               <span>
                 Speak at a normal pace - the AI works better with natural speech
                 patterns
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-gray-600 font-bold">•</span>
               <span>
                 For best accuracy, use a quiet environment and position your
                 microphone properly
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-gray-600 font-bold">•</span>
               <span>
                 Enable translation to speak in one language and get text in
                 another
               </span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-600 font-bold">•</span>
+              <span className="text-gray-600 font-bold">•</span>
               <span>Use AI refinement for improved grammar and formatting</span>
             </li>
           </ul>
@@ -147,9 +159,23 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
       </Card>
 
       <div className="flex justify-center">
-        <Button onClick={onGuideComplete} size="lg" className="px-8">
-          Get Started
-          <ArrowRight className="h-4 w-4 ml-2" />
+        <Button 
+          onClick={handleGetStarted} 
+          size="lg" 
+          className="px-8"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <>
+              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+              Loading...
+            </>
+          ) : (
+            <>
+              Get Started
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </>
+          )}
         </Button>
       </div>
     </div>

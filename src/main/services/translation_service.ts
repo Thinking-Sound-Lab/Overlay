@@ -144,7 +144,17 @@ export class TranslationService {
             settings.enableTranslation &&
             settings.targetLanguage &&
             sourceLanguage !== settings.targetLanguage &&
-            translationResult;
+            translationResult !== null;
+          
+          console.log("[Translation] Metadata build:", {
+            enableTranslation: settings.enableTranslation,
+            targetLanguage: settings.targetLanguage,
+            sourceLanguage,
+            languagesDiffer: sourceLanguage !== settings.targetLanguage,
+            hasTranslationResult: translationResult !== null,
+            wasTranslated
+          });
+
           const translationMeta = wasTranslated
             ? {
                 wasTranslated: true,
