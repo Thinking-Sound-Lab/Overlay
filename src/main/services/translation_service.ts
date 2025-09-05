@@ -6,7 +6,7 @@ import {
   Settings,
   SpeechMetrics,
 } from "../../shared/types";
-import * as robot from "robotjs";
+import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
 import { DataLoaderService } from "./data_loader_service";
@@ -15,6 +15,7 @@ export class TranslationService {
   private static instance: TranslationService;
   private applicationDetector: ApplicationDetector;
   private dataLoaderService: DataLoaderService | null = null;
+  private textInsertionService: TextInsertionService;
 
   // Single language model configuration
   private readonly LANGUAGE_MODEL = "gpt-4.1";
@@ -35,6 +36,7 @@ export class TranslationService {
   constructor(dataLoaderService?: DataLoaderService) {
     this.applicationDetector = ApplicationDetector.getInstance();
     this.dataLoaderService = dataLoaderService || null;
+    this.textInsertionService = new TextInsertionService();
   }
 
   public static getInstance(
@@ -137,7 +139,7 @@ export class TranslationService {
       console.log("[Translation] Metrics:", metrics);
 
       // Step 5: Insert text and fire callback after insertion completes
-      this.insertTextWithRobot(finalText, () => {
+      this.insertTextNative(finalText, () => {
         if (onComplete) {
           // Build comprehensive metadata
           const wasTranslated =
@@ -701,19 +703,27 @@ OUTPUT: Return ONLY the processed text, nothing else.`;
   }
 
   /**
-   * Insert text using robotjs
+   * Insert text using native platform APIs
    */
-  private insertTextWithRobot(text: string, onComplete?: () => void) {
+  private async insertTextNative(text: string, onComplete?: () => void) {
     try {
-      // Small delay to ensure the target application is ready
-      setTimeout(() => {
-        robot.typeString(text);
-        console.log("[Translation] Text inserted via robotjs:", text);
-        // Fire callback when text insertion is complete
-        onComplete?.();
-      }, 100);
+      console.log("[Translation] Inserting text via native platform APIs:", text);
+      
+      const success = await this.textInsertionService.insertText(text, {
+        delay: 100, // Small delay to ensure target application is ready
+        preserveClipboard: true // Preserve user's clipboard content
+      });
+      
+      if (success) {
+        console.log("[Translation] Text inserted successfully via native APIs");
+      } else {
+        console.warn("[Translation] Text insertion failed via native APIs");
+      }
+      
+      // Fire callback when text insertion is complete (success or failure)
+      onComplete?.();
     } catch (error) {
-      console.error("[Translation] Error inserting text with robotjs:", error);
+      console.error("[Translation] Error inserting text with native APIs:", error);
       // Still fire callback even if there's an error
       onComplete?.();
     }

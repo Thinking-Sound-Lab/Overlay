@@ -41,7 +41,8 @@
       "entitlements": "entitlements.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "This app requires microphone access to capture audio for dictation.",
-        "NSSystemAdministrationUsageDescription": "This app requires system access to insert text into other applications."
+        "NSSystemAdministrationUsageDescription": "This app requires system access to insert text into other applications.",
+        "NSAppleEventsUsageDescription": "This app requires permission to send keystrokes and control other applications for text insertion."
       },
       "_comment": "Code signing disabled for unsigned testing builds. For production, uncomment and configure identity and provisioningProfile",
       "_codeSign": {
