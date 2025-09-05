@@ -144,6 +144,12 @@ export class RealtimeSTTProvider extends EventEmitter {
   private startKeepAlive(): void {
     this.stopKeepAlive();
     this.keepAliveInterval = setInterval(() => {
+      // Defensive check: Don't send if explicitly disconnected
+      if (!this.isConnected || !this.connection) {
+        console.log("[RealtimeSTT] Skipping KeepAlive - disconnected");
+        return;
+      }
+      
       if (this.connection && this.isConnected && !this.isRecordingActive) {
         try {
           this.connection.send(JSON.stringify({ type: "KeepAlive" }));
@@ -303,7 +309,11 @@ export class RealtimeSTTProvider extends EventEmitter {
       "[RealtimeSTT] Disconnecting and stopping all reconnection attempts..."
     );
 
-    // Stop KeepAlive messages
+    // Set disconnected state FIRST to prevent any further actions
+    this.isConnected = false;
+    this.isRecordingActive = false;
+
+    // Then stop KeepAlive messages (state flags are now safe)
     this.stopKeepAlive();
 
     // Clear reconnection timer
@@ -317,6 +327,8 @@ export class RealtimeSTTProvider extends EventEmitter {
 
     if (this.connection) {
       try {
+        // Remove all event listeners to prevent any callbacks
+        this.connection.removeAllListeners();
         this.connection.requestClose();
       } catch (error) {
         console.warn("[RealtimeSTT] Error during disconnect:", error);
@@ -324,8 +336,6 @@ export class RealtimeSTTProvider extends EventEmitter {
       this.connection = null;
     }
 
-    this.isConnected = false;
-    this.isRecordingActive = false; // Reset recording state on disconnect
     console.log("[RealtimeSTT] Disconnection complete, reconnections disabled");
   }
 

@@ -11,7 +11,7 @@ import { ApplicationMappingsConfig } from "../config/application_mappings";
 import { DataLoaderService } from "./data_loader_service";
 import { WindowManager } from "../windows/window-manager";
 import { InformationMessage } from "../windows/types";
-import { Settings, SpeechMetrics } from "../../shared/types";
+import { Settings, SpeechMetrics, TranslationResult } from "../../shared/types";
 
 class STTService {
   private sttSession: STTClient;
@@ -23,7 +23,7 @@ class STTService {
   private onMetricsUpdate?: (
     metrics: SpeechMetrics,
     transcript?: string,
-    translationMeta?: any
+    translationMeta?: TranslationResult
   ) => void;
   private translationService: TranslationService;
   private analyticsService?: AnalyticsService;
@@ -37,7 +37,7 @@ class STTService {
     onMetricsUpdate?: (
       metrics: SpeechMetrics,
       transcript?: string,
-      translationMeta?: any
+      translationMeta?: TranslationResult
     ) => void,
     analyticsService?: AnalyticsService,
     windowManager?: WindowManager
@@ -65,6 +65,13 @@ class STTService {
    * Check if realtime mode is enabled in user settings
    */
   private isRealtimeModeEnabled(): boolean {
+    // First check if user is authenticated
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser) {
+      console.log("[STT] No authenticated user - realtime mode disabled");
+      return false;
+    }
+
     const settings: Settings = this.dataLoaderService.getUserSettings();
     const enabled: boolean = settings.enableRealtimeMode;
     console.log("[STT] Realtime mode enabled in settings:", enabled);
@@ -72,6 +79,13 @@ class STTService {
   }
 
   async initialize(): Promise<void> {
+    // Check authentication before initializing
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser) {
+      console.log("[STT] No authenticated user - skipping STT initialization");
+      return;
+    }
+
     // Auto-select mode based on user settings
     if (this.isRealtimeModeEnabled()) {
       console.log(
@@ -194,6 +208,13 @@ class STTService {
   }
 
   async reinitialize(): Promise<void> {
+    // Check authentication before reinitializing
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser) {
+      console.log("[STT] No authenticated user - skipping STT reinitialize");
+      return;
+    }
+
     const newLanguage: string = this.getCurrentLanguage();
     const isRealtimeEnabled: boolean = this.isRealtimeModeEnabled();
 
