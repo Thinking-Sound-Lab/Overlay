@@ -88,8 +88,8 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-center gap-3 pb-3 border-b">
-            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-              <User className="h-6 w-6 text-blue-600" />
+            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+              <User className="h-6 w-6 text-gray-600" />
             </div>
             <div className="flex-1">
               <div className="font-medium text-gray-900">
@@ -99,7 +99,7 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
             </div>
             <Badge 
               variant="secondary"
-              className={user?.subscription_tier === 'pro' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}
+              className={user?.subscription_tier === 'pro' ? 'bg-gray-200 text-gray-800' : 'bg-gray-100 text-gray-800'}
             >
               {user?.subscription_tier === 'pro' ? 'Pro' : 'Free'}
             </Badge>
@@ -121,7 +121,7 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
               <div className="text-sm font-medium text-gray-700 mb-2">Quick Stats</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <Target className="h-3 w-3 text-blue-600" />
+                  <Target className="h-3 w-3 text-gray-600" />
                   <span className="text-gray-600">{userStats.totalWordCount.toLocaleString()} words</span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -283,6 +283,12 @@ const handleAuthenticationSuccess = async (
         windowManager.createInformationWindow();
       }
 
+      // Initialize STT service for authenticated user
+      if (sttService) {
+        console.log("[Main] Initializing STT service for authenticated user");
+        await sttService.initialize();
+      }
+
       if (config.isDevelopment) {
         windowManager.openDevTools("recording");
         windowManager.openDevTools("information");
@@ -316,6 +322,22 @@ const handleAuthenticationFailure = (
     `[Main] Handling authentication failure (${source}):`,
     error || "No error provided"
   );
+
+  // Clean up STT service to stop any active connections and logging
+  if (sttService) {
+    console.log("[Main] Cleaning up STT service during logout...");
+    sttService.closeSession();
+    sttService.resetRuntimeData();
+  }
+
+  // Close authenticated-only windows
+  if (
+    windowManager.getRecordingWindow() &&
+    !windowManager.getRecordingWindow().isDestroyed()
+  ) {
+    console.log("[Main] Closing recording window due to logout");
+    windowManager.getRecordingWindow().close();
+  }
 
   // Clear all user data
   dataLoaderService?.clearUserData();
@@ -558,10 +580,8 @@ const startRecording = async () => {
     await systemAudioManager.muteSystemAudio();
   }
 
-  // Ensure recording window exists (should be created after authentication)
-  if (!windowManager.getRecordingWindow()) {
-    windowManager.createRecordingWindow();
-  }
+  // Recording window should already exist after authentication
+  // Only use existing window, don't create for unauthorized users
 
   if (windowManager.getRecordingWindow()) {
     windowManager.expandRecordingWindow();
@@ -781,7 +801,7 @@ app.whenReady().then(async () => {
           wordCount: metrics.wordCount,
           wpm: metrics.wordsPerMinute,
           hasTranscript: !!transcript,
-          wasTranslated: !!translationMeta?.translatedText,
+          wasTranslated: !!translationMeta?.wasTranslated,
         });
 
         // Handle transcript saving if provided and user is authenticated
@@ -803,7 +823,7 @@ app.whenReady().then(async () => {
               original_text: translationMeta?.originalText,
               language: translationMeta?.sourceLanguage || "en",
               target_language: translationMeta?.targetLanguage,
-              was_translated: !!translationMeta?.translatedText,
+              was_translated: !!translationMeta?.wasTranslated,
               confidence: translationMeta?.confidence,
               word_count: metrics.wordCount,
               wpm: metrics.wordsPerMinute,
@@ -822,6 +842,12 @@ app.whenReady().then(async () => {
               if (result.success) {
                 console.log("[Main] Transcript saved to database successfully");
 
+                // Debug: Log the full translationMeta structure
+                console.log(
+                  "[Main] Full translationMeta received:",
+                  JSON.stringify(translationMeta, null, 2)
+                );
+
                 // Create UI transcript for renderer notification
                 const uiTranscript = {
                   id: transcriptData.metadata.localId,
@@ -832,7 +858,7 @@ app.whenReady().then(async () => {
                   originalText: translationMeta?.originalText,
                   sourceLanguage: translationMeta?.sourceLanguage,
                   targetLanguage: translationMeta?.targetLanguage,
-                  wasTranslated: !!translationMeta?.translatedText,
+                  wasTranslated: translationMeta?.wasTranslated,
                   confidence: translationMeta?.confidence,
                   detectedLanguage: translationMeta?.detectedLanguage,
                   wordCountRatio: translationMeta?.wordCountRatio,
@@ -906,11 +932,9 @@ app.whenReady().then(async () => {
 
   createMainWindow();
 
-  await sttService.initialize();
-
-  // STT settings will be updated via DataLoaderService when user authenticates
+  // STT service will be initialized when user authenticates
   console.log(
-    "[Main] STT service initialized - settings will be loaded after authentication"
+    "[Main] STT service created but not initialized - waiting for user authentication"
   );
 
   // Export sttService for use by other modules
@@ -1026,21 +1050,8 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
   AuthUtils.setAuthenticationState(true);
   console.log("[Main] User authenticated:", user.email);
 
-  // Create recording window now that user is authenticated
-  if (
-    !windowManager.getRecordingWindow() ||
-    windowManager.getRecordingWindow().isDestroyed()
-  ) {
-    windowManager.createRecordingWindow();
-  }
-
-  // Create information window for user notifications (hidden by default)
-  if (
-    !windowManager.getInformationWindow() ||
-    windowManager.getInformationWindow().isDestroyed()
-  ) {
-    windowManager.createInformationWindow();
-  }
+  // Windows are already created in handleAuthenticationSuccess
+  // No need to create them here again
 
   return { success: true };
 });

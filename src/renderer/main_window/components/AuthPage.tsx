@@ -144,8 +144,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <Mail className="h-8 w-8 text-blue-600" />
+            <div className="p-3 bg-gray-100 rounded-full">
+              <Mail className="h-8 w-8 text-gray-600" />
             </div>
           </div>
           <CardTitle className="text-xl">
@@ -169,7 +169,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent"
                 placeholder="Enter your email"
                 required
               />
@@ -185,7 +185,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent"
                   placeholder="Enter your full name"
                   required={!isLogin}
                 />
@@ -272,7 +272,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
             <button
               type="button"
               onClick={() => setIsLogin(!isLogin)}
-              className="text-sm text-blue-600 hover:text-blue-500 underline"
+              className="text-sm text-gray-600 hover:text-gray-500 underline"
             >
               {isLogin ? (
                 <span className="flex items-center justify-center gap-1">

@@ -264,7 +264,7 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
               value={contextModesDraft.customPrompt}
               onChange={(e) => updateDraft("customPrompt", e.target.value)}
               placeholder="Enter formatting instructions for how you want your transcribed text to be processed..."
-              className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
             />
             {contextModesDraft.selectedMode &&
               contextModesDraft.selectedMode !== "custom" && (
@@ -276,7 +276,7 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
                       getDefaultPromptForMode(contextModesDraft.selectedMode)
                     )
                   }
-                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  className="text-xs text-gray-600 hover:text-gray-800 underline"
                 >
                   Reset to default template for {contextModesDraft.selectedMode}
                 </button>
@@ -291,7 +291,7 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
           <Button
             onClick={saveContextModes}
             disabled={isSaving}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2"
+            className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2"
           >
             {isSaving ? "Saving..." : "Save Changes"}
           </Button>

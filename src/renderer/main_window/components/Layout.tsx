@@ -25,13 +25,13 @@ export const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="h-full bg-gray-100 font-inter flex overflow-hidden">
       {/* Sidebar */}
-      <div className="w-52 bg-gray-100 flex flex-col">
+      <div className="w-64 bg-gray-100 flex flex-col">
         {/* Logo + Subscription Badge */}
         <div className="flex items-center gap-2 px-4 py-3">
           <span className="text-xl font-bold text-gray-900">Overlay</span>
           <Badge
             className={`text-xs px-2 py-1 ${
-              isPro ? "bg-blue-500 text-white" : "bg-gray-500 text-white"
+              isPro ? "bg-gray-800 text-white" : "bg-gray-500 text-white"
             }`}
           >
             {isPro ? "PRO" : "FREE"}
@@ -39,23 +39,27 @@ export const Layout: React.FC<LayoutProps> = ({
         </div>
 
         {/* Main Navigation */}
-        <nav className="px-4 space-y-2">
+        <nav className="px-4 space-y-1">
           <Button
-            variant={activeView === "home" ? "default" : "ghost"}
-            className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "home" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
+            variant="ghost"
+            className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${activeView === "home" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"}`}
             onClick={() => setActiveView("home")}
           >
-            <Home className="h-5 w-5" />
-            <span>Home</span>
+            <div className="flex items-center gap-3">
+              <Home className="h-5 w-5" />
+              <span className="font-medium">Home</span>
+            </div>
           </Button>
 
           <Button
-            variant={activeView === "dictionary" ? "default" : "ghost"}
-            className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "dictionary" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
+            variant="ghost"
+            className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${activeView === "dictionary" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"}`}
             onClick={() => setActiveView("dictionary")}
           >
-            <BookOpen className="h-5 w-5" />
-            <span>Dictionary</span>
+            <div className="flex items-center gap-3">
+              <BookOpen className="h-5 w-5" />
+              <span className="font-medium">Dictionary</span>
+            </div>
           </Button>
         </nav>
 
@@ -65,16 +69,16 @@ export const Layout: React.FC<LayoutProps> = ({
         {/* Upgrade Box - shown for free users only */}
         {!isPro && (
           <div className="px-4 py-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="text-sm font-medium text-blue-800 mb-1">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div className="text-sm font-medium text-gray-800 mb-1">
                 Upgrade to Pro
               </div>
-              <div className="text-xs text-blue-600 mb-2">
+              <div className="text-xs text-gray-600 mb-2">
                 Unlock premium features & unlimited access
               </div>
               <Button
                 size="sm"
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white text-xs"
+                className="w-full bg-gray-800 hover:bg-gray-900 text-white text-xs"
                 onClick={() => {
                   // TODO: Implement upgrade flow
                   console.log("Upgrade clicked - implement billing flow");
@@ -87,23 +91,27 @@ export const Layout: React.FC<LayoutProps> = ({
         )}
 
         {/* Bottom Navigation */}
-        <div className="px-4 py-4 space-y-2 border-t border-gray-200">
+        <div className="px-4 py-4 space-y-1 border-t border-gray-200">
           <Button
-            variant={activeView === "help" ? "default" : "ghost"}
-            className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "help" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
+            variant="ghost"
+            className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${activeView === "help" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"}`}
             onClick={() => setActiveView("help")}
           >
-            <HelpCircle className="h-5 w-5" />
-            <span>Help</span>
+            <div className="flex items-center gap-3">
+              <HelpCircle className="h-5 w-5" />
+              <span className="font-medium">Help</span>
+            </div>
           </Button>
 
           <Button
-            variant={activeView === "referral" ? "default" : "ghost"}
-            className={`w-full justify-start gap-3 hover:bg-gray-200 hover:rounded-xl hover:text-gray-900 ${activeView === "referral" ? "bg-gray-200 rounded-xl text-gray-900" : ""}`}
+            variant="ghost"
+            className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${activeView === "referral" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"}`}
             onClick={() => setActiveView("referral")}
           >
-            <Gift className="h-5 w-5" />
-            <span>Referral</span>
+            <div className="flex items-center gap-3">
+              <Gift className="h-5 w-5" />
+              <span className="font-medium">Referral</span>
+            </div>
           </Button>
         </div>
       </div>

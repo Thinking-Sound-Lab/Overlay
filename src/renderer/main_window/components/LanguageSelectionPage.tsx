@@ -114,8 +114,8 @@ export const LanguageSelectionPage: React.FC<LanguageSelectionPageProps> = ({
           {/* Header */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <div className="p-3 bg-blue-100 rounded-full">
-                <Globe className="h-8 w-8 text-blue-600" />
+              <div className="p-3 bg-gray-100 rounded-full">
+                <Globe className="h-8 w-8 text-gray-600" />
               </div>
             </div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -133,9 +133,9 @@ export const LanguageSelectionPage: React.FC<LanguageSelectionPageProps> = ({
                 <button
                   key={language.code}
                   onClick={() => setSelectedLanguage(language.code)}
-                  className={`p-4 rounded-lg border-2 text-left transition-all hover:border-blue-300 hover:bg-blue-50 ${
+                  className={`p-4 rounded-lg border-2 text-left transition-all hover:border-gray-300 hover:bg-gray-50 ${
                     selectedLanguage === language.code
-                      ? "border-blue-500 bg-blue-50"
+                      ? "border-gray-500 bg-gray-50"
                       : "border-gray-200 bg-white"
                   }`}
                 >
@@ -149,7 +149,7 @@ export const LanguageSelectionPage: React.FC<LanguageSelectionPageProps> = ({
                       </div>
                     </div>
                     {selectedLanguage === language.code && (
-                      <Check className="h-5 w-5 text-blue-600" />
+                      <Check className="h-5 w-5 text-gray-600" />
                     )}
                   </div>
                 </button>
@@ -165,7 +165,7 @@ export const LanguageSelectionPage: React.FC<LanguageSelectionPageProps> = ({
             <Button
               onClick={handleContinue}
               disabled={!selectedLanguage || isLoading}
-              className="px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              className="px-8 py-2 bg-gray-800 hover:bg-gray-900 disabled:opacity-50"
             >
               {isLoading ? "Saving..." : "Continue"}
             </Button>
@@ -175,8 +175,8 @@ export const LanguageSelectionPage: React.FC<LanguageSelectionPageProps> = ({
         {/* Progress indicator */}
         <div className="flex justify-center mt-6">
           <div className="flex space-x-2">
-            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+            <div className="w-2 h-2 bg-gray-600 rounded-full"></div>
+            <div className="w-2 h-2 bg-gray-600 rounded-full"></div>
             <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
             <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
           </div>

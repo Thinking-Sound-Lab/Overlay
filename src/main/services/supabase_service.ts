@@ -202,7 +202,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
+          emailRedirectTo: "https://overlay-beta.vercel.app/oauth-success.html",
           shouldCreateUser: false, // Don't create user for sign in
         },
       });
@@ -237,7 +237,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOtp({
         email: email,
         options: {
-          emailRedirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
+          emailRedirectTo: "https://overlay-beta.vercel.app/oauth-success.html",
           shouldCreateUser: true, // Allow user creation for sign up
         },
       });
@@ -268,7 +268,7 @@ export class SupabaseService {
       const { data, error } = await this.supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: "https://abhishekucs.github.io/Overlay/oauth-success.html",
+          redirectTo: "https://overlay-beta.vercel.app/oauth-success.html",
           queryParams: {
             access_type: "offline",
             prompt: "consent",

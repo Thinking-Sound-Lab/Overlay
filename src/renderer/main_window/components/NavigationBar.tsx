@@ -99,7 +99,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
   return (
     <div
-      className="flex items-center justify-between px-6 bg-gray-50 border-b border-gray-200 h-14"
+      className="flex items-center justify-between px-6 bg-gray-100 h-14"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       onDoubleClick={handleNavBarDoubleClick}
     >
@@ -166,7 +166,7 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
               <Settings className="h-5 w-5 text-gray-600" />
             </Button>
           </Tooltip>
-          
+
           <ProfilePopover
             trigger={
               <Button
@@ -183,12 +183,9 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
 
       {/* Empty div to maintain spacing when auth buttons are not shown */}
       {!showAuthButtons && <div></div>}
-      
+
       {/* Settings Dialog */}
-      <SettingsDialog 
-        open={settingsOpen} 
-        onOpenChange={setSettingsOpen} 
-      />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 };
