@@ -425,37 +425,56 @@ const buildMicrophoneSubmenu = async (): Promise<
     const micService = MicrophoneService.getInstance();
     const devices = await micService.getAvailableDevices();
 
-    const currentMicrophone = DEFAULT_SETTINGS.defaultMicrophone;
+    console.log(`[Tray] Available devices:`, devices);
+
+    // Get current selected device from session state (no database)
+    const currentDeviceId = micService.getCurrentDeviceId();
+
+    console.log(`[Tray] Current selected device: ${currentDeviceId}`);
 
     return devices.map((device: any) => ({
       label: device.label || `Unknown Device`,
       type: "radio" as const,
-      checked: currentMicrophone === device.deviceId,
-      click: () => {
-        updateTrayMenu(); // Refresh menu
+      checked: currentDeviceId === device.deviceId,
+      click: async () => {
+        // Update microphone selection in session state only (no database)
+        try {
+          const result = await micService.setCurrentDeviceId(device.deviceId);
+          if (result.success) {
+            console.log(
+              `[Tray] Microphone changed to: ${device.label} (${device.deviceId})`
+            );
+
+            // Notify recording window of device change
+            if (windowManager) {
+              windowManager.sendToRecording("microphone-device-changed", {
+                deviceId: device.deviceId,
+              });
+            }
+
+            updateTrayMenu(); // Refresh menu to show new selection
+          } else {
+            console.error(
+              "[Tray] Failed to set microphone device:",
+              result.error
+            );
+          }
+        } catch (error) {
+          console.error("[Tray] Error setting microphone device:", error);
+        }
       },
     }));
   } catch (error) {
     console.error("[Tray] Failed to load microphones for menu:", error);
-
-    // Fallback to default option
-    const currentMicrophone = DEFAULT_SETTINGS.defaultMicrophone;
-    return [
-      {
-        label: "Default Microphone",
-        type: "radio" as const,
-        checked: currentMicrophone === "default",
-        click: () => {
-          updateTrayMenu();
-        },
-      },
-    ];
+    // MicrophoneService already has fallback handling, so just return empty array
+    return [];
   }
 };
 
 const updateTrayMenu = async () => {
   if (!tray) return;
 
+  console.log("[Tray] Updating tray menu...");
   // Get dynamic microphone submenu
   const microphoneSubmenu = await buildMicrophoneSubmenu();
   const userStats = dataLoaderService.getUserStats();
@@ -778,13 +797,16 @@ app.whenReady().then(async () => {
 
     // Initialize external API manager and handlers
     externalAPIManager = new ExternalAPIManager();
-    apiHandlers = new APIHandlers(externalAPIManager);
+    apiHandlers = new APIHandlers(externalAPIManager, windowManager);
     dataLoaderService = DataLoaderService.getInstance(
       externalAPIManager.supabase
     );
 
     // Initialize system audio manager
     systemAudioManager = new SystemAudioManager();
+
+    // Initialize microphone service with default device selection
+    await MicrophoneService.getInstance().initializeDefaultDevice();
 
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
@@ -963,11 +985,24 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (
-    !windowManager.getMainWindow() ||
-    windowManager.getMainWindow().isDestroyed()
-  )
+  console.log("[Main] App activate event triggered");
+
+  const existingWindow = windowManager.getMainWindow();
+
+  // Check if we have a valid window
+  if (!existingWindow || existingWindow.isDestroyed()) {
+    console.log("[Main] No main window exists, creating new one");
     createMainWindow();
+  } else if (!existingWindow.isVisible()) {
+    console.log("[Main] Main window exists but is hidden, showing it");
+    existingWindow.show();
+    existingWindow.focus();
+  } else {
+    console.log(
+      "[Main] Main window already exists and is visible, focusing it"
+    );
+    existingWindow.focus();
+  }
 });
 app.on("will-quit", async () => {
   console.log("[Main] App shutting down, cleaning up services...");

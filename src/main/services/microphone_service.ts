@@ -12,6 +12,8 @@ export class MicrophoneService {
   private static instance: MicrophoneService;
   private availableDevices: MicrophoneDevice[] = [];
   private mainWindow: BrowserWindow | null = null;
+  private currentDeviceId: string = "default";
+  private deviceChangeCallbacks: Set<(deviceId: string) => void> = new Set();
 
   private constructor() {
     // Private constructor for singleton
@@ -34,7 +36,9 @@ export class MicrophoneService {
    */
   public async getAvailableDevices(): Promise<MicrophoneDevice[]> {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-      console.warn("[MicrophoneService] Main window not available for device enumeration");
+      console.warn(
+        "[MicrophoneService] Main window not available for device enumeration"
+      );
       return this.getDefaultDeviceList();
     }
 
@@ -102,10 +106,15 @@ export class MicrophoneService {
 
       if (devices && devices.length > 0) {
         this.availableDevices = devices;
-        console.log(`[MicrophoneService] Found ${devices.length} audio input devices:`, devices.map((d: any) => d.label));
+        console.log(
+          `[MicrophoneService] Found ${devices.length} audio input devices:`,
+          devices.map((d: any) => d.label)
+        );
         return devices;
       } else {
-        console.log("[MicrophoneService] No devices found, returning default list");
+        console.log(
+          "[MicrophoneService] No devices found, returning default list"
+        );
         return this.getDefaultDeviceList();
       }
     } catch (error) {
@@ -123,17 +132,19 @@ export class MicrophoneService {
         deviceId: "default",
         label: "Default Microphone",
         kind: "audioinput",
-        groupId: ""
-      }
+        groupId: "",
+      },
     ];
   }
 
   /**
    * Find device by deviceId
    */
-  public async findDeviceById(deviceId: string): Promise<MicrophoneDevice | null> {
+  public async findDeviceById(
+    deviceId: string
+  ): Promise<MicrophoneDevice | null> {
     const devices = await this.getAvailableDevices();
-    return devices.find(device => device.deviceId === deviceId) || null;
+    return devices.find((device) => device.deviceId === deviceId) || null;
   }
 
   /**
@@ -145,13 +156,15 @@ export class MicrophoneService {
     }
 
     const devices = await this.getAvailableDevices();
-    return devices.some(device => device.deviceId === deviceId);
+    return devices.some((device) => device.deviceId === deviceId);
   }
 
   /**
    * Get device constraints for getUserMedia
    */
-  public async getDeviceConstraints(deviceId: string): Promise<MediaTrackConstraints> {
+  public async getDeviceConstraints(
+    deviceId: string
+  ): Promise<MediaTrackConstraints> {
     const baseConstraints: MediaTrackConstraints = {
       echoCancellation: true,
       noiseSuppression: true,
@@ -160,28 +173,35 @@ export class MicrophoneService {
       channelCount: 1,
     };
 
+    console.log(
+      `[MicrophoneService] Getting constraints for device: ${deviceId}`
+    );
+
+    // Check if device is available
+    const isAvailable = await this.isDeviceAvailable(deviceId);
+    console.log(
+      `[MicrophoneService] Device ${deviceId} available: ${isAvailable}`
+    );
+
     // If it's the default device or device doesn't exist, don't specify deviceId
-    if (deviceId === "default" || !(await this.isDeviceAvailable(deviceId))) {
-      console.log(`[MicrophoneService] Using default device (deviceId: ${deviceId})`);
+    if (deviceId === "default" || !isAvailable) {
+      console.log(
+        `[MicrophoneService] Using default device (deviceId: ${deviceId})`
+      );
       return baseConstraints;
     }
 
     // Use specific device
-    console.log(`[MicrophoneService] Using specific device: ${deviceId}`);
-    return {
+    const specificConstraints = {
       ...baseConstraints,
-      deviceId: { exact: deviceId }
+      deviceId: { exact: deviceId },
     };
-  }
-
-  /**
-   * @deprecated This method triggers microphone access and is not recommended.
-   * Device availability should be determined without triggering getUserMedia.
-   * Use isDeviceAvailable() instead for non-intrusive device validation.
-   */
-  public async testDevice(deviceId: string): Promise<boolean> {
-    console.warn("[MicrophoneService] testDevice() is deprecated - triggers unwanted microphone access");
-    return false;
+    console.log(`[MicrophoneService] Using specific device: ${deviceId}`);
+    console.log(
+      `[MicrophoneService] Final constraints:`,
+      JSON.stringify(specificConstraints, null, 2)
+    );
+    return specificConstraints;
   }
 
   /**
@@ -194,7 +214,7 @@ export class MicrophoneService {
 
     // Clean up common device name patterns
     let name = device.label;
-    
+
     // Remove common prefixes/suffixes
     name = name.replace(/^(Default - |Microphone - |Mic - )/, "");
     name = name.replace(/ \(.*\)$/, ""); // Remove parenthetical info
@@ -207,7 +227,11 @@ export class MicrophoneService {
    * Request microphone permissions and refresh device list with real labels
    * Only call this when actually needed (e.g., before recording)
    */
-  public async requestPermissionsAndRefreshDevices(): Promise<{ success: boolean; devices?: MicrophoneDevice[]; error?: string }> {
+  public async requestPermissionsAndRefreshDevices(): Promise<{
+    success: boolean;
+    devices?: MicrophoneDevice[];
+    error?: string;
+  }> {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) {
       return { success: false, error: "Main window not available" };
     }
@@ -244,14 +268,25 @@ export class MicrophoneService {
       if (result.success && result.devices) {
         // Update cached devices with permission-based labels
         this.availableDevices = result.devices;
-        console.log(`[MicrophoneService] Permissions granted, refreshed ${result.devices.length} devices with real labels`);
+        console.log(
+          `[MicrophoneService] Permissions granted, refreshed ${result.devices.length} devices with real labels`
+        );
         return { success: true, devices: result.devices };
       } else {
-        return { success: false, error: result.error || "Failed to get permissions" };
+        return {
+          success: false,
+          error: result.error || "Failed to get permissions",
+        };
       }
     } catch (error) {
-      console.error("[MicrophoneService] Failed to request permissions:", error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      console.error(
+        "[MicrophoneService] Failed to request permissions:",
+        error
+      );
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
@@ -264,7 +299,8 @@ export class MicrophoneService {
     }
 
     try {
-      const hasPermission = await this.mainWindow.webContents.executeJavaScript(`
+      const hasPermission = await this.mainWindow.webContents
+        .executeJavaScript(`
         (async () => {
           try {
             const permission = await navigator.permissions.query({ name: 'microphone' });
@@ -283,6 +319,125 @@ export class MicrophoneService {
       console.error("[MicrophoneService] Failed to check permissions:", error);
       return false;
     }
+  }
+
+  /**
+   * Get current selected device ID (session-only)
+   */
+  public getCurrentDeviceId(): string {
+    return this.currentDeviceId;
+  }
+
+  /**
+   * Set current device ID and notify listeners (session-only, no database)
+   */
+  public async setCurrentDeviceId(
+    deviceId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`[MicrophoneService] Setting current device to: ${deviceId}`);
+
+      // Validate device is available
+      if (deviceId !== "default") {
+        const isAvailable = await this.isDeviceAvailable(deviceId);
+        if (!isAvailable) {
+          return {
+            success: false,
+            error: `Device ${deviceId} is not available`,
+          };
+        }
+      }
+
+      // Update current device
+      this.currentDeviceId = deviceId;
+      console.log(`[MicrophoneService] Device updated to: ${deviceId}`);
+
+      // Notify all listeners about the change
+      this.deviceChangeCallbacks.forEach((callback) => {
+        try {
+          callback(deviceId);
+        } catch (error) {
+          console.error(
+            "[MicrophoneService] Error in device change callback:",
+            error
+          );
+        }
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error("[MicrophoneService] Failed to set device:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Initialize device selection on app start
+   * Automatically selects the first available device
+   */
+  public async initializeDefaultDevice(): Promise<{
+    success: boolean;
+    deviceId?: string;
+    error?: string;
+  }> {
+    try {
+      console.log("[MicrophoneService] Initializing default device selection");
+
+      const devices = await this.getAvailableDevices();
+
+      if (devices.length > 0) {
+        // Use first available device that's not generic
+        const realDevice = devices.find(
+          (d) => d.hasPermission && d.deviceId !== "default"
+        );
+        const selectedDeviceId = realDevice
+          ? realDevice.deviceId
+          : devices[0].deviceId;
+
+        this.currentDeviceId = selectedDeviceId;
+        console.log(
+          `[MicrophoneService] Initialized with device: ${selectedDeviceId} (${devices.find((d) => d.deviceId === selectedDeviceId)?.label})`
+        );
+
+        return { success: true, deviceId: selectedDeviceId };
+      } else {
+        console.log("[MicrophoneService] No devices found, using default");
+        this.currentDeviceId = "default";
+        return { success: true, deviceId: "default" };
+      }
+    } catch (error) {
+      console.error(
+        "[MicrophoneService] Failed to initialize default device:",
+        error
+      );
+      this.currentDeviceId = "default";
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Register callback for device changes
+   */
+  public onDeviceChange(callback: (deviceId: string) => void): () => void {
+    this.deviceChangeCallbacks.add(callback);
+
+    // Return unsubscribe function
+    return () => {
+      this.deviceChangeCallbacks.delete(callback);
+    };
+  }
+
+  /**
+   * Get constraints for current selected device
+   */
+  public async getCurrentDeviceConstraints(): Promise<MediaTrackConstraints> {
+    return await this.getDeviceConstraints(this.currentDeviceId);
   }
 }
 

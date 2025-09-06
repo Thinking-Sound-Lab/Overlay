@@ -303,7 +303,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       if (settings) {
         dispatch({ type: "SET_SETTINGS", payload: settings });
         console.log("AppContext: Settings updated from auth state:", {
-          defaultMicrophone: settings.defaultMicrophone,
           language: settings.language,
           dictateSoundEffects: settings.dictateSoundEffects,
           muteMusicWhileDictating: settings.muteMusicWhileDictating,

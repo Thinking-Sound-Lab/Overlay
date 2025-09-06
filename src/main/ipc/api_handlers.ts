@@ -3,6 +3,7 @@ import { ExternalAPIManager } from "../services/external_api_manager";
 import { IPCResponse } from "../../shared/types";
 import MicrophoneService from "../services/microphone_service";
 import { DataLoaderService } from "../services/data_loader_service";
+import { WindowManager } from "../windows/window-manager";
 import { sttService } from "../index";
 
 // Re-export IPCResponse type for compatibility
@@ -12,11 +13,13 @@ export class APIHandlers {
   private apiManager: ExternalAPIManager;
   private microphoneService: MicrophoneService;
   private dataLoaderService: DataLoaderService;
+  private windowManager: WindowManager;
 
-  constructor(apiManager: ExternalAPIManager) {
+  constructor(apiManager: ExternalAPIManager, windowManager: WindowManager) {
     this.apiManager = apiManager;
     this.microphoneService = MicrophoneService.getInstance();
     this.dataLoaderService = DataLoaderService.getInstance(apiManager.supabase);
+    this.windowManager = windowManager;
     this.setupHandlers();
   }
 
@@ -113,6 +116,14 @@ export class APIHandlers {
     ipcMain.handle(
       "microphone:getConstraints",
       this.handleGetMicrophoneConstraints.bind(this)
+    );
+    ipcMain.handle(
+      "microphone:getCurrentDeviceConstraints",
+      this.handleGetCurrentDeviceConstraints.bind(this)
+    );
+    ipcMain.handle(
+      "microphone:setCurrentDevice",
+      this.handleSetCurrentDevice.bind(this)
     );
     ipcMain.handle(
       "microphone:requestPermissions",
@@ -361,11 +372,13 @@ export class APIHandlers {
       const result = await this.dataLoaderService.updateUserSettings(settings);
       if (result.success) {
         // Reinitialize STT service if realtime mode changed
-        if (settings.hasOwnProperty('enableRealtimeMode') && sttService) {
-          console.log("[API] Realtime mode setting changed, reinitializing STT service");
+        if (settings.hasOwnProperty("enableRealtimeMode") && sttService) {
+          console.log(
+            "[API] Realtime mode setting changed, reinitializing STT service"
+          );
           await sttService.reinitialize();
         }
-        
+
         return this.createResponse({ success: true });
       } else {
         throw new Error(result.error || "Failed to save settings");
@@ -381,8 +394,21 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.getUserSettings();
-      return this.createResponse(result);
+      // Use DataLoaderService to get cached settings instead of direct database query
+      // This ensures consistency with main process settings
+      const settings = this.dataLoaderService.getUserSettings();
+      console.log(
+        `[API] Full settings object:`,
+        JSON.stringify(settings, null, 2)
+      );
+      console.log(`[API] Returning user settings to renderer`);
+      // Match the same response format as SupabaseService.getUserSettings()
+      const response = this.createResponse({ data: settings, error: null });
+      console.log(
+        `[API] Final API response:`,
+        JSON.stringify(response, null, 2)
+      );
+      return response;
     } catch (error) {
       return this.createResponse(null, error);
     }
@@ -591,13 +617,75 @@ export class APIHandlers {
     }
 
     try {
+      console.log(
+        `[API] Getting microphone constraints for device ID: ${deviceId}`
+      );
       const constraints =
         await this.microphoneService.getDeviceConstraints(deviceId);
+      console.log(`[API] Constraints for device ID: ${deviceId}:`, constraints);
 
       return this.createResponse({
         deviceId,
         constraints,
       });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleGetCurrentDeviceConstraints(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      console.log(`[API] Getting constraints for current selected device`);
+      const currentDeviceId = this.microphoneService.getCurrentDeviceId();
+      const constraints =
+        await this.microphoneService.getCurrentDeviceConstraints();
+
+      console.log(
+        `[API] Current device: ${currentDeviceId}, constraints loaded`
+      );
+      return this.createResponse({
+        deviceId: currentDeviceId,
+        constraints,
+      });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleSetCurrentDevice(
+    event: any,
+    deviceId: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, "Unauthorized sender");
+    }
+
+    try {
+      console.log(`[API] Setting current device to: ${deviceId}`);
+      const result = await this.microphoneService.setCurrentDeviceId(deviceId);
+
+      if (result.success) {
+        // Notify recording window of device change
+        if (this.windowManager) {
+          this.windowManager.sendToRecording("microphone-device-changed", {
+            deviceId: deviceId,
+          });
+        }
+
+        console.log(`[API] Device set successfully to: ${deviceId}`);
+        return this.createResponse({ success: true, deviceId });
+      } else {
+        return this.createResponse(
+          null,
+          result.error || "Failed to set device"
+        );
+      }
     } catch (error) {
       return this.createResponse(null, error);
     }
@@ -674,6 +762,8 @@ export class APIHandlers {
     // NOTE: testDevice listener removed - deprecated method
     ipcMain.removeAllListeners("microphone:validateDevice");
     ipcMain.removeAllListeners("microphone:getConstraints");
+    ipcMain.removeAllListeners("microphone:getCurrentDeviceConstraints");
+    ipcMain.removeAllListeners("microphone:setCurrentDevice");
     ipcMain.removeAllListeners("microphone:requestPermissions");
     ipcMain.removeAllListeners("microphone:checkPermissions");
   }

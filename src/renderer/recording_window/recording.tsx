@@ -27,6 +27,14 @@ const totalLevels = Array(12).fill(0);
 
 export const RecordingWindow: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
+  const [audioConstraints, setAudioConstraints] = useState({
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    sampleRate: SAMPLE_RATE,
+    channelCount: 1,
+    deviceId: { exact: "default" },
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState("");
   const [hovered, setHovered] = useState(false);
@@ -203,22 +211,90 @@ export const RecordingWindow: React.FC = () => {
     };
   }, [isRecording]);
 
+  // Debug: Log whenever audioConstraints changes
+  useEffect(() => {
+    console.log("🎙️ audioConstraints state changed:", audioConstraints);
+  }, [audioConstraints]);
+
+  // Load microphone constraints from session state (no database)
+  useEffect(() => {
+    const loadCurrentMicrophoneConstraints = async () => {
+      try {
+        console.log("🎙️ Loading microphone constraints from session state");
+
+        // Get constraints for current selected device from MicrophoneService
+        const constraintsResult =
+          await window.electronAPI.microphone.getCurrentDeviceConstraints();
+        console.log("🎙️ getCurrentDeviceConstraints result:", constraintsResult);
+
+        if (constraintsResult.success && constraintsResult.data) {
+          console.log("🎙️ constraintsResult.data:", constraintsResult.data);
+          const newConstraints = constraintsResult.data.constraints;
+          console.log("🎙️ Loaded constraints:", newConstraints);
+          setAudioConstraints(newConstraints);
+          console.log("🎙️ Applied session microphone constraints:", newConstraints);
+        } else {
+          console.warn(
+            "🎙️ Failed to get current device constraints, using defaults"
+          );
+        }
+      } catch (error) {
+        console.warn("🎙️ Failed to load microphone constraints:", error);
+      }
+    };
+
+    // Listen for real-time device changes from tray/settings
+    const handleMicrophoneChanged = async (event: any) => {
+      const { deviceId } = event.detail || event;
+      console.log("🎙️ Microphone device changed to:", deviceId);
+
+      try {
+        // Get new constraints for the selected device
+        const constraintsResult =
+          await window.electronAPI.microphone.getConstraints(deviceId);
+        console.log("🎙️ Constraints result:", constraintsResult);
+        if (constraintsResult.success && constraintsResult.data) {
+          const newConstraints = constraintsResult.data.constraints;
+          console.log("🎙️ Updated constraints:", newConstraints);
+          setAudioConstraints(newConstraints);
+          console.log(
+            "🎙️ Applied new microphone constraints for device:",
+            deviceId,
+            "New constraints:",
+            newConstraints
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "🎙️ Failed to update constraints for device:",
+          deviceId,
+          error
+        );
+      }
+    };
+
+    loadCurrentMicrophoneConstraints();
+    window.addEventListener(
+      "microphone-device-changed",
+      handleMicrophoneChanged
+    );
+
+    return () => {
+      window.removeEventListener(
+        "microphone-device-changed",
+        handleMicrophoneChanged
+      );
+    };
+  }, []);
+
   // Start mic/audio streaming
   const startMediaRecording = async () => {
     try {
       setIsRecording(true);
       setIsProcessing(false);
 
-      // Get selected microphone from settings
-      let audioConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: SAMPLE_RATE,
-        channelCount: 1,
-      };
-
-      // getUserMedia will handle device selection and permissions automatically
+      // Use pre-loaded microphone constraints for instant recording start
+      console.log("🎙️ Starting recording with constraints:", audioConstraints);
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
         video: false,
@@ -365,7 +441,7 @@ export const RecordingWindow: React.FC = () => {
       );
       window.removeEventListener("processing-stage", handleProcessingStage);
     };
-  }, [isRecording, isProcessing]);
+  }, [isRecording, isProcessing, audioConstraints]);
 
   const expanded =
     hovered || isRecording || isProcessing || windowState === "processing";

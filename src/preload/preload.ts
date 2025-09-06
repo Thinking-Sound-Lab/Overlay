@@ -134,6 +134,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("microphone:validateDevice", deviceId),
     getConstraints: (deviceId: string) =>
       ipcRenderer.invoke("microphone:getConstraints", deviceId),
+    getCurrentDeviceConstraints: () =>
+      ipcRenderer.invoke("microphone:getCurrentDeviceConstraints"),
+    setCurrentDevice: (deviceId: string) =>
+      ipcRenderer.invoke("microphone:setCurrentDevice", deviceId),
     requestPermissions: () =>
       ipcRenderer.invoke("microphone:requestPermissions"),
     checkPermissions: () => ipcRenderer.invoke("microphone:checkPermissions"),
@@ -227,6 +231,12 @@ ipcRenderer.on("open-settings-dialog", () => {
 ipcRenderer.on("session-restoration-status", (_, status) => {
   window.dispatchEvent(
     new CustomEvent("session-restoration-status", { detail: status })
+  );
+});
+
+ipcRenderer.on("microphone-device-changed", (_, deviceData) => {
+  window.dispatchEvent(
+    new CustomEvent("microphone-device-changed", { detail: deviceData })
   );
 });
 
@@ -341,6 +351,8 @@ declare global {
         // NOTE: testDevice removed - deprecated method that triggers unwanted microphone access
         validateDevice: (deviceId: string) => Promise<any>;
         getConstraints: (deviceId: string) => Promise<any>;
+        getCurrentDeviceConstraints: () => Promise<any>;
+        setCurrentDevice: (deviceId: string) => Promise<any>;
         requestPermissions: () => Promise<any>;
         checkPermissions: () => Promise<any>;
       };

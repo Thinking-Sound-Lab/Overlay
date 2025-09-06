@@ -31,7 +31,7 @@ export interface UserSettings {
   user_id: string;
   settings: {
     // General section
-    defaultMicrophone?: string;
+    defaultMicrophone?: string; // DEPRECATED: Use session-only MicrophoneService instead
     language?: string;
 
     // System section

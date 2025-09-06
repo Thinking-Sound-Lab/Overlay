@@ -6,7 +6,6 @@
 
 export const DEFAULT_SETTINGS = {
   // General section
-  defaultMicrophone: "default",
   language: "en",
 
   // System section
