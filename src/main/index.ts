@@ -1,17 +1,14 @@
 import * as path from "path";
 import {
   app,
-  BrowserWindow,
   globalShortcut,
   ipcMain,
   Menu,
   Tray,
   nativeImage,
-  screen,
   shell,
   dialog,
 } from "electron";
-import Store from "electron-store";
 import { autoUpdater } from "electron-updater";
 
 // Handle Squirrel events on Windows (must be early in the main process)
@@ -30,16 +27,13 @@ import {
   SpeechMetrics,
   TranslationResult,
 } from "../shared/types";
-import { WindowAnimator } from "./helpers/windowAnimator";
 import { WindowManager } from "./windows/window-manager";
 import { ExternalAPIManager } from "./services/external_api_manager";
 import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
-import { validateTranscriptData } from "./utils/validation";
 import { config } from "../../config/environment";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
-import { DEFAULT_SETTINGS } from "../shared/constants/default-settings";
 import MicrophoneService from "./services/microphone_service";
 // Webpack entry points
 // declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
@@ -379,11 +373,13 @@ const createMainWindow = () => {
         await handleAuthenticationSuccess(currentUser, "Window Recreation");
       } else {
         console.log(
-          "[Main] No authenticated user, sending unauthenticated state to new window"
+          "[Main] Session restoration completed but no active user - starting fresh auth flow"
         );
+        // Instead of sending error, just start fresh auth flow
+        // This is normal for first-time users or after logout
         sendUnauthenticatedStateToRenderer(
-          "No active session",
-          "Window Recreation"
+          undefined, // No error message - this is expected behavior
+          "Window Recreation - Fresh Start"
         );
       }
     } else {
@@ -787,6 +783,44 @@ const handleOAuthCallback = async (url: string) => {
     );
   }
 };
+
+// Single instance handling to prevent multiple app instances
+// This is especially important for Windows protocol handling
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  console.log("[Main] Another instance is running, quitting...");
+  app.quit();
+} else {
+  // This is the first instance, handle second instance attempts
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    console.log("[Main] Second instance detected, focusing existing window");
+    
+    // Focus main window if it exists
+    if (windowManager?.getMainWindow()) {
+      const mainWindow = windowManager.getMainWindow();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      
+      // On Windows, bring to front
+      if (process.platform === 'win32') {
+        mainWindow.show();
+      }
+    }
+    
+    // Handle protocol URL from command line (Windows specific)
+    // On Windows, protocol URLs are passed as command line arguments to new instances
+    if (process.platform === 'win32' && commandLine.length > 1) {
+      // Look for overlay:// protocol in command line arguments
+      const protocolArg = commandLine.find(arg => arg.startsWith('overlay://'));
+      if (protocolArg) {
+        console.log("[Main] Processing protocol URL from second instance:", protocolArg);
+        handleOAuthCallback(protocolArg);
+      }
+    }
+  });
+}
 
 app.whenReady().then(async () => {
   try {
