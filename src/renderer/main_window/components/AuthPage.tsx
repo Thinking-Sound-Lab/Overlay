@@ -97,13 +97,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
       }
 
       if (!result.success) {
-        setError(result.error || "Failed to send magic link");
+        setError(result.error || "Failed to send link");
       } else {
         console.log(
-          `AuthPage: Magic link ${isLogin ? 'sign in' : 'sign up'} sent successfully`
+          `AuthPage: Link ${isLogin ? 'sign in' : 'sign up'} sent successfully`
         );
         setSuccessMessage(
-          `Magic link sent to ${email}! Check your email and click the link to ${isLogin ? 'sign in' : 'complete signup'}.`
+          `Link sent to ${email}! Check your email and click the link to ${isLogin ? 'sign in' : 'complete signup'}.`
         );
         // Store signup info for post-authentication handling (no immediate redirect)
         if (!isLogin) {
@@ -111,8 +111,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
         }
       }
     } catch (error) {
-      console.error(`AuthPage: Magic link ${isLogin ? 'sign in' : 'sign up'} error:`, error);
-      setError(`Failed to send magic link`);
+      console.error(`AuthPage: Link ${isLogin ? 'sign in' : 'sign up'} error:`, error);
+      setError(`Failed to send link`);
     } finally {
       setIsLoading(false);
     }
@@ -140,20 +140,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8 bg-gray-50 relative h-full">
-      <Card className="w-full max-w-md">
+    <div className="flex-1 flex items-center justify-center p-8 bg-gray-100 relative h-full">
+      <Card className="w-full max-w-md bg-gray-100 border-0 shadow-none">
         <CardHeader className="text-center">
-          <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-gray-100 rounded-full">
-              <Mail className="h-8 w-8 text-gray-600" />
-            </div>
-          </div>
           <CardTitle className="text-xl">
             {isLogin ? "Welcome back" : "Create your account"}
           </CardTitle>
           <CardDescription>
             {isLogin 
-              ? "Enter your email to receive a magic link"
+              ? "Enter your email to receive a secure link"
               : "Enter your details to get started"
             }
           </CardDescription>
@@ -212,12 +207,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
               {isLoading ? (
                 <span className="flex items-center gap-2">
                   <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                  Sending magic link...
+                  Sending link...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  Send magic link
+                  Send Link
                 </span>
               )}
             </Button>
@@ -286,6 +281,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onSignIn, onSignUp }) => {
                 </span>
               )}
             </button>
+          </div>
+          
+          {/* Privacy Policy and Terms of Use */}
+          <div className="text-center text-xs text-gray-500 pt-4 border-t border-gray-100">
+            <p>
+              By continuing, you agree to our{" "}
+              <button className="text-gray-600 hover:text-gray-800 underline transition-colors">
+                Terms of Service
+              </button>{" "}
+              and{" "}
+              <button className="text-gray-600 hover:text-gray-800 underline transition-colors">
+                Privacy Policy
+              </button>
+            </p>
           </div>
         </CardContent>
       </Card>

@@ -107,7 +107,7 @@ export class SupabaseService {
       console.log("SupabaseService: Initial session restoration completed", {
         hasUser: !!this.currentUser,
         hasSession: !!this.currentSession,
-        userEmail: this.currentUser?.email
+        userEmail: this.currentUser?.email,
       });
     }
   }
@@ -262,6 +262,7 @@ export class SupabaseService {
       return { data: null as any, error };
     }
   }
+
 
   async signInWithGoogle() {
     try {
@@ -535,20 +536,42 @@ export class SupabaseService {
     }
   }
 
-  async getTranscripts(limit = 50) {
+  async getTranscripts(limit = 20, offset = 0) {
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
 
     try {
-      const { data, error } = await this.supabase
+      // Get paginated transcripts
+      const { data: transcripts, error: transcriptsError } = await this.supabase
         .from("transcripts")
         .select("*")
         .eq("user_id", this.currentUser.id)
         .order("created_at", { ascending: false })
-        .limit(limit);
+        .range(offset, offset + limit - 1);
 
-      return { data, error };
+      if (transcriptsError) {
+        return { data: null, error: transcriptsError };
+      }
+
+      // Get total count for pagination info
+      const { count: totalCount, error: countError } = await this.supabase
+        .from("transcripts")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", this.currentUser.id);
+
+      if (countError) {
+        return { data: null, error: countError };
+      }
+
+      // Return both transcripts and total count
+      return {
+        data: {
+          transcripts: transcripts || [],
+          totalCount: totalCount || 0,
+        },
+        error: null,
+      };
     } catch (error) {
       console.error("SupabaseService: Get transcripts error:", error);
       return { data: null as any, error };

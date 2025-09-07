@@ -15,7 +15,7 @@ export const DEFAULT_SETTINGS = {
   // Personalization section
   outputMode: "both",
   useAI: true,
-  enableRealtimeMode: false,
+  enableRealtimeMode: true,
   enableTranslation: false,
   targetLanguage: "en",
 

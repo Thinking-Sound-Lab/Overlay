@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "./ui/card";
 import { Badge } from "./ui/badge";
+import { Pagination } from "./ui/pagination";
 import { Flame, FileText, Star, Mic } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 
@@ -26,9 +27,61 @@ interface TranscriptEntry {
 }
 
 export const HomePage: React.FC = () => {
-  const { state } = useAppContext();
-  const { user, userStats, transcripts } = state;
+  const { state, setTranscripts } = useAppContext();
+  const { user, userStats, transcripts, totalTranscripts, isLoading } = state;
   const userName = user?.name || user?.email?.split("@")[0] || "User";
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
+  const itemsPerPage = 20; // Fixed at 20 items per page
+
+  console.log("HomePage render - state:", {
+    transcriptsCount: transcripts.length,
+    totalTranscripts,
+    currentPage,
+    isLoading,
+  });
+
+  // Load transcripts when pagination changes (but not on initial load)
+  useEffect(() => {
+    const loadTranscripts = async () => {
+      if (!user) return;
+
+      // Skip loading on initial render (page 1) - let AppContext handle it
+      if (currentPage === 1 && isInitialLoad) {
+        setIsInitialLoad(false);
+        return;
+      }
+
+      try {
+        setIsPaginationLoading(true);
+        const offset = (currentPage - 1) * itemsPerPage;
+        const response = await window.electronAPI.db.getTranscripts(
+          itemsPerPage,
+          offset
+        );
+
+        if (response.success && response.data) {
+          console.log("Response data:", response.data);
+          const { transcripts, totalCount } = response.data.data;
+          setTranscripts(transcripts, totalCount);
+        }
+      } catch (error) {
+        console.error("Error loading transcripts:", error);
+      } finally {
+        setIsPaginationLoading(false);
+      }
+    };
+
+    loadTranscripts();
+  }, [currentPage, user]);
+
+  // Handle pagination changes
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
 
   const formatDate = (date: Date | string) => {
     // Ensure we have a proper Date object
@@ -210,6 +263,15 @@ export const HomePage: React.FC = () => {
               </Card>
             </div>
           ))
+        )}
+
+        {totalTranscripts > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalItems={totalTranscripts}
+            onPageChange={handlePageChange}
+            isLoading={isPaginationLoading}
+          />
         )}
       </div>
     </div>

@@ -95,8 +95,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   db: {
     saveTranscript: (transcript: any) =>
       ipcRenderer.invoke("db:saveTranscript", transcript),
-    getTranscripts: (limit?: number) =>
-      ipcRenderer.invoke("db:getTranscripts", limit),
+    getTranscripts: (limit?: number, offset?: number) =>
+      ipcRenderer.invoke("db:getTranscripts", limit, offset),
     saveUserSettings: (settings: any) =>
       ipcRenderer.invoke("db:saveUserSettings", settings),
     getUserSettings: () => ipcRenderer.invoke("db:getUserSettings"),
@@ -314,7 +314,7 @@ declare global {
 
       db: {
         saveTranscript: (transcript: any) => Promise<any>;
-        getTranscripts: (limit?: number) => Promise<any>;
+        getTranscripts: (limit?: number, offset?: number) => Promise<any>;
         saveUserSettings: (settings: any) => Promise<any>;
         getUserSettings: () => Promise<any>;
         getUserStats: () => Promise<any>;

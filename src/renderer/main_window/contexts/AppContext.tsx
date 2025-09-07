@@ -29,6 +29,7 @@ interface AppState {
   // Data state
   userStats: UserStats;
   transcripts: UITranscriptEntry[];
+  totalTranscripts: number;
   settings: Settings;
 
   // Recording state
@@ -43,7 +44,10 @@ type AppAction =
   | { type: "SET_AUTHENTICATED"; payload: boolean }
   | { type: "SET_ACTIVE_VIEW"; payload: ViewType }
   | { type: "SET_USER_STATS"; payload: UserStats }
-  | { type: "SET_TRANSCRIPTS"; payload: UITranscriptEntry[] }
+  | {
+      type: "SET_TRANSCRIPTS";
+      payload: { transcripts: UITranscriptEntry[]; totalCount: number };
+    }
   | { type: "ADD_TRANSCRIPT"; payload: UITranscriptEntry }
   | { type: "SET_SETTINGS"; payload: Settings }
   | {
@@ -65,6 +69,7 @@ const initialState: AppState = {
     streakDays: 0,
   },
   transcripts: [],
+  totalTranscripts: 0,
   settings: DEFAULT_SETTINGS,
   isRecording: false,
   isProcessing: false,
@@ -85,11 +90,16 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case "SET_USER_STATS":
       return { ...state, userStats: action.payload };
     case "SET_TRANSCRIPTS":
-      return { ...state, transcripts: action.payload };
+      return {
+        ...state,
+        transcripts: action.payload.transcripts,
+        totalTranscripts: action.payload.totalCount,
+      };
     case "ADD_TRANSCRIPT":
       return {
         ...state,
-        transcripts: [action.payload, ...state.transcripts.slice(0, 99)], // Keep only 100 transcripts
+        transcripts: [action.payload, ...state.transcripts.slice(0, 19)], // Keep only 20 transcripts in memory
+        totalTranscripts: state.totalTranscripts + 1, // Increment total count
       };
     case "SET_SETTINGS":
       return { ...state, settings: action.payload };
@@ -121,7 +131,10 @@ interface AppContextType {
   setAuthenticated: (authenticated: boolean) => void;
   setActiveView: (view: ViewType) => void;
   setUserStats: (stats: UserStats) => void;
-  setTranscripts: (transcripts: UITranscriptEntry[]) => void;
+  setTranscripts: (
+    transcripts: UITranscriptEntry[],
+    totalCount?: number
+  ) => void;
   addTranscript: (transcript: UITranscriptEntry) => void;
   setSettings: (settings: Settings) => void;
   setRecordingState: (isRecording: boolean, isProcessing: boolean) => void;
@@ -262,6 +275,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         statistics,
         settings,
         recentTranscripts,
+        totalTranscriptCount,
         error,
       } = event.detail;
 
@@ -292,10 +306,18 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
       // Update transcripts if provided
       if (recentTranscripts && Array.isArray(recentTranscripts)) {
-        dispatch({ type: "SET_TRANSCRIPTS", payload: recentTranscripts });
+        dispatch({
+          type: "SET_TRANSCRIPTS",
+          payload: {
+            transcripts: recentTranscripts,
+            totalCount: totalTranscriptCount ?? recentTranscripts.length,
+          },
+        });
         console.log(
           "AppContext: Transcripts updated from auth state:",
-          recentTranscripts.length
+          recentTranscripts.length,
+          "total:",
+          totalTranscriptCount ?? recentTranscripts.length
         );
       }
 
@@ -391,8 +413,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         dispatch({ type: "SET_ACTIVE_VIEW", payload: view }),
       setUserStats: (stats: UserStats) =>
         dispatch({ type: "SET_USER_STATS", payload: stats }),
-      setTranscripts: (transcripts: UITranscriptEntry[]) =>
-        dispatch({ type: "SET_TRANSCRIPTS", payload: transcripts }),
+      setTranscripts: (transcripts: UITranscriptEntry[], totalCount?: number) =>
+        dispatch({
+          type: "SET_TRANSCRIPTS",
+          payload: {
+            transcripts: transcripts || [],
+            totalCount: totalCount ?? (transcripts || []).length,
+          },
+        }),
       addTranscript: (transcript: UITranscriptEntry) =>
         dispatch({ type: "ADD_TRANSCRIPT", payload: transcript }),
       setSettings: (settings: Settings) =>

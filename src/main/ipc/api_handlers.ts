@@ -345,14 +345,15 @@ export class APIHandlers {
 
   private async handleGetTranscripts(
     event: any,
-    limit?: number
+    limit?: number,
+    offset?: number
   ): Promise<IPCResponse> {
     if (!this.validateSender(event.sender)) {
       return this.createResponse(null, new Error("Unauthorized"));
     }
 
     try {
-      const result = await this.apiManager.supabase.getTranscripts(limit);
+      const result = await this.dataLoaderService.getTranscripts(limit, offset);
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
