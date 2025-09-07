@@ -83,6 +83,7 @@ jobs:
           # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
           # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
       # macOS Release Build
       - name: Build and publish macOS
@@ -106,7 +107,7 @@ jobs:
           # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
           # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
-
+          BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
       # Upload release artifacts
       - name: Upload release artifacts
