@@ -20,7 +20,17 @@
     "publish": "cross-env NODE_ENV=production electron-forge publish",
     "publish:win": "cross-env NODE_ENV=production electron-forge publish --platform=win32",
     "publish:mac": "cross-env NODE_ENV=production electron-forge publish --platform=darwin",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest --selectProjects main renderer",
+    "test:integration": "jest tests/integration",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:all": "npm run test && npm run test:e2e",
+    "test:ci": "npm run test:coverage && npm run test:e2e"
   },
   "keywords": [
     "dictation",
@@ -31,6 +41,10 @@
   "author": {
     "name": "Abhishekucs",
     "email": "abhishekucskumar@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Abhishekucs/Overlay.git"
   },
   "build": {
     "appId": "com.overlay.app",
@@ -91,7 +105,14 @@
     "@electron-forge/plugin-fuses": "^7.8.3",
     "@electron-forge/plugin-webpack": "^7.8.3",
     "@electron/fuses": "^1.8.0",
+    "@kayahr/jest-electron-runner": "^29.15.0",
+    "@playwright/test": "^1.55.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/ffprobe-static": "^2.0.3",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.2.1",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
@@ -106,11 +127,14 @@
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
     "fork-ts-checker-webpack-plugin": "^7.3.0",
+    "jest": "^30.1.3",
+    "jest-environment-jsdom": "^30.1.2",
     "node-loader": "^2.1.0",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.1.1",
     "style-loader": "^3.3.4",
     "tailwindcss": "^3.4.17",
+    "ts-jest": "^29.4.1",
     "ts-loader": "^9.5.2",
     "typescript": "~4.5.4"
   },

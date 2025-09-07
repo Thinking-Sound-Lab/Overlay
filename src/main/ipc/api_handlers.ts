@@ -704,7 +704,7 @@ export class APIHandlers {
 
       if (result.success) {
         return this.createResponse({
-          devices: result.devices,
+          devices: result.devices || [],
           message: "Microphone permissions granted and device list refreshed",
         });
       } else {

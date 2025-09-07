@@ -420,6 +420,7 @@ export const RecordingWindow: React.FC = () => {
       setProcessingStage("");
     };
 
+
     const handleProcessingStage = (event: any) => {
       const stage = event.detail;
       setProcessingStage(typeof stage === "string" ? stage : stage.toString());

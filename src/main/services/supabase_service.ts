@@ -104,7 +104,11 @@ export class SupabaseService {
     } finally {
       // Mark initial restoration as complete
       this.isInitialRestorationComplete = true;
-      console.log("SupabaseService: Initial session restoration completed");
+      console.log("SupabaseService: Initial session restoration completed", {
+        hasUser: !!this.currentUser,
+        hasSession: !!this.currentSession,
+        userEmail: this.currentUser?.email
+      });
     }
   }
 

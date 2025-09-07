@@ -10,7 +10,8 @@ import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
 import { DataLoaderService } from "./data_loader_service";
-import robot from "robotjs";
+import { getLanguageDisplayName } from "../../shared/constants/languages";
+// robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
   private static instance: TranslationService;
@@ -19,7 +20,7 @@ export class TranslationService {
   private textInsertionService: TextInsertionService;
 
   // Single language model configuration
-  private readonly LANGUAGE_MODEL = "meta-llama/Llama-4-Scout-17B-16E-Instruct";
+  private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
 
   // Application context to mode mapping for auto-detection
   private readonly CONTEXT_TO_MODE_MAPPING = {
@@ -100,8 +101,10 @@ export class TranslationService {
       let selectedMode = settings.selectedMode;
       if (settings.enableAutoDetection) {
         try {
-          const activeApp = await this.applicationDetector.getActiveApplication();
-          const detectedMode = this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
+          const activeApp =
+            await this.applicationDetector.getActiveApplication();
+          const detectedMode =
+            this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
           if (detectedMode) {
             selectedMode = detectedMode;
             console.log("[Translation] Auto-detected mode:", detectedMode);
@@ -128,7 +131,8 @@ export class TranslationService {
             meeting_notes: settings.meetingNotesPrompt,
             creative_writing: settings.creativeWritingPrompt,
           };
-          const promptForMode = modePromptMap[selectedMode as keyof typeof modePromptMap];
+          const promptForMode =
+            modePromptMap[selectedMode as keyof typeof modePromptMap];
           console.log("[Translation] Mode-specific prompt:", promptForMode);
 
           if (promptForMode && promptForMode.trim()) {
@@ -136,18 +140,23 @@ export class TranslationService {
           }
         }
       } else {
-        console.log("[Translation] Auto-detection disabled, skipping mode-specific formatting");
+        console.log(
+          "[Translation] Auto-detection disabled, skipping mode-specific formatting"
+        );
       }
 
       // Build optimized prompt for better LLM performance
       let activePrompt = `You are a transcript post-processor. Process the following text according to these instructions:
 
 ## WHAT TO CHANGE:
-${settings.language !== settings.targetLanguage ? `- Translate from ${settings.language} to ${settings.targetLanguage}` : '- Keep original language'}
+${settings.language !== settings.targetLanguage && settings.enableTranslation ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
 - Fix spelling errors and typos
 - Correct grammar mistakes
 - Add proper punctuation and capitalization
 - Convert emoji words to actual emojis (e.g., "fire emoji" → "🔥", "heart emoji" → "❤️")
+- Convert it to clean and proper text which convey the same meaning
+- Convert or restructure the text to make it more sensible 
+- Change the words in the text from the context of whole sentence which seems illogical
 
 ## WHAT TO PRESERVE:
 - Original meaning and intent
@@ -187,14 +196,16 @@ Output: "The weather is good. 🔥"
 Input: "send email to john about meeting tomorrow"
 Output: "Send email to John about meeting tomorrow."
 
+Input: "umm, I will be there at 5, sorry no 6."
+Output: "I will be there at 6."
+
 ---
 
 Text to process: "${transcript}"
-
-Processed text:`;
+`;
 
       const response = await openai.chat.completions.create({
-        model: "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        model: this.LANGUAGE_MODEL,
         messages: [
           {
             role: "user",
@@ -205,12 +216,17 @@ Processed text:`;
         max_tokens: Math.max(300, this.countWords(transcript) * 2), // Optimized token limit
       });
 
-      const finalText = response.choices[0].message.content;
+      let finalText = response.choices[0].message.content;
+      console.log("[Translation] Raw LLM response:", finalText);
+
+      // Parse the response to extract only the final processed text
+      //   finalText = this.extractFinalText(finalText);
+      //   console.log("[Translation] Extracted final text:", finalText);
 
       // DEPRECATED: Old two-step translation process replaced with single LLM call
       // The following code was used for separate translation and grammar correction steps
       // Now using single unified prompt for better performance and consistency
-      
+
       /* DEPRECATED - Old translation logic:
       if (
         settings.enableTranslation &&
@@ -277,7 +293,10 @@ Processed text:`;
                 sourceLanguage: sourceLanguage,
                 targetLanguage: settings.targetLanguage,
                 confidence: 0.9, // High confidence for unified LLM approach
-                wordCountRatio: this.countWords(transcript) === 0 ? 1.0 : this.countWords(finalText) / this.countWords(transcript),
+                wordCountRatio:
+                  this.countWords(transcript) === 0
+                    ? 1.0
+                    : this.countWords(finalText) / this.countWords(transcript),
                 detectedLanguage: sourceLanguage,
               }
             : { wasTranslated: false, detectedLanguage: sourceLanguage };
@@ -287,7 +306,8 @@ Processed text:`;
                 modeBasedFormattingApplied: !!modeSpecificPrompt,
                 selectedMode: selectedMode,
                 autoDetectionEnabled: settings.enableAutoDetection,
-                customPromptUsed: selectedMode === "custom" && !!settings.customPrompt?.trim(),
+                customPromptUsed:
+                  selectedMode === "custom" && !!settings.customPrompt?.trim(),
               }
             : { modeBasedFormattingApplied: false };
 
@@ -650,25 +670,25 @@ IMPORTANT: Apply formatting ONLY to statements, NOT to questions. Questions must
   private async insertTextNative(text: string, onComplete?: () => void) {
     try {
       console.log(
-        "[Translation] Inserting text via native platform APIs:",
+        "[Translation] Inserting text via clipboard method (better Unicode support):",
         text
       );
 
-      robot.typeString(text);
-
-      /* DEPRECATED - TextInsertionService approach:
-      // This was replaced with direct robot.typeString() for better reliability
+      // Use TextInsertionService which will use clipboard method for better Unicode support
       const success = await this.textInsertionService.insertText(text, {
         delay: 100, // Small delay to ensure target application is ready
         preserveClipboard: true, // Preserve user's clipboard content
       });
 
       if (success) {
-        console.log("[Translation] Text inserted successfully via native APIs");
+        console.log(
+          "[Translation] Text inserted successfully via clipboard method"
+        );
       } else {
-        console.warn("[Translation] Text insertion failed via native APIs");
+        console.warn(
+          "[Translation] Text insertion failed via clipboard method"
+        );
       }
-      */
 
       // Fire callback when text insertion is complete (success or failure)
       onComplete?.();

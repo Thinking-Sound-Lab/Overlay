@@ -43,19 +43,11 @@ export class TextInsertionService {
     }
 
     try {
-      switch (this.platform) {
-        case 'darwin':
-          return await this.insertTextMacOS(processedText, preserveClipboard);
-        case 'win32':
-          return await this.insertTextWindows(processedText, preserveClipboard);
-        case 'linux':
-          return await this.insertTextLinux(processedText, preserveClipboard);
-        default:
-          console.error(`[TextInsertion] Unsupported platform: ${this.platform}`);
-          return false;
-      }
+      // Use clipboard method directly for better Unicode support
+      console.log(`[TextInsertion] Using clipboard method for ${this.platform} (better Unicode support)`);
+      return await this.insertTextViaClipboard(processedText, preserveClipboard, this.platform);
     } catch (error) {
-      console.error("[TextInsertion] Failed to insert text:", error);
+      console.error("[TextInsertion] Failed to insert text via clipboard:", error);
       return false;
     }
   }

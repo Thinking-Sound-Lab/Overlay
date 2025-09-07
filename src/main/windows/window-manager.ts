@@ -58,11 +58,17 @@ export class WindowManager {
 
     const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
     
+    // Windows-specific positioning to avoid taskbar overlap
+    // On Windows, position window above the taskbar with proper margin
+    const isWindows = process.platform === 'win32';
+    const taskbarMargin = isWindows ? 10 : 0; // Add margin on Windows to avoid taskbar
+    const recordingWindowY = screenHeight - WINDOW_SIZES.compact.height - taskbarMargin;
+    
     this.recordingWindow = new BrowserWindow({
       width: WINDOW_SIZES.compact.width,
       height: WINDOW_SIZES.compact.height,
       x: Math.round((screenWidth - WINDOW_SIZES.compact.width) / 2),
-      y: screenHeight,
+      y: recordingWindowY,
       frame: false,
       alwaysOnTop: true,
       skipTaskbar: true,
@@ -91,8 +97,10 @@ export class WindowManager {
     const windowHeight = 50;
     
     // Position above recording window (8 pixels gap)
-    const recordingWindowX = Math.round((screenWidth - WINDOW_SIZES.compact.width) / 2);
-    const recordingWindowY = screenHeight;
+    // Use same positioning logic as recording window for consistency
+    const isWindows = process.platform === 'win32';
+    const taskbarMargin = isWindows ? 10 : 0;
+    const recordingWindowY = screenHeight - WINDOW_SIZES.compact.height - taskbarMargin;
     const informationWindowX = Math.round((screenWidth - windowWidth) / 2);
     const informationWindowY = recordingWindowY - windowHeight - 8;
     
