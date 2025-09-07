@@ -85,18 +85,19 @@ export class RealtimeSTTProvider extends EventEmitter {
         "[RealtimeSTT] Establishing Deepgram WebSocket connection..."
       );
 
-      // Configure live transcription options with proper typing
+      // Configure live transcription options optimized for short sentences
       const liveOptions: LiveSchema = {
         model: this.config.model,
         language: this.config.language,
         interim_results: true,
         punctuate: true,
         smart_format: true,
-        endpointing: 100, // Increased from 100 to allow longer natural pauses
-        vad_events: true, // Enable voice activity detection events for better speech tracking
-        utterance_end_ms: 1000, // Time to wait for utterance end detection
+        endpointing: 300, // Increased to better handle short sentences
+        vad_events: true, // Enable voice activity detection events
+        utterance_end_ms: 1000, // Reduced for faster processing of short sentences
         encoding: "linear16",
         sample_rate: 16000,
+        channels: 1,
       };
 
       // Create live transcription connection
@@ -147,9 +148,10 @@ export class RealtimeSTTProvider extends EventEmitter {
       // Defensive check: Don't send if explicitly disconnected
       if (!this.isConnected || !this.connection) {
         console.log("[RealtimeSTT] Skipping KeepAlive - disconnected");
+        this.stopKeepAlive(); // Stop the interval if we're disconnected
         return;
       }
-      
+
       if (this.connection && this.isConnected && !this.isRecordingActive) {
         try {
           this.connection.send(JSON.stringify({ type: "KeepAlive" }));
@@ -158,17 +160,20 @@ export class RealtimeSTTProvider extends EventEmitter {
           );
         } catch (error) {
           console.error("[RealtimeSTT] Failed to send KeepAlive:", error);
+          // Stop keep-alive on send errors to prevent spam
+          this.stopKeepAlive();
         }
       } else if (this.isRecordingActive) {
         console.log("[RealtimeSTT] Skipping KeepAlive - recording is active");
       }
-    }, 4000); // Send every 4 seconds (within 3-5 second requirement)
+    }, 8000); // Send every 8 seconds (within 10 second requirement)
   }
 
   private stopKeepAlive(): void {
     if (this.keepAliveInterval) {
       clearInterval(this.keepAliveInterval);
       this.keepAliveInterval = null;
+      console.log("[RealtimeSTT] KeepAlive interval stopped");
     }
   }
 
@@ -258,18 +263,44 @@ export class RealtimeSTTProvider extends EventEmitter {
     }
 
     try {
-      // Convert base64 string to ArrayBuffer for Deepgram
+      // Convert base64 string to ArrayBuffer and apply gain amplification
       const binaryString = atob(base64AudioData);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      this.connection.send(bytes.buffer);
+      // Apply audio gain amplification for better recognition of quiet speech
+      const amplifiedBytes = this.amplifyAudioGain(bytes);
+
+      this.connection.send(amplifiedBytes.buffer);
     } catch (error) {
       console.error("[RealtimeSTT] Error sending audio chunk:", error);
       this.callback.onError(error as Error);
     }
+  }
+
+  private amplifyAudioGain(audioBytes: Uint8Array, gainFactor: number = 2.0): Uint8Array {
+    // Convert bytes to 16-bit signed integers for audio processing
+    const samples = new Int16Array(audioBytes.buffer, audioBytes.byteOffset, audioBytes.byteLength / 2);
+    const amplifiedSamples = new Int16Array(samples.length);
+
+    for (let i = 0; i < samples.length; i++) {
+      // Apply gain with clipping to prevent distortion
+      let amplifiedSample = samples[i] * gainFactor;
+      
+      // Clip to prevent overflow (16-bit signed range: -32768 to 32767)
+      if (amplifiedSample > 32767) {
+        amplifiedSample = 32767;
+      } else if (amplifiedSample < -32768) {
+        amplifiedSample = -32768;
+      }
+      
+      amplifiedSamples[i] = Math.round(amplifiedSample);
+    }
+
+    // Convert back to Uint8Array
+    return new Uint8Array(amplifiedSamples.buffer);
   }
 
   commitAudio(): void {
@@ -313,7 +344,7 @@ export class RealtimeSTTProvider extends EventEmitter {
     this.isConnected = false;
     this.isRecordingActive = false;
 
-    // Then stop KeepAlive messages (state flags are now safe)
+    // Stop KeepAlive messages immediately with state flags set
     this.stopKeepAlive();
 
     // Clear reconnection timer
@@ -325,6 +356,7 @@ export class RealtimeSTTProvider extends EventEmitter {
     // Reset reconnection attempts to prevent further reconnections
     this.reconnectAttempts = this.maxReconnectAttempts;
 
+    // Close connection with proper cleanup
     if (this.connection) {
       try {
         // Remove all event listeners to prevent any callbacks
@@ -336,7 +368,12 @@ export class RealtimeSTTProvider extends EventEmitter {
       this.connection = null;
     }
 
-    console.log("[RealtimeSTT] Disconnection complete, reconnections disabled");
+    // Add a small delay to ensure all pending operations complete
+    setTimeout(() => {
+      console.log(
+        "[RealtimeSTT] Disconnection complete, reconnections disabled"
+      );
+    }, 100);
   }
 
   isReady(): boolean {

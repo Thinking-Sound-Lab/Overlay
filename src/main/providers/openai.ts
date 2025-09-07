@@ -8,10 +8,16 @@ import { analyzeAudioSilence } from "../helpers/audioAnalyzer";
 import { STTClient } from "../../shared/types";
 
 export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.BASETEN_API_KEY,
   timeout: 60000,
   maxRetries: 3,
   baseURL: "https://inference.baseten.co/v1",
+});
+
+export const defaultOpenAI = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 60000,
+  maxRetries: 3,
 });
 
 export type { STTClient };
@@ -47,7 +53,7 @@ export async function createWhisperSTT({
       // Transcribe with Whisper
       const result = await transcribeWithWhisper(
         tempAudioPath,
-        openai,
+        defaultOpenAI,
         language
       );
 
@@ -81,7 +87,33 @@ export async function createWhisperSTT({
 function combineAudioChunks(audioChunks: string[]): Buffer {
   // Convert base64 chunks to buffers and combine
   const buffers = audioChunks.map((chunk) => Buffer.from(chunk, "base64"));
-  return Buffer.concat(buffers);
+  const combinedBuffer = Buffer.concat(buffers);
+  
+  // Apply audio gain amplification for better recognition of quiet speech
+  return amplifyAudioGain(combinedBuffer);
+}
+
+function amplifyAudioGain(audioBuffer: Buffer, gainFactor: number = 2.0): Buffer {
+  // Convert buffer to 16-bit signed integers for audio processing
+  const samples = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength / 2);
+  const amplifiedSamples = new Int16Array(samples.length);
+
+  for (let i = 0; i < samples.length; i++) {
+    // Apply gain with clipping to prevent distortion
+    let amplifiedSample = samples[i] * gainFactor;
+    
+    // Clip to prevent overflow (16-bit signed range: -32768 to 32767)
+    if (amplifiedSample > 32767) {
+      amplifiedSample = 32767;
+    } else if (amplifiedSample < -32768) {
+      amplifiedSample = -32768;
+    }
+    
+    amplifiedSamples[i] = Math.round(amplifiedSample);
+  }
+
+  // Convert back to Buffer
+  return Buffer.from(amplifiedSamples.buffer);
 }
 
 async function createTempAudioFile(audioBuffer: Buffer): Promise<string> {

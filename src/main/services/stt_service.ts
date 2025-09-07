@@ -234,6 +234,9 @@ class STTService {
       );
       this.realtimeProvider.disconnect();
       this.realtimeProvider = null;
+      
+      // Add a small delay to ensure complete cleanup before proceeding
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     // Clear any audio buffer and reset state
