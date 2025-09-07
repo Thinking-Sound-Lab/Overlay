@@ -2,6 +2,7 @@ import React from "react";
 import { Switch } from "../ui/switch";
 import { Select } from "../ui/select";
 import { SettingsComponentProps, SelectOption } from "./types";
+import { SUPPORTED_LANGUAGES, getLanguageDisplayName } from "../../../../shared/constants/languages";
 
 export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({
   settings,
@@ -13,18 +14,10 @@ export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({
     { value: "both", label: "Both" },
   ];
 
-  const targetLanguageOptions: SelectOption[] = [
-    { value: "en", label: "English" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "ru", label: "Russian" },
-    { value: "ja", label: "Japanese" },
-    { value: "ko", label: "Korean" },
-    { value: "zh", label: "Chinese" },
-  ];
+  const targetLanguageOptions: SelectOption[] = SUPPORTED_LANGUAGES.map((language) => ({
+    value: language.code,
+    label: getLanguageDisplayName(language.code),
+  }));
 
   return (
     <div className="space-y-6">

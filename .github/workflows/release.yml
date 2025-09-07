@@ -18,14 +18,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
         include:
-          - os: ubuntu-latest
-            platform: linux
-            artifact_name: overlay-linux
-            artifact_path: |
-              out/make/deb/**/*
-              out/make/rpm/**/*
           - os: windows-latest
             platform: win32
             artifact_name: overlay-windows
@@ -88,8 +82,8 @@ jobs:
           # Uncomment these lines and set secrets for production releases
           # WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
           # WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_UPDATE_SERVER_URL: ${{ secrets.WINDOWS_UPDATE_SERVER_URL }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
       # macOS Release Build
       - name: Build and publish macOS
@@ -113,22 +107,7 @@ jobs:
           # APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
           # APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
-
-      # Linux Release Build
-      - name: Build Linux
-        if: matrix.platform == 'linux'
-        run: |
-          npm run make
-        env:
-          CI: true
-          NODE_ENV: production
-          # Environment variables for the application
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
-          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
-          REACT_APP_POSTHOG_KEY: ${{ secrets.REACT_APP_POSTHOG_KEY }}
-          REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
-          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
       # Upload release artifacts
       - name: Upload release artifacts
@@ -181,8 +160,7 @@ jobs:
             ### 📦 Downloads
 
             - **Windows**: Download `OverlaySetup.exe` from the assets below
-            - **macOS**: Download the `.dmg` file from the assets below  
-            - **Linux**: Download `.deb` or `.rpm` files from the assets below
+            - **macOS**: Download the `.dmg` file from the assets below
 
             ### ⚠️ Security Note
 
@@ -190,7 +168,6 @@ jobs:
 
             - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway"
             - **macOS**: You may need to allow the app in System Preferences → Privacy & Security
-            - **Linux**: No issues expected
 
             ### 🚀 Production Ready
 
@@ -222,7 +199,6 @@ jobs:
           echo "|----------|-------------|----------------|" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "1. Review the draft release in GitHub Releases" >> $GITHUB_STEP_SUMMARY

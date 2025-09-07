@@ -49,6 +49,7 @@ jobs:
           echo "REACT_APP_POSTHOG_HOST=${{ secrets.REACT_APP_POSTHOG_HOST }}" >> .env.production
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env.production
           echo "DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}" >> .env.production
+          echo "BASETEN_API_KEY=${{ secrets.BASETEN_API_KEY }}" >> .env.production
 
       - name: Build for ${{ matrix.platform }}
         run: npm run ${{ matrix.make }}
@@ -61,6 +62,7 @@ jobs:
           REACT_APP_POSTHOG_HOST: ${{ secrets.REACT_APP_POSTHOG_HOST }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

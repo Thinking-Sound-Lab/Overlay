@@ -323,7 +323,8 @@ export class DataLoaderService {
    * Get user settings from cache
    */
   getUserSettings(): Settings {
-    return this.cacheService.getUserSettings();
+    const settings = this.cacheService.getUserSettings();
+    return settings;
   }
 
   /**

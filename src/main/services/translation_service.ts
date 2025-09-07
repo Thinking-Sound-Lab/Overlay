@@ -10,6 +10,8 @@ import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
 import { DataLoaderService } from "./data_loader_service";
+import { getLanguageDisplayName } from "../../shared/constants/languages";
+// robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
   private static instance: TranslationService;
@@ -18,7 +20,7 @@ export class TranslationService {
   private textInsertionService: TextInsertionService;
 
   // Single language model configuration
-  private readonly LANGUAGE_MODEL = "gpt-4.1";
+  private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
 
   // Application context to mode mapping for auto-detection
   private readonly CONTEXT_TO_MODE_MAPPING = {
@@ -95,9 +97,137 @@ export class TranslationService {
     try {
       let processedText = transcript;
 
-      // Optimized two-step process for better accuracy
-      // Step 1: Translation (if needed) - focused on accuracy
-      let translationResult: TranslationResult | null = null;
+      // Get auto-detected mode if enabled
+      let selectedMode = settings.selectedMode;
+      if (settings.enableAutoDetection) {
+        try {
+          const activeApp =
+            await this.applicationDetector.getActiveApplication();
+          const detectedMode =
+            this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
+          if (detectedMode) {
+            selectedMode = detectedMode;
+            console.log("[Translation] Auto-detected mode:", detectedMode);
+          }
+        } catch (error) {
+          console.warn(
+            "[Translation] Auto-detection failed, using fallback mode:",
+            selectedMode
+          );
+        }
+      }
+
+      // Get mode-specific prompt (only when auto-detection is enabled)
+      let modeSpecificPrompt: string | null = null;
+      if (settings.enableAutoDetection) {
+        if (selectedMode === "custom") {
+          modeSpecificPrompt = settings.customPrompt;
+        } else if (selectedMode) {
+          const modePromptMap = {
+            notes: settings.notesPrompt,
+            messages: settings.messagesPrompt,
+            email: settings.emailsPrompt,
+            code_comments: settings.codeCommentsPrompt,
+            meeting_notes: settings.meetingNotesPrompt,
+            creative_writing: settings.creativeWritingPrompt,
+          };
+          const promptForMode =
+            modePromptMap[selectedMode as keyof typeof modePromptMap];
+          console.log("[Translation] Mode-specific prompt:", promptForMode);
+
+          if (promptForMode && promptForMode.trim()) {
+            modeSpecificPrompt = promptForMode;
+          }
+        }
+      } else {
+        console.log(
+          "[Translation] Auto-detection disabled, skipping mode-specific formatting"
+        );
+      }
+
+      // Build optimized prompt for better LLM performance
+      let activePrompt = `You are a transcript post-processor. Process the following text according to these instructions:
+
+## WHAT TO CHANGE:
+${settings.language !== settings.targetLanguage && settings.enableTranslation ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
+- Fix spelling errors and typos
+- Correct grammar mistakes
+- Add proper punctuation and capitalization
+- Convert emoji words to actual emojis (e.g., "fire emoji" → "🔥", "heart emoji" → "❤️")
+- Convert it to clean and proper text which convey the same meaning
+- Convert or restructure the text to make it more sensible 
+- Change the words in the text from the context of whole sentence which seems illogical
+
+## WHAT TO PRESERVE:
+- Original meaning and intent
+- Question format (questions stay as questions)
+- Statement format (statements stay as statements)
+- Technical terms and proper nouns
+- Numbers and dates exactly as spoken
+
+## WHAT NOT TO CHANGE:
+- Never answer questions - only fix their grammar/punctuation
+- Never add information not in the original
+- Never change the core message or tone
+- Never convert statements to questions or vice versa
+
+## OUTPUT FORMAT:
+Return ONLY the processed text. No explanations, no additional comments.`;
+
+      // Add mode-specific formatting if available
+      if (modeSpecificPrompt && modeSpecificPrompt.trim()) {
+        activePrompt += `
+
+## CONTEXT-SPECIFIC FORMATTING (${selectedMode?.toUpperCase()} MODE):
+${modeSpecificPrompt}
+
+Note: Apply above formatting ONLY to statements. Questions must remain questions with proper punctuation.`;
+      }
+
+      activePrompt += `
+
+## EXAMPLES:
+Input: "how is weather today"
+Output: "How is the weather today?"
+
+Input: "weather is good fire emoji"
+Output: "The weather is good. 🔥"
+
+Input: "send email to john about meeting tomorrow"
+Output: "Send email to John about meeting tomorrow."
+
+Input: "umm, I will be there at 5, sorry no 6."
+Output: "I will be there at 6."
+
+---
+
+Text to process: "${transcript}"
+`;
+
+      const response = await openai.chat.completions.create({
+        model: this.LANGUAGE_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: activePrompt,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: Math.max(300, this.countWords(transcript) * 2), // Optimized token limit
+      });
+
+      let finalText = response.choices[0].message.content;
+      console.log("[Translation] Raw LLM response:", finalText);
+
+      // Parse the response to extract only the final processed text
+      //   finalText = this.extractFinalText(finalText);
+      //   console.log("[Translation] Extracted final text:", finalText);
+
+      // DEPRECATED: Old two-step translation process replaced with single LLM call
+      // The following code was used for separate translation and grammar correction steps
+      // Now using single unified prompt for better performance and consistency
+
+      /* DEPRECATED - Old translation logic:
       if (
         settings.enableTranslation &&
         settings.targetLanguage &&
@@ -119,7 +249,7 @@ export class TranslationService {
         );
       }
 
-      // Step 2: Grammar correction and formatting (if AI enhancement is enabled)
+      // DEPRECATED - Old grammar correction logic:
       const finalLanguage =
         settings.enableTranslation && settings.targetLanguage
           ? settings.targetLanguage
@@ -133,6 +263,7 @@ export class TranslationService {
         : processedText;
 
       console.log("[Translation] Final text:", finalText);
+      */
 
       // Step 4: Calculate metrics
       const metrics = calculateSpeechMetrics(finalText, recordingDuration);
@@ -145,16 +276,14 @@ export class TranslationService {
           const wasTranslated =
             settings.enableTranslation &&
             settings.targetLanguage &&
-            sourceLanguage !== settings.targetLanguage &&
-            translationResult !== null;
-          
+            sourceLanguage !== settings.targetLanguage;
+
           console.log("[Translation] Metadata build:", {
             enableTranslation: settings.enableTranslation,
             targetLanguage: settings.targetLanguage,
             sourceLanguage,
             languagesDiffer: sourceLanguage !== settings.targetLanguage,
-            hasTranslationResult: translationResult !== null,
-            wasTranslated
+            wasTranslated,
           });
 
           const translationMeta = wasTranslated
@@ -163,18 +292,22 @@ export class TranslationService {
                 originalText: transcript,
                 sourceLanguage: sourceLanguage,
                 targetLanguage: settings.targetLanguage,
-                confidence: translationResult.confidence,
-                wordCountRatio: translationResult.wordCountRatio,
-                detectedLanguage: translationResult.detectedLanguage,
+                confidence: 0.9, // High confidence for unified LLM approach
+                wordCountRatio:
+                  this.countWords(transcript) === 0
+                    ? 1.0
+                    : this.countWords(finalText) / this.countWords(transcript),
+                detectedLanguage: sourceLanguage,
               }
             : { wasTranslated: false, detectedLanguage: sourceLanguage };
 
           const modeFormattingMeta = settings.enableAutoDetection
             ? {
-                modeBasedFormattingApplied: true,
-                selectedMode: settings.selectedMode,
+                modeBasedFormattingApplied: !!modeSpecificPrompt,
+                selectedMode: selectedMode,
                 autoDetectionEnabled: settings.enableAutoDetection,
-                customPromptUsed: !!settings.customPrompt?.trim(),
+                customPromptUsed:
+                  selectedMode === "custom" && !!settings.customPrompt?.trim(),
               }
             : { modeBasedFormattingApplied: false };
 
@@ -192,7 +325,9 @@ export class TranslationService {
   }
 
   /**
-   * Optimized translation - focused purely on accurate translation
+   * @deprecated Optimized translation - focused purely on accurate translation
+   * This method is no longer used in the current implementation.
+   * Translation is now handled by a single unified LLM prompt for better performance.
    */
   private async translateTextOptimized(
     text: string,
@@ -222,13 +357,14 @@ CRITICAL RULES:
 - For proper nouns, preserve original terms when appropriate
 - Never change the text structure (question stays question, statement stays statement)
 
-Text: "${text}"
-
 Return ONLY the translation, nothing else.`;
 
       const response = await openai.chat.completions.create({
         model: this.LANGUAGE_MODEL,
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+          { role: "user", content: text },
+          { role: "system", content: prompt },
+        ],
         temperature: 0.1, // Low temperature for consistency
         max_tokens: Math.max(200, this.countWords(text) * 3), // Optimized token limit
       });
@@ -272,7 +408,9 @@ Return ONLY the translation, nothing else.`;
   }
 
   /**
-   * Optimized grammar correction with mode-based formatting
+   * @deprecated Optimized grammar correction with mode-based formatting
+   * This method is no longer used in the current implementation.
+   * Grammar correction and formatting is now handled by a single unified LLM prompt.
    */
   private async correctGrammarOptimized(
     text: string,
@@ -295,6 +433,7 @@ Return ONLY the translation, nothing else.`;
 	  4. NEVER add context or additional information
 	  5. If input is a statement, output must remain a statement
 	  6. If input is a question, output must remain a question
+	  7. Read the input text carefully and understand the context and intent of the text and try to correct some of the words to make it more accurate
 	  
 	  ALLOWED CORRECTIONS:
 	  - Fix spelling errors
@@ -306,8 +445,6 @@ Return ONLY the translation, nothing else.`;
 	  - Input: "how is weather today" → Output: "How is the weather today?"
 	  - Input: "weather is good" → Output: "The weather is good."
 	  - Input: "मौसम कैसा है" → Output: "मौसम कैसा है?" (fix punctuation, preserve question)
-
-	  TEXT: "${text}"
 	  
 	  Return ONLY the corrected text, nothing else.`;
 
@@ -361,7 +498,10 @@ IMPORTANT: Apply formatting ONLY to statements, NOT to questions. Questions must
 
       const response = await openai.chat.completions.create({
         model: this.LANGUAGE_MODEL,
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+          { role: "user", content: text },
+          { role: "system", content: prompt },
+        ],
         temperature: 0.1,
         max_tokens: Math.max(300, this.countWords(text) * 2), // Optimized token limit
       });
@@ -382,184 +522,6 @@ IMPORTANT: Apply formatting ONLY to statements, NOT to questions. Questions must
         error
       );
       return text;
-    }
-  }
-
-  /**
-   * Unified AI text processing - handles translation, grammar correction, and formatting in a single call
-   * @deprecated - Replaced with optimized two-step process for better accuracy
-   */
-  private async processTextUnified(
-    text: string,
-    sourceLanguage: string,
-    settings: Settings
-  ): Promise<{
-    processedText: string;
-    wasTranslated: boolean;
-    confidence: number;
-    wordCountRatio: number;
-    detectedLanguage: string;
-  }> {
-    try {
-      const needsTranslation =
-        settings.enableTranslation &&
-        settings.targetLanguage &&
-        sourceLanguage !== settings.targetLanguage;
-
-      const finalLanguage = needsTranslation
-        ? settings.targetLanguage
-        : sourceLanguage;
-      const languageNames = this.getLanguageNames();
-      const sourceName = languageNames[sourceLanguage] || sourceLanguage;
-      const targetName = languageNames[finalLanguage] || finalLanguage;
-
-      // Build comprehensive system prompt
-      let systemPrompt = `You are an expert text processor that handles translation, grammar correction, and formatting simultaneously.
-
-PROCESSING REQUIREMENTS:
-
-1. LANGUAGE PROCESSING:
-   - Source language: ${sourceName}
-   - Target language: ${targetName}`;
-
-      if (needsTranslation) {
-        systemPrompt += `
-   - TRANSLATE the text from ${sourceName} to ${targetName}
-   - Preserve exact meaning and cultural context
-   - Maintain similar word count (±20%)`;
-      } else {
-        systemPrompt += `
-   - MAINTAIN the original ${sourceName} language
-   - No translation needed`;
-      }
-
-      systemPrompt += `
-
-2. GRAMMAR & SPELLING CORRECTION:
-   - Fix all spelling errors
-   - Correct grammar mistakes
-   - Add proper punctuation and capitalization
-   - Convert emoji references to actual emojis (e.g., "fire emoji" → 🔥)
-
-3. PRESERVE ORIGINAL INTENT:
-   - NEVER change the meaning or intent
-   - If input is a question, output must remain a question
-   - If input is a statement, output must remain a statement
-   - NEVER add explanations or additional information`;
-
-      // Add mode-based formatting instructions
-      let formattingInstructions = "";
-      let selectedMode = settings.selectedMode;
-
-      if (settings.useAI && settings.enableAutoDetection) {
-        try {
-          const activeApp =
-            await this.applicationDetector.getActiveApplication();
-          const detectedMode =
-            this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
-          if (detectedMode) {
-            selectedMode = detectedMode;
-            console.log(
-              "[Translation] Auto-detected mode:",
-              detectedMode,
-              "for app:",
-              activeApp.applicationName
-            );
-          }
-        } catch (error) {
-          console.warn(
-            "[Translation] Auto-detection failed, using fallback mode:",
-            selectedMode
-          );
-        }
-
-        // Get the appropriate prompt
-        let activePrompt = settings.customPrompt;
-        if (selectedMode && selectedMode !== "custom") {
-          const modePromptMap = {
-            notes: settings.notesPrompt,
-            messages: settings.messagesPrompt,
-            emails: settings.emailsPrompt,
-            code_comments: settings.codeCommentsPrompt,
-            meeting_notes: settings.meetingNotesPrompt,
-            creative_writing: settings.creativeWritingPrompt,
-          };
-          const modeSpecificPrompt =
-            modePromptMap[selectedMode as keyof typeof modePromptMap];
-          if (modeSpecificPrompt && modeSpecificPrompt.trim()) {
-            activePrompt = modeSpecificPrompt;
-          }
-        }
-
-        if (activePrompt && activePrompt.trim()) {
-          formattingInstructions = `
-
-4. ADDITIONAL FORMATTING:
-${activePrompt}
-
-IMPORTANT: Apply formatting instructions only AFTER translation and grammar correction. The original meaning must be preserved.`;
-        }
-      }
-
-      const finalPrompt =
-        systemPrompt +
-        formattingInstructions +
-        `
-
-INPUT TEXT: "${text}"
-
-OUTPUT: Return ONLY the processed text, nothing else.`;
-
-      const response = await openai.chat.completions.create({
-        model: this.LANGUAGE_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: finalPrompt,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: Math.max(1000, this.countWords(text) * 3),
-      });
-
-      const processedText =
-        response.choices[0]?.message?.content?.trim() || text;
-
-      // Calculate metrics
-      const originalWords = this.countWords(text);
-      const processedWords = this.countWords(processedText);
-      const wordCountRatio =
-        originalWords === 0 ? 1.0 : processedWords / originalWords;
-      const confidence =
-        response.choices[0].finish_reason === "stop" ? 0.95 : 0.7;
-
-      console.log("[Translation] Unified processing completed:", {
-        original: text,
-        processed: processedText,
-        wasTranslated: needsTranslation,
-        sourceLanguage: sourceName,
-        targetLanguage: targetName,
-        wordCountRatio,
-        confidence,
-        mode: selectedMode,
-      });
-
-      return {
-        processedText,
-        wasTranslated: needsTranslation,
-        confidence,
-        wordCountRatio,
-        detectedLanguage: sourceLanguage,
-      };
-    } catch (error) {
-      console.error("[Translation] Error in unified processing:", error);
-      return {
-        processedText: text,
-        wasTranslated: false,
-        confidence: 0.0,
-        wordCountRatio: 1.0,
-        detectedLanguage: sourceLanguage,
-      };
     }
   }
 
@@ -707,23 +669,34 @@ OUTPUT: Return ONLY the processed text, nothing else.`;
    */
   private async insertTextNative(text: string, onComplete?: () => void) {
     try {
-      console.log("[Translation] Inserting text via native platform APIs:", text);
-      
+      console.log(
+        "[Translation] Inserting text via clipboard method (better Unicode support):",
+        text
+      );
+
+      // Use TextInsertionService which will use clipboard method for better Unicode support
       const success = await this.textInsertionService.insertText(text, {
         delay: 100, // Small delay to ensure target application is ready
-        preserveClipboard: true // Preserve user's clipboard content
+        preserveClipboard: true, // Preserve user's clipboard content
       });
-      
+
       if (success) {
-        console.log("[Translation] Text inserted successfully via native APIs");
+        console.log(
+          "[Translation] Text inserted successfully via clipboard method"
+        );
       } else {
-        console.warn("[Translation] Text insertion failed via native APIs");
+        console.warn(
+          "[Translation] Text insertion failed via clipboard method"
+        );
       }
-      
+
       // Fire callback when text insertion is complete (success or failure)
       onComplete?.();
     } catch (error) {
-      console.error("[Translation] Error inserting text with native APIs:", error);
+      console.error(
+        "[Translation] Error inserting text with native APIs:",
+        error
+      );
       // Still fire callback even if there's an error
       onComplete?.();
     }

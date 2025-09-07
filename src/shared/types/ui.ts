@@ -6,7 +6,6 @@
 
 export interface Settings {
   // General section
-  defaultMicrophone: string;
   language: string;
   
   // System section  
