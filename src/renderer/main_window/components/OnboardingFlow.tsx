@@ -19,14 +19,18 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 }) => {
   const { state, dispatch, setUser, setAuthenticated, completeOnboarding, setSettings } =
     useAppContext();
-  const { user, isAuthenticated, settings } = state;
+  const { user, isAuthenticated, settings, isLoading } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
-  const [isLoading, setIsLoading] = useState(true);
   const [signUpEmail, setSignUpEmail] = useState<string>("");
 
-  // Determine which flow to show based on authentication state
+  // Determine which step to show based on authentication state
   useEffect(() => {
-    console.log("OnboardingFlow: Determining flow based on auth state:", {
+    // Only determine step when not loading and we have auth state
+    if (isLoading) {
+      return;
+    }
+
+    console.log("OnboardingFlow: Determining step based on auth state:", {
       isAuthenticated,
       hasUser: !!user,
       userEmail: user?.email,
@@ -46,8 +50,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       console.log("OnboardingFlow: User not authenticated, showing auth");
       setCurrentStep("auth");
     }
-    setIsLoading(false);
-  }, [isAuthenticated, user, dispatch]);
+  }, [isLoading, isAuthenticated, user, dispatch]);
 
   // Notify parent about step changes
   useEffect(() => {
@@ -230,6 +233,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   }, [currentStep, onStepChange]);
 
+  // Show loading screen while auth state is being determined by main process
   if (isLoading) {
     return (
       <div className="h-screen bg-gray-50 flex items-center justify-center">

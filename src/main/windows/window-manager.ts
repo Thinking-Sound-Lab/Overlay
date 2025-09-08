@@ -197,7 +197,8 @@ export class WindowManager {
         window,
         WINDOW_SIZES.expanded.width,
         WINDOW_SIZES.expanded.height,
-        200
+        200,
+        'bottom-center'
       );
     }
   }
@@ -209,7 +210,8 @@ export class WindowManager {
         window,
         WINDOW_SIZES.compact.width,
         WINDOW_SIZES.compact.height,
-        200
+        200,
+        'bottom-center'
       );
     }
   }

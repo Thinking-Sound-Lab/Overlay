@@ -143,6 +143,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     checkPermissions: () => ipcRenderer.invoke("microphone:checkPermissions"),
   },
 
+  // Hotkey test mode for onboarding
+  startHotkeyTest: () => ipcRenderer.invoke("start-hotkey-test"),
+  endHotkeyTest: () => ipcRenderer.invoke("end-hotkey-test"),
+
   // Update event listeners
   onUpdateAvailable: (callback: (info: any) => void) => {
     const subscription = (_: any, info: any) => callback(info);
@@ -238,6 +242,10 @@ ipcRenderer.on("microphone-device-changed", (_, deviceData) => {
   window.dispatchEvent(
     new CustomEvent("microphone-device-changed", { detail: deviceData })
   );
+});
+
+ipcRenderer.on("hotkey-detected", () => {
+  window.dispatchEvent(new Event("hotkey-detected"));
 });
 
 // Type definitions for TypeScript
@@ -356,6 +364,10 @@ declare global {
         requestPermissions: () => Promise<any>;
         checkPermissions: () => Promise<any>;
       };
+
+      // Hotkey test mode for onboarding
+      startHotkeyTest: () => Promise<{ success: boolean }>;
+      endHotkeyTest: () => Promise<{ success: boolean }>;
     };
   }
 }

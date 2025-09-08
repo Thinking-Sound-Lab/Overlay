@@ -54,6 +54,9 @@ let isProcessing = false;
 let hoverTimeout: NodeJS.Timeout | null = null;
 let processingTimeout: NodeJS.Timeout | null = null;
 
+// Hotkey test mode for onboarding
+let isHotkeyTestMode = false;
+
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
@@ -68,7 +71,7 @@ autoUpdater.autoDownload = false; // Don't auto-download, let user choose
 // GitHub provider configuration for all platforms
 autoUpdater.setFeedURL({
   provider: "github",
-  owner: "Abhishekucs",
+  owner: "Thinking-Sound-Lab",
   repo: "Overlay",
 });
 
@@ -77,7 +80,7 @@ autoUpdater.forceDevUpdateConfig = process.env.NODE_ENV === "development";
 
 console.log("[AutoUpdater] GitHub provider configuration:", {
   provider: "github",
-  owner: "Abhishekucs",
+  owner: "Thinking-Sound-Lab",
   repo: "Overlay",
   platform: process.platform,
 });
@@ -387,29 +390,23 @@ const createMainWindow = () => {
 
   // Window ready - send initial auth state after React mounts
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log("[Main] Main window loaded, waiting for React to mount...");
+    console.log("[Main] Main window loaded, sending initial auth state...");
 
-    // Wait for React app to mount and set up event listeners
-    setTimeout(async () => {
-      console.log("[Main] React should be mounted, sending initial auth state...");
-      
-      const currentUser = externalAPIManager?.supabase.getCurrentUser();
-
-      if (currentUser) {
-        console.log(
-          "[Main] User authenticated, sending auth state to window"
-        );
-        await handleAuthenticationSuccess(currentUser, "Window Load");
-      } else {
-        console.log(
-          "[Main] No authenticated user, sending unauthenticated state"
-        );
-        sendUnauthenticatedStateToRenderer(
-          undefined, // No error message - this is expected behavior
-          "Window Load - No User"
-        );
-      }
-    }, 500); // 500ms delay to ensure React app is mounted
+    // Send auth state immediately - React context is ready when window loads
+    const currentUser = externalAPIManager?.supabase.getCurrentUser();
+    
+    if (currentUser) {
+      console.log("[Main] User authenticated, sending auth state to window");
+      await handleAuthenticationSuccess(currentUser, "Window Load");
+    } else {
+      console.log(
+        "[Main] No authenticated user, sending unauthenticated state"
+      );
+      sendUnauthenticatedStateToRenderer(
+        undefined, // No error message - this is expected behavior
+        "Window Load - No User"
+      );
+    }
   });
 
   if (config.isDevelopment) {
@@ -672,7 +669,7 @@ const registerGlobalHotkey = () => {
       hotkey = "option+space";
       break;
     case "win32": // Windows
-      hotkey = "ctrl+cmd+space"; // cmd maps to Windows key on Windows
+      hotkey = "ctrl+alt+space"; // cmd maps to Windows key on Windows
       break;
     default: // Linux and others - no hotkey
       console.log(
@@ -683,6 +680,16 @@ const registerGlobalHotkey = () => {
 
   if (hotkey) {
     globalShortcut.register(hotkey, async () => {
+      // If in test mode, just notify main window and don't start recording
+      if (isHotkeyTestMode) {
+        console.log("[Main] Hotkey detected during test mode");
+        if (windowManager.getMainWindow()) {
+          windowManager.sendToMain("hotkey-detected");
+        }
+        return;
+      }
+
+      // Normal recording behavior
       if (isProcessing) return;
       if (isRecording) await stopRecording();
       else await startRecording();
@@ -1140,12 +1147,12 @@ app.whenReady().then(async () => {
     });
     updateTrayMenu();
     console.log("[Main] External API services initialized successfully");
-    
+
     // Create main window AFTER all services are initialized
     createMainWindow();
   } catch (error) {
     console.error("[Main] Failed to initialize external API services:", error);
-    
+
     // Still create window even if services fail
     createMainWindow();
   }
@@ -1463,5 +1470,18 @@ ipcMain.handle(
     }
   }
 );
+
+// Hotkey test mode handlers
+ipcMain.handle("start-hotkey-test", () => {
+  console.log("[Main] Starting hotkey test mode");
+  isHotkeyTestMode = true;
+  return { success: true };
+});
+
+ipcMain.handle("end-hotkey-test", () => {
+  console.log("[Main] Ending hotkey test mode");
+  isHotkeyTestMode = false;
+  return { success: true };
+});
 
 export { sttService };

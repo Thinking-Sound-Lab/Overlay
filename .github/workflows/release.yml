@@ -16,6 +16,9 @@ jobs:
   release:
     name: Release ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      actions: read
 
     strategy:
       matrix:
@@ -122,6 +125,9 @@ jobs:
   create-release:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     if: always() && (needs.release.result == 'success')
 
     steps:
