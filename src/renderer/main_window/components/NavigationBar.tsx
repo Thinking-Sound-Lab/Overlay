@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Tooltip } from "./Tooltip";
 import { ViewType } from "../types";
-import { Button } from "./ui/button";
-import { Settings, User, X, Minus, Square, Maximize2 } from "lucide-react";
-import { SettingsDialog } from "./SettingsDialog";
-import { ProfilePopover } from "./ProfilePopover";
+import { X, Minus, Square, Maximize2 } from "lucide-react";
 
 interface NavigationBarProps {
   showAuthButtons?: boolean;
@@ -17,16 +13,12 @@ interface NavigationBarProps {
 }
 
 export const NavigationBar: React.FC<NavigationBarProps> = ({
-  showAuthButtons = false,
-  activeView,
-  onViewChange,
   isOnboarding = false,
   currentStep = 1,
   totalSteps = 4,
   stepName = "",
 }) => {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     // Get initial window state - check if API is available first
@@ -41,15 +33,9 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         });
     }
 
-    // Listen for tray menu settings dialog open event
-    const handleOpenSettings = () => {
-      setSettingsOpen(true);
-    };
-
-    window.addEventListener("open-settings-dialog", handleOpenSettings);
-
+    // Cleanup function for window state listener
     return () => {
-      window.removeEventListener("open-settings-dialog", handleOpenSettings);
+      // No cleanup needed for window state listener
     };
   }, []);
 
@@ -150,42 +136,8 @@ export const NavigationBar: React.FC<NavigationBarProps> = ({
         </div>
       )}
 
-      {/* Settings and Profile Buttons - Right Side (Conditional) */}
-      {showAuthButtons && (
-        <div
-          className="flex items-center"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <Tooltip content="Settings" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hover:bg-gray-200 hover:rounded-xl transition-all duration-200 p-2"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings className="h-5 w-5 text-gray-600" />
-            </Button>
-          </Tooltip>
-
-          <ProfilePopover
-            trigger={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hover:bg-gray-200 hover:rounded-xl transition-all duration-200 p-2"
-              >
-                <User className="h-5 w-5 text-gray-600" />
-              </Button>
-            }
-          />
-        </div>
-      )}
-
-      {/* Empty div to maintain spacing when auth buttons are not shown */}
-      {!showAuthButtons && <div></div>}
-
-      {/* Settings Dialog */}
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {/* Empty div to maintain spacing */}
+      <div></div>
     </div>
   );
 };

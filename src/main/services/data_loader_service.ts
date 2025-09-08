@@ -20,6 +20,7 @@ export interface AuthStateEventData {
   statistics: UserStats | null;
   settings: Settings | null;
   recentTranscripts: UITranscriptEntry[];
+  totalTranscriptCount: number;
   error?: string;
   source?: string;
 }
@@ -66,6 +67,7 @@ export class DataLoaderService {
             settings: cachedData.settings,
             statistics: cachedData.stats,
             recentTranscripts: cachedData.transcripts,
+            totalTranscriptCount: cachedData.totalTranscriptCount,
           };
         }
       }
@@ -84,6 +86,7 @@ export class DataLoaderService {
           settings: freshData.settings,
           stats: freshData.statistics,
           transcripts: freshData.recentTranscripts,
+          totalTranscriptCount: freshData.totalTranscriptCount,
         });
       }
 
@@ -104,6 +107,7 @@ export class DataLoaderService {
           settings: staleData.settings,
           statistics: staleData.stats,
           recentTranscripts: staleData.transcripts,
+          totalTranscriptCount: staleData.totalTranscriptCount,
           error: `Failed to refresh data: ${error instanceof Error ? error.message : "Unknown error"}`,
         };
       }
@@ -115,6 +119,7 @@ export class DataLoaderService {
         settings: null,
         statistics: null,
         recentTranscripts: [],
+        totalTranscriptCount: 0,
         error: `Failed to load user data: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
@@ -176,13 +181,21 @@ export class DataLoaderService {
       );
     }
 
-    // Load recent transcripts
+    // Load recent transcripts (only first 20 for initial load)
     let recentTranscripts: UITranscriptEntry[] = [];
-    const transcriptsResult = await this.supabaseService.getTranscripts(100);
+    let totalTranscriptCount = 0;
+    const transcriptsResult = await this.supabaseService.getTranscripts(20, 0);
     if (transcriptsResult.data && !transcriptsResult.error) {
-      recentTranscripts = transcriptsResult.data.map(
-        this.convertDatabaseTranscriptToUI
-      );
+      // Handle the new paginated response format
+      const { transcripts: transcriptsData, totalCount } =
+        transcriptsResult.data;
+      totalTranscriptCount = totalCount || 0;
+
+      if (Array.isArray(transcriptsData)) {
+        recentTranscripts = transcriptsData.map(
+          this.convertDatabaseTranscriptToUI
+        );
+      }
     } else {
       console.warn(
         `[DataLoader] Failed to load transcripts, using empty array:`,
@@ -195,6 +208,7 @@ export class DataLoaderService {
       settingsKeys: Object.keys(settings),
       statsTotal: statistics.totalWordCount,
       transcriptCount: recentTranscripts.length,
+      totalTranscriptCount,
     });
 
     return {
@@ -203,6 +217,7 @@ export class DataLoaderService {
       settings,
       statistics,
       recentTranscripts,
+      totalTranscriptCount,
     };
   }
 
@@ -335,6 +350,95 @@ export class DataLoaderService {
   }
 
   /**
+   * Get transcripts with pagination (for UI pagination)
+   * Implements cache-first strategy: check cache first, DB on miss
+   * 
+   * Strategy:
+   * 1. Check if requested page is already in cache
+   * 2. If cache hit: return cached data (no DB call)
+   * 3. If cache miss: fetch from DB, update cache, return data
+   */
+  async getTranscripts(limit = 20, offset = 0): Promise<{
+    data: { transcripts: UITranscriptEntry[]; totalCount: number } | null;
+    error: any;
+  }> {
+    try {
+      console.log(`[DataLoader] Getting paginated transcripts: limit=${limit}, offset=${offset}`);
+      
+      // Step 1: Check cache first (cache-first strategy)
+      const cachedTranscripts = this.cacheService.getRecentTranscripts();
+      const totalCount = this.cacheService.getTotalTranscriptCount() || 0;
+      
+      // Calculate if we have the requested page in cache
+      const startIndex = offset;
+      const endIndex = offset + limit;
+      const hasRequestedPageInCache = cachedTranscripts.length >= endIndex;
+      
+      if (hasRequestedPageInCache && totalCount > 0) {
+        // Cache hit - return data from cache
+        const requestedTranscripts = cachedTranscripts.slice(startIndex, endIndex);
+        console.log(`[DataLoader] Cache hit! Serving ${requestedTranscripts.length} transcripts from cache (offset=${offset})`);
+        
+        return {
+          data: {
+            transcripts: requestedTranscripts,
+            totalCount
+          },
+          error: null
+        };
+      }
+      
+      // Step 2: Cache miss - fetch from database
+      console.log(`[DataLoader] Cache miss. Fetching from DB (cached: ${cachedTranscripts.length}, needed: ${endIndex})`);
+      
+      const result = await this.supabaseService.getTranscripts(limit, offset);
+      if (result.error) {
+        return { data: null, error: result.error };
+      }
+
+      if (result.data) {
+        const { transcripts: dbTranscripts, totalCount: dbTotalCount } = result.data;
+        const uiTranscripts = dbTranscripts.map(this.convertDatabaseTranscriptToUI);
+        
+        // Step 3: Update cache with new data
+        if (offset === 0) {
+          // First page - replace cache completely
+          this.cacheService.setRecentTranscripts(uiTranscripts);
+          this.cacheService.setTotalTranscriptCount(dbTotalCount);
+          console.log(`[DataLoader] Cache replaced with ${uiTranscripts.length} transcripts (first page)`);
+        } else {
+          // Subsequent pages - merge with existing cache
+          const existingTranscripts = this.cacheService.getRecentTranscripts();
+          const mergedTranscripts = [...existingTranscripts, ...uiTranscripts];
+          
+          // Keep only unique transcripts (in case of overlap)
+          const uniqueTranscripts = mergedTranscripts.filter((transcript, index, arr) => 
+            arr.findIndex(t => t.id === transcript.id) === index
+          );
+          
+          // Update cache with expanded transcript list (keep reasonable limit)
+          this.cacheService.setRecentTranscripts(uniqueTranscripts.slice(0, 100));
+          this.cacheService.setTotalTranscriptCount(dbTotalCount);
+          console.log(`[DataLoader] Cache expanded to ${uniqueTranscripts.length} transcripts (added page ${Math.floor(offset/limit) + 1})`);
+        }
+        
+        return {
+          data: {
+            transcripts: uiTranscripts,
+            totalCount: dbTotalCount
+          },
+          error: null
+        };
+      }
+
+      return { data: null, error: new Error("No data returned from database") };
+    } catch (error) {
+      console.error(`[DataLoader] Error getting transcripts:`, error);
+      return { data: null, error };
+    }
+  }
+
+  /**
    * Get cache info for debugging
    */
   getCacheInfo(): {
@@ -378,6 +482,7 @@ export class DataLoaderService {
       settings: cacheData.settings,
       statistics: cacheData.stats,
       recentTranscripts: cacheData.transcripts,
+      totalTranscriptCount: cacheData.totalTranscriptCount,
     };
   }
 
@@ -424,6 +529,7 @@ export class DataLoaderService {
           settings: cachedData.settings,
           statistics: cachedData.stats,
           recentTranscripts: cachedData.transcripts,
+          totalTranscriptCount: cachedData.totalTranscriptCount,
         };
 
         return { success: true, data: authStateData };

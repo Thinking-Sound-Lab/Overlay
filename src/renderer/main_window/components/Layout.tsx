@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { ViewType } from "../types";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Home, BookOpen, HelpCircle, Gift } from "lucide-react";
+import { Home, BookOpen, HelpCircle, Gift, Settings } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
+import { SettingsDialog } from "./SettingsDialog";
 
 interface LayoutProps {
   activeView: ViewType;
@@ -18,6 +19,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const { state } = useAppContext();
   const { user } = state;
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Get subscription tier from user profile, defaulting to 'free'
   const subscriptionTier = user?.subscription_tier || "free";
@@ -94,6 +96,17 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="px-4 py-4 space-y-1 border-t border-gray-200">
           <Button
             variant="ghost"
+            className="w-full text-left p-3 rounded-lg transition-colors justify-start hover:bg-gray-200 hover:text-gray-900 text-gray-600"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <div className="flex items-center gap-3">
+              <Settings className="h-5 w-5" />
+              <span className="font-medium">Settings</span>
+            </div>
+          </Button>
+
+          <Button
+            variant="ghost"
             className={`w-full text-left p-3 rounded-lg transition-colors justify-start ${activeView === "help" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : "hover:bg-gray-200 hover:text-gray-900 text-gray-600"}`}
             onClick={() => setActiveView("help")}
           >
@@ -120,6 +133,9 @@ export const Layout: React.FC<LayoutProps> = ({
       <div className="flex-1 overflow-y-auto bg-white border border-gray-200 rounded-xl my-4 mr-4">
         {children}
       </div>
+
+      {/* Settings Dialog */}
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 };

@@ -11,7 +11,9 @@ export class APIClient {
       !window.electronAPI.auth ||
       !window.electronAPI.db
     ) {
-      throw new Error("Application not properly initialized. Please refresh the page.");
+      throw new Error(
+        "Application not properly initialized. Please refresh the page."
+      );
     }
   }
 
@@ -23,7 +25,11 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Magic link sign in error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to send magic link",
+      };
     }
   }
 
@@ -34,7 +40,13 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Sign in with Google error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign in with Google" };
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to sign in with Google",
+      };
     }
   }
 
@@ -51,9 +63,14 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Magic link sign up error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to send magic link" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to send magic link",
+      };
     }
   }
+
 
   static async signOut(): Promise<IPCResponse> {
     try {
@@ -62,7 +79,10 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Sign out error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to sign out" };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to sign out",
+      };
     }
   }
 
@@ -73,7 +93,11 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Get current user error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to get current user" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get current user",
+      };
     }
   }
 
@@ -84,7 +108,11 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Get user profile error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to get user profile" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get user profile",
+      };
     }
   }
 
@@ -95,11 +123,15 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Complete onboarding error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to complete onboarding" };
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to complete onboarding",
+      };
     }
   }
-
-
 
   // Database methods
   static async saveTranscript(transcript: any): Promise<IPCResponse> {
@@ -112,14 +144,24 @@ export class APIClient {
     }
   }
 
-  static async getTranscripts(limit?: number): Promise<IPCResponse> {
+  static async getTranscripts(
+    limit?: number,
+    offset?: number
+  ): Promise<IPCResponse> {
     try {
       APIClient.checkElectronAPI();
-      const response = await window.electronAPI.db.getTranscripts(limit);
+      const response = await window.electronAPI.db.getTranscripts(
+        limit,
+        offset
+      );
       return response;
     } catch (error) {
       console.error("APIClient: Get transcripts error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to get transcripts" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get transcripts",
+      };
     }
   }
 
@@ -140,7 +182,13 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Get user settings error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to get user settings" };
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get user settings",
+      };
     }
   }
 
@@ -151,7 +199,11 @@ export class APIClient {
       return response;
     } catch (error) {
       console.error("APIClient: Get user stats error:", error);
-      return { success: false, error: error instanceof Error ? error.message : "Failed to get user stats" };
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to get user stats",
+      };
     }
   }
 

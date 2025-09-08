@@ -1,9 +1,9 @@
 /**
  * Simplified Cache Service
- * 
+ *
  * Clean caching strategy where database is the single source of truth
  * and electron store is purely for performance.
- * 
+ *
  * Flow:
  * 1. On app load: check cache first, DB on miss, update cache
  * 2. On user update: save to DB first, then update cache
@@ -21,7 +21,8 @@ interface CacheData {
   userSettings: Settings;
   userStats: UserStats;
   recentTranscripts: UITranscriptEntry[];
-  
+  totalTranscriptCount?: number;
+
   // Cache metadata
   lastUpdated: number;
   userId: string | null;
@@ -33,7 +34,7 @@ export class CacheService {
 
   private constructor() {
     this.store = new Store<CacheData>({
-      name: 'user-cache',
+      name: "user-cache",
       defaults: {
         user: null,
         userSettings: DEFAULT_SETTINGS,
@@ -44,6 +45,7 @@ export class CacheService {
           streakDays: 0,
         },
         recentTranscripts: [],
+        totalTranscriptCount: 0,
         lastUpdated: 0,
         userId: null,
       },
@@ -61,16 +63,16 @@ export class CacheService {
    * Get cached user
    */
   getUser(): UserRecord | null {
-    return this.store.get('user');
+    return this.store.get("user");
   }
 
   /**
    * Set user in cache
    */
   setUser(user: UserRecord | null): void {
-    this.store.set('user', user);
+    this.store.set("user", user);
     if (user) {
-      this.store.set('userId', user.id);
+      this.store.set("userId", user.id);
     }
     this.updateLastModified();
   }
@@ -79,14 +81,14 @@ export class CacheService {
    * Get cached user settings
    */
   getUserSettings(): Settings {
-    return this.store.get('userSettings');
+    return this.store.get("userSettings");
   }
 
   /**
    * Set user settings in cache
    */
   setUserSettings(settings: Settings): void {
-    this.store.set('userSettings', settings);
+    this.store.set("userSettings", settings);
     this.updateLastModified();
   }
 
@@ -94,14 +96,14 @@ export class CacheService {
    * Get cached user statistics
    */
   getUserStats(): UserStats {
-    return this.store.get('userStats');
+    return this.store.get("userStats");
   }
 
   /**
    * Set user statistics in cache
    */
   setUserStats(stats: UserStats): void {
-    this.store.set('userStats', stats);
+    this.store.set("userStats", stats);
     this.updateLastModified();
   }
 
@@ -109,14 +111,27 @@ export class CacheService {
    * Get cached recent transcripts
    */
   getRecentTranscripts(): UITranscriptEntry[] {
-    return this.store.get('recentTranscripts');
+    return this.store.get("recentTranscripts");
+  }
+
+  /**
+   * Set total transcript count in cache
+   */
+  setTotalTranscriptCount(count: number): void {
+    this.store.set("totalTranscriptCount", count);
+    this.updateLastModified();
+  }
+
+  getTotalTranscriptCount(): number | undefined {
+    return this.store.get("totalTranscriptCount");
   }
 
   /**
    * Set recent transcripts in cache
    */
   setRecentTranscripts(transcripts: UITranscriptEntry[]): void {
-    this.store.set('recentTranscripts', transcripts.slice(0, 100)); // Keep only 100 most recent
+    // Allow up to 100 transcripts in cache for better pagination performance
+    this.store.set("recentTranscripts", transcripts.slice(0, 100));
     this.updateLastModified();
   }
 
@@ -133,7 +148,7 @@ export class CacheService {
    * Get current cached user ID
    */
   getCachedUserId(): string | null {
-    return this.store.get('userId');
+    return this.store.get("userId");
   }
 
   /**
@@ -151,8 +166,8 @@ export class CacheService {
     if (!this.isCacheValidForUser(userId)) {
       return false;
     }
-    
-    const lastUpdated = this.store.get('lastUpdated');
+
+    const lastUpdated = this.store.get("lastUpdated");
     const user = this.getUser();
     return lastUpdated > 0 && user !== null;
   }
@@ -167,10 +182,10 @@ export class CacheService {
     if (cachedUserId && cachedUserId !== userId) {
       this.clearUserData();
     }
-    
+
     // Set the user ID
-    this.store.set('userId', userId);
-    
+    this.store.set("userId", userId);
+
     console.log(`[CacheService] Initialized cache for user: ${userId}`);
   }
 
@@ -179,21 +194,22 @@ export class CacheService {
    * Called on logout or user change
    */
   clearUserData(): void {
-    console.log('[CacheService] Clearing all user cache data...');
-    
-    this.store.set('user', null);
-    this.store.set('userSettings', DEFAULT_SETTINGS);
-    this.store.set('userStats', {
+    console.log("[CacheService] Clearing all user cache data...");
+
+    this.store.set("user", null);
+    this.store.set("userSettings", DEFAULT_SETTINGS);
+    this.store.set("userStats", {
       totalWordCount: 0,
       averageWPM: 0,
       totalRecordings: 0,
       streakDays: 0,
     });
-    this.store.set('recentTranscripts', []);
-    this.store.set('lastUpdated', 0);
-    this.store.set('userId', null);
-    
-    console.log('[CacheService] User cache cleared successfully');
+    this.store.set("recentTranscripts", []);
+    this.store.set("totalTranscriptCount", 0);
+    this.store.set("lastUpdated", 0);
+    this.store.set("userId", null);
+
+    console.log("[CacheService] User cache cleared successfully");
   }
 
   /**
@@ -205,12 +221,14 @@ export class CacheService {
     settings: Settings;
     stats: UserStats;
     transcripts: UITranscriptEntry[];
+    totalTranscriptCount?: number;
   } {
     return {
       user: this.getUser(),
       settings: this.getUserSettings(),
       stats: this.getUserStats(),
       transcripts: this.getRecentTranscripts(),
+      totalTranscriptCount: this.getTotalTranscriptCount(),
     };
   }
 
@@ -223,6 +241,7 @@ export class CacheService {
     settings?: Settings;
     stats?: UserStats;
     transcripts?: UITranscriptEntry[];
+    totalTranscriptCount?: number;
   }): void {
     if (data.user !== undefined) {
       this.setUser(data.user);
@@ -236,16 +255,19 @@ export class CacheService {
     if (data.transcripts !== undefined) {
       this.setRecentTranscripts(data.transcripts);
     }
+    if (data.totalTranscriptCount !== undefined) {
+      this.setTotalTranscriptCount(data.totalTranscriptCount);
+    }
   }
 
   /**
    * Get cache debug info
    */
-  getCacheInfo(): { 
-    userId: string | null; 
-    hasUser: boolean; 
-    hasSettings: boolean; 
-    hasStats: boolean; 
+  getCacheInfo(): {
+    userId: string | null;
+    hasUser: boolean;
+    hasSettings: boolean;
+    hasStats: boolean;
     transcriptCount: number;
   } {
     return {
@@ -258,6 +280,6 @@ export class CacheService {
   }
 
   private updateLastModified(): void {
-    this.store.set('lastUpdated', Date.now());
+    this.store.set("lastUpdated", Date.now());
   }
 }

@@ -34,7 +34,10 @@ import { AuthUtils } from "./utils/auth";
 import { config } from "../../config/environment";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
-import { SUPPORTED_LANGUAGES, getLanguageDisplayName } from "../shared/constants/languages";
+import {
+  SUPPORTED_LANGUAGES,
+  getLanguageDisplayName,
+} from "../shared/constants/languages";
 import MicrophoneService from "./services/microphone_service";
 // Webpack entry points
 // declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
@@ -66,7 +69,7 @@ autoUpdater.autoDownload = false; // Don't auto-download, let user choose
 autoUpdater.setFeedURL({
   provider: "github",
   owner: "Abhishekucs",
-  repo: "Overlay"
+  repo: "Overlay",
 });
 
 // Development configuration
@@ -125,6 +128,7 @@ interface AuthStateEventData {
   statistics: UserStats | null;
   settings: Settings | null;
   recentTranscripts: UITranscriptEntry[];
+  totalTranscriptCount: number;
   error?: string;
   source?: string;
 }
@@ -151,6 +155,7 @@ const sendAuthStateToRenderer = async (
       statistics: userData.statistics,
       settings: userData.settings,
       recentTranscripts: userData.recentTranscripts || [],
+      totalTranscriptCount: userData.totalTranscriptCount,
       error: userData.error,
       source,
     };
@@ -197,6 +202,7 @@ const sendUnauthenticatedStateToRenderer = (
       statistics: null,
       settings: null,
       recentTranscripts: [],
+      totalTranscriptCount: undefined,
       error,
       source,
     };
@@ -336,35 +342,38 @@ let sttService: STTService;
 // Recovery function for stuck processing states
 const handleProcessingTimeout = () => {
   console.error("[Main] Processing timeout reached - forcing recovery");
-  
+
   // Reset main process state
   isProcessing = false;
-  
+
   // Clear any existing timeout
   if (processingTimeout) {
     clearTimeout(processingTimeout);
     processingTimeout = null;
   }
-  
+
   // Restore system audio if muted
   if (systemAudioManager) {
     systemAudioManager.restoreSystemAudio().catch(console.error);
   }
-  
+
   // Reset recording window from processing state
-  if (windowManager.getRecordingWindow() && !windowManager.getRecordingWindow().isDestroyed()) {
+  if (
+    windowManager.getRecordingWindow() &&
+    !windowManager.getRecordingWindow().isDestroyed()
+  ) {
     windowManager.sendToRecording("processing-complete");
     windowManager.compactRecordingWindow();
   }
-  
+
   // Show error in information window
   windowManager.showInformation({
     type: "processing-error",
     title: "Processing Timeout",
     message: "Recording timed out and was reset",
-    duration: 4000
+    duration: 4000,
   });
-  
+
   console.log("[Main] Processing timeout recovery completed");
 };
 
@@ -376,39 +385,31 @@ const createMainWindow = () => {
   // Set main window for microphone service after creation
   MicrophoneService.getInstance().setMainWindow(mainWindow);
 
-  // Window ready - check if we need to send current auth state to new window
+  // Window ready - send initial auth state after React mounts
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log("[Main] Main window loaded, checking auth state...");
+    console.log("[Main] Main window loaded, waiting for React to mount...");
 
-    // If initial session restoration has completed, send current state to this window
-    // This handles window recreation from tray menu
-    if (externalAPIManager?.supabase.isSessionRestorationComplete()) {
-      console.log(
-        "[Main] Session restoration already completed, sending current auth state"
-      );
+    // Wait for React app to mount and set up event listeners
+    setTimeout(async () => {
+      console.log("[Main] React should be mounted, sending initial auth state...");
+      
       const currentUser = externalAPIManager?.supabase.getCurrentUser();
 
       if (currentUser) {
         console.log(
-          "[Main] User already authenticated, sending auth state to new window"
+          "[Main] User authenticated, sending auth state to window"
         );
-        await handleAuthenticationSuccess(currentUser, "Window Recreation");
+        await handleAuthenticationSuccess(currentUser, "Window Load");
       } else {
         console.log(
-          "[Main] Session restoration completed but no active user - starting fresh auth flow"
+          "[Main] No authenticated user, sending unauthenticated state"
         );
-        // Instead of sending error, just start fresh auth flow
-        // This is normal for first-time users or after logout
         sendUnauthenticatedStateToRenderer(
           undefined, // No error message - this is expected behavior
-          "Window Recreation - Fresh Start"
+          "Window Load - No User"
         );
       }
-    } else {
-      console.log(
-        "[Main] Session restoration in progress, will be handled by auth state change listener"
-      );
-    }
+    }, 500); // 500ms delay to ensure React app is mounted
   });
 
   if (config.isDevelopment) {
@@ -509,7 +510,9 @@ const buildLanguageSubmenu = (): Electron.MenuItemConstructorOptions[] => {
             // Get current settings first
             const currentSettings = dataLoaderService.getUserSettings();
             if (!currentSettings) {
-              console.error("[Tray] Cannot update language - no current settings available");
+              console.error(
+                "[Tray] Cannot update language - no current settings available"
+              );
               return;
             }
 
@@ -519,7 +522,8 @@ const buildLanguageSubmenu = (): Electron.MenuItemConstructorOptions[] => {
               targetLanguage: language.code,
             };
 
-            const result = await dataLoaderService.updateUserSettings(updatedSettings);
+            const result =
+              await dataLoaderService.updateUserSettings(updatedSettings);
 
             if (result.success) {
               console.log(
@@ -541,7 +545,9 @@ const buildLanguageSubmenu = (): Electron.MenuItemConstructorOptions[] => {
               );
             }
           } else {
-            console.warn("[Tray] Cannot update language - user not authenticated or data service unavailable");
+            console.warn(
+              "[Tray] Cannot update language - user not authenticated or data service unavailable"
+            );
           }
         } catch (error) {
           console.error("[Tray] Error updating target language:", error);
@@ -660,26 +666,30 @@ Node.js: ${process.versions.node}
 
 const registerGlobalHotkey = () => {
   let hotkey: string | null = null;
-  
+
   switch (process.platform) {
-    case 'darwin':  // macOS
+    case "darwin": // macOS
       hotkey = "option+space";
       break;
-    case 'win32':   // Windows
-      hotkey = "ctrl+cmd+space";  // cmd maps to Windows key on Windows
+    case "win32": // Windows
+      hotkey = "ctrl+cmd+space"; // cmd maps to Windows key on Windows
       break;
-    default:        // Linux and others - no hotkey
-      console.log(`[Main] Global hotkey not supported on platform: ${process.platform}`);
+    default: // Linux and others - no hotkey
+      console.log(
+        `[Main] Global hotkey not supported on platform: ${process.platform}`
+      );
       return;
   }
-  
+
   if (hotkey) {
     globalShortcut.register(hotkey, async () => {
       if (isProcessing) return;
       if (isRecording) await stopRecording();
       else await startRecording();
     });
-    console.log(`[Main] Global hotkey registered: ${hotkey} (${process.platform})`);
+    console.log(
+      `[Main] Global hotkey registered: ${hotkey} (${process.platform})`
+    );
   }
 };
 
@@ -762,11 +772,14 @@ const stopRecording = async () => {
         type: "processing-error",
         title: "Processing Error",
         message: error.message,
-        duration: 4000
+        duration: 4000,
       });
-      
+
       // Reset recording window from processing state on error
-      if (windowManager.getRecordingWindow() && !windowManager.getRecordingWindow().isDestroyed()) {
+      if (
+        windowManager.getRecordingWindow() &&
+        !windowManager.getRecordingWindow().isDestroyed()
+      ) {
         windowManager.sendToRecording("processing-complete");
         windowManager.compactRecordingWindow();
       }
@@ -776,7 +789,7 @@ const stopRecording = async () => {
         clearTimeout(processingTimeout);
         processingTimeout = null;
       }
-      
+
       // Reset processing state - window management moved to handleMetricsUpdate
       isProcessing = false;
     }
@@ -928,28 +941,33 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // This is the first instance, handle second instance attempts
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
+  app.on("second-instance", (event, commandLine, workingDirectory) => {
     console.log("[Main] Second instance detected, focusing existing window");
-    
+
     // Focus main window if it exists
     if (windowManager?.getMainWindow()) {
       const mainWindow = windowManager.getMainWindow();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      
+
       // On Windows, bring to front
-      if (process.platform === 'win32') {
+      if (process.platform === "win32") {
         mainWindow.show();
       }
     }
-    
+
     // Handle protocol URL from command line (Windows specific)
     // On Windows, protocol URLs are passed as command line arguments to new instances
-    if (process.platform === 'win32' && commandLine.length > 1) {
+    if (process.platform === "win32" && commandLine.length > 1) {
       // Look for overlay:// protocol in command line arguments
-      const protocolArg = commandLine.find(arg => arg.startsWith('overlay://'));
+      const protocolArg = commandLine.find((arg) =>
+        arg.startsWith("overlay://")
+      );
       if (protocolArg) {
-        console.log("[Main] Processing protocol URL from second instance:", protocolArg);
+        console.log(
+          "[Main] Processing protocol URL from second instance:",
+          protocolArg
+        );
         handleOAuthCallback(protocolArg);
       }
     }
@@ -1122,11 +1140,15 @@ app.whenReady().then(async () => {
     });
     updateTrayMenu();
     console.log("[Main] External API services initialized successfully");
+    
+    // Create main window AFTER all services are initialized
+    createMainWindow();
   } catch (error) {
     console.error("[Main] Failed to initialize external API services:", error);
+    
+    // Still create window even if services fail
+    createMainWindow();
   }
-
-  createMainWindow();
 
   // STT service will be initialized when user authenticates
   console.log(
@@ -1397,42 +1419,49 @@ ipcMain.handle("window:get-maximized-state", () => {
 });
 
 // Language change handler - sync language between tray and main window
-ipcMain.handle("update-target-language", async (event, languageCode: string) => {
-  try {
-    if (!dataLoaderService || !AuthUtils.isUserAuthenticated()) {
-      return { success: false, error: "User not authenticated or data service unavailable" };
+ipcMain.handle(
+  "update-target-language",
+  async (event, languageCode: string) => {
+    try {
+      if (!dataLoaderService || !AuthUtils.isUserAuthenticated()) {
+        return {
+          success: false,
+          error: "User not authenticated or data service unavailable",
+        };
+      }
+
+      // Get current settings first
+      const currentSettings = dataLoaderService.getUserSettings();
+      if (!currentSettings) {
+        return { success: false, error: "No current settings available" };
+      }
+
+      // Update only the targetLanguage field
+      const updatedSettings = {
+        ...currentSettings,
+        targetLanguage: languageCode,
+      };
+
+      // Update target language in settings
+      const result =
+        await dataLoaderService.updateUserSettings(updatedSettings);
+
+      if (result.success) {
+        console.log(`[IPC] Target language updated to: ${languageCode}`);
+
+        // Update tray menu to reflect the change
+        updateTrayMenu();
+
+        return { success: true };
+      } else {
+        console.error("[IPC] Failed to update target language:", result.error);
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      console.error("[IPC] Error updating target language:", error);
+      return { success: false, error: error.message };
     }
-
-    // Get current settings first
-    const currentSettings = dataLoaderService.getUserSettings();
-    if (!currentSettings) {
-      return { success: false, error: "No current settings available" };
-    }
-
-    // Update only the targetLanguage field
-    const updatedSettings = {
-      ...currentSettings,
-      targetLanguage: languageCode,
-    };
-
-    // Update target language in settings
-    const result = await dataLoaderService.updateUserSettings(updatedSettings);
-
-    if (result.success) {
-      console.log(`[IPC] Target language updated to: ${languageCode}`);
-      
-      // Update tray menu to reflect the change
-      updateTrayMenu();
-      
-      return { success: true };
-    } else {
-      console.error("[IPC] Failed to update target language:", result.error);
-      return { success: false, error: result.error };
-    }
-  } catch (error) {
-    console.error("[IPC] Error updating target language:", error);
-    return { success: false, error: error.message };
   }
-});
+);
 
 export { sttService };
