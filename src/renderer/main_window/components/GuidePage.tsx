@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowRight, Keyboard, Mic, Languages, Settings } from "lucide-react";
+import { ArrowRight, Keyboard, Mic, Languages, Settings, CheckCircle } from "lucide-react";
 
 interface GuidePageProps {
   onGuideComplete: () => void;
@@ -15,10 +15,61 @@ interface GuidePageProps {
 
 export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [hotkeyTested, setHotkeyTested] = useState(false);
+  const [isTestActive, setIsTestActive] = useState(true);
+
+  // Set up hotkey test mode when component mounts
+  useEffect(() => {
+    const startTest = async () => {
+      try {
+        await window.electronAPI.startHotkeyTest();
+        console.log("[GuidePage] Hotkey test mode started");
+      } catch (error) {
+        console.error("[GuidePage] Failed to start hotkey test:", error);
+      }
+    };
+
+    const handleHotkeyDetected = () => {
+      console.log("[GuidePage] Hotkey detected!");
+      setHotkeyTested(true);
+      setIsTestActive(false);
+    };
+
+    // Start test mode
+    startTest();
+    
+    // Listen for hotkey detection
+    window.addEventListener('hotkey-detected', handleHotkeyDetected);
+
+    // Cleanup on unmount
+    return () => {
+      window.electronAPI.endHotkeyTest().catch(console.error);
+      window.removeEventListener('hotkey-detected', handleHotkeyDetected);
+    };
+  }, []);
+
+  // Get platform-specific hotkey display
+  const getHotkeyDisplay = () => {
+    const platform = window.electronAPI.platform;
+    if (platform === "darwin") {
+      return { text: "⌥ + Space", readable: "Option + Space" };
+    } else if (platform === "win32") {
+      return { text: "Ctrl + Alt + Space", readable: "Ctrl + Alt + Space" };
+    } else {
+      return { text: "Not supported", readable: "Hotkey not supported on this platform" };
+    }
+  };
 
   const handleGetStarted = async () => {
+    // Prevent navigation if hotkey test not completed
+    if (!hotkeyTested) {
+      return;
+    }
+
     setIsLoading(true);
     try {
+      // End test mode before completing onboarding
+      await window.electronAPI.endHotkeyTest();
       await onGuideComplete();
     } finally {
       // Keep loading state briefly to show user feedback
@@ -135,25 +186,57 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
         </CardContent>
       </Card>
 
-      {/* Hotkey Reference */}
+      {/* Interactive Hotkey Test */}
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle className="text-lg">Keyboard Shortcuts</CardTitle>
+          <CardTitle className="text-lg">Test Your Hotkey</CardTitle>
+          <CardDescription>
+            Press your hotkey to ensure it's working before proceeding
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <span className="text-sm font-medium">Start/Stop Recording</span>
-              <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-sm">
-                {window.electronAPI.platform === "darwin" ? "⌥" : "Alt"} + Space
-              </kbd>
+          <div className={`p-6 rounded-lg border-2 transition-all duration-300 ${
+            hotkeyTested 
+              ? 'bg-green-50 border-green-200' 
+              : isTestActive 
+                ? 'bg-blue-50 border-blue-200' 
+                : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="text-center">
+              {hotkeyTested ? (
+                <>
+                  <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-green-800 mb-2">
+                    ✓ Hotkey Test Successful!
+                  </h3>
+                  <p className="text-green-700">
+                    Great! Your hotkey is working correctly. You can now proceed to start using Overlay.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Keyboard className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                    Press your hotkey to test
+                  </h3>
+                  <div className="mb-4">
+                    <kbd className="px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-lg font-mono shadow-sm">
+                      {getHotkeyDisplay().text}
+                    </kbd>
+                  </div>
+                  <p className="text-gray-600 text-sm">
+                    Press <strong>{getHotkeyDisplay().readable}</strong> to test the recording hotkey
+                  </p>
+                </>
+              )}
             </div>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <span className="text-sm font-medium">Open Main Window</span>
-              <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-sm">
-                Click tray icon
-              </kbd>
-            </div>
+          </div>
+          
+          {/* Additional info */}
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 text-center">
+              💡 <strong>Tip:</strong> This hotkey will start and stop your voice recordings when using Overlay
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -162,13 +245,18 @@ export const GuidePage: React.FC<GuidePageProps> = ({ onGuideComplete }) => {
         <Button 
           onClick={handleGetStarted} 
           size="lg" 
-          className="px-8"
-          disabled={isLoading}
+          className={`px-8 transition-all ${!hotkeyTested ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={isLoading || !hotkeyTested}
         >
           {isLoading ? (
             <>
               <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
               Loading...
+            </>
+          ) : !hotkeyTested ? (
+            <>
+              Complete hotkey test first
+              <Keyboard className="h-4 w-4 ml-2" />
             </>
           ) : (
             <>

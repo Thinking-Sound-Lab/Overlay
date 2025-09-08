@@ -8,7 +8,8 @@ export class WindowAnimator {
     window: BrowserWindow,
     targetWidth: number,
     targetHeight: number,
-    duration = 300
+    duration = 300,
+    anchorPoint: 'center' | 'bottom-center' = 'center'
   ) {
     const startBounds = window.getBounds();
     const startTime = Date.now();
@@ -29,11 +30,19 @@ export class WindowAnimator {
         startBounds.height + (targetHeight - startBounds.height) * easeOut
       );
 
-      // Keep window centered during resize
-      const newX =
-        startBounds.x + Math.round((startBounds.width - currentWidth) / 2);
-      const newY =
-        startBounds.y + Math.round((startBounds.height - currentHeight) / 2);
+      // Calculate new position based on anchor point
+      let newX: number;
+      let newY: number;
+
+      if (anchorPoint === 'bottom-center') {
+        // Bottom-center anchored: keep bottom edge fixed, expand upward
+        newX = startBounds.x + Math.round((startBounds.width - currentWidth) / 2);
+        newY = startBounds.y + (startBounds.height - currentHeight);
+      } else {
+        // Center anchored: keep window centered during resize (default behavior)
+        newX = startBounds.x + Math.round((startBounds.width - currentWidth) / 2);
+        newY = startBounds.y + Math.round((startBounds.height - currentHeight) / 2);
+      }
 
       try {
         window.setBounds({
