@@ -68,7 +68,7 @@ autoUpdater.autoDownload = false; // Don't auto-download, let user choose
 // GitHub provider configuration for all platforms
 autoUpdater.setFeedURL({
   provider: "github",
-  owner: "Abhishekucs",
+  owner: "Thinking-Sound-Lab",
   repo: "Overlay",
 });
 
@@ -77,7 +77,7 @@ autoUpdater.forceDevUpdateConfig = process.env.NODE_ENV === "development";
 
 console.log("[AutoUpdater] GitHub provider configuration:", {
   provider: "github",
-  owner: "Abhishekucs",
+  owner: "Thinking-Sound-Lab",
   repo: "Overlay",
   platform: process.platform,
 });

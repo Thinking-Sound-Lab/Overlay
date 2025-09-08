@@ -44,7 +44,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Abhishekucs/Overlay.git"
+    "url": "https://github.com/Thinking-Sound-Lab/Overlay.git"
   },
   "build": {
     "appId": "com.overlay.app",
