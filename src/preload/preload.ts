@@ -147,6 +147,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startHotkeyTest: () => ipcRenderer.invoke("start-hotkey-test"),
   endHotkeyTest: () => ipcRenderer.invoke("end-hotkey-test"),
 
+  // Renderer readiness for auth state synchronization
+  rendererReadyForAuth: () => ipcRenderer.invoke("renderer-ready-for-auth"),
+
   // Update event listeners
   onUpdateAvailable: (callback: (info: any) => void) => {
     const subscription = (_: any, info: any) => callback(info);
@@ -368,6 +371,9 @@ declare global {
       // Hotkey test mode for onboarding
       startHotkeyTest: () => Promise<{ success: boolean }>;
       endHotkeyTest: () => Promise<{ success: boolean }>;
+
+      // Renderer readiness for auth state synchronization
+      rendererReadyForAuth: () => Promise<{ success: boolean; error?: string }>;
     };
   }
 }

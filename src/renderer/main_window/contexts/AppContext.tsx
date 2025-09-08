@@ -387,6 +387,21 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     window.addEventListener("activity-updated", handleActivityUpdated);
     window.addEventListener("cache-cleared", handleCacheCleared);
 
+    // Signal to main process that renderer is ready to receive auth events
+    // This ensures auth state changes are only sent after event listeners are registered
+    const signalRendererReady = async () => {
+      try {
+        console.log("AppContext: Signaling main process that renderer is ready for auth events");
+        const result = await window.electronAPI.rendererReadyForAuth();
+        console.log("AppContext: Successfully signaled renderer readiness to main process:", result);
+      } catch (error) {
+        console.error("AppContext: Error signaling renderer readiness:", error);
+      }
+    };
+
+    // Use a small delay to ensure event listeners are fully registered
+    setTimeout(signalRendererReady, 100);
+
     return () => {
       window.removeEventListener("transcript-updated", handleTranscriptUpdated);
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);

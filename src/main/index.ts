@@ -57,6 +57,9 @@ let processingTimeout: NodeJS.Timeout | null = null;
 // Hotkey test mode for onboarding
 let isHotkeyTestMode = false;
 
+// Renderer readiness tracking for auth state synchronization
+let rendererReady = false;
+
 // External API services
 let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
@@ -141,7 +144,7 @@ interface AuthStateEventData {
  */
 const sendAuthStateToRenderer = async (
   userData: AuthStateEventData,
-  source: string = "Unknown"
+  source = "Unknown"
 ): Promise<void> => {
   const mainWindow = windowManager.getMainWindow();
   if (!mainWindow || !userData) {
@@ -188,7 +191,7 @@ const sendAuthStateToRenderer = async (
  */
 const sendUnauthenticatedStateToRenderer = (
   error?: string,
-  source: string = "Unknown"
+  source = "Unknown"
 ): void => {
   const mainWindow = windowManager.getMainWindow();
   if (!mainWindow) {
@@ -306,7 +309,7 @@ const handleAuthenticationSuccess = async (
  */
 const handleAuthenticationFailure = (
   error?: string,
-  source: string = "Unknown"
+  source = "Unknown"
 ): void => {
   console.log(
     `[Main] Handling authentication failure (${source}):`,
@@ -388,25 +391,9 @@ const createMainWindow = () => {
   // Set main window for microphone service after creation
   MicrophoneService.getInstance().setMainWindow(mainWindow);
 
-  // Window ready - send initial auth state after React mounts
+  // Window ready - wait for renderer to signal when it's ready for auth events
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log("[Main] Main window loaded, sending initial auth state...");
-
-    // Send auth state immediately - React context is ready when window loads
-    const currentUser = externalAPIManager?.supabase.getCurrentUser();
-    
-    if (currentUser) {
-      console.log("[Main] User authenticated, sending auth state to window");
-      await handleAuthenticationSuccess(currentUser, "Window Load");
-    } else {
-      console.log(
-        "[Main] No authenticated user, sending unauthenticated state"
-      );
-      sendUnauthenticatedStateToRenderer(
-        undefined, // No error message - this is expected behavior
-        "Window Load - No User"
-      );
-    }
+    console.log("[Main] Main window loaded, waiting for renderer to signal ready for auth events");
   });
 
   if (config.isDevelopment) {
@@ -1137,18 +1124,30 @@ app.whenReady().then(async () => {
       windowManager
     );
 
-    // Set up callback to receive auth state changes from SupabaseService native listener
+    // Register auth state callback with hybrid approach for renderer synchronization
     externalAPIManager.supabase.setAuthStateChangeCallback(async (user) => {
-      if (user) {
-        await handleAuthenticationSuccess(user, "Auth State Change");
+      if (rendererReady) {
+        // Normal flow - renderer is ready to handle auth events
+        if (user) {
+          await handleAuthenticationSuccess(user, "Auth State Change");
+        } else {
+          handleAuthenticationFailure("User signed out", "Auth State Change");
+        }
       } else {
-        handleAuthenticationFailure("User signed out", "Auth State Change");
+        // Renderer not ready yet - only handle logout (cleanup), defer login events
+        if (!user) {
+          handleAuthenticationFailure("User signed out", "Auth State Change - Early");
+        }
+        // For login events, wait for renderer to signal ready and check auth state then
+        console.log("[Main] Auth state change detected but renderer not ready, deferring login event");
       }
     });
+
     updateTrayMenu();
     console.log("[Main] External API services initialized successfully");
 
     // Create main window AFTER all services are initialized
+
     createMainWindow();
   } catch (error) {
     console.error("[Main] Failed to initialize external API services:", error);
@@ -1237,7 +1236,7 @@ app.on("will-quit", async () => {
 
 ipcMain.handle(
   "audio-recorded",
-  (event, audioData: { data: string; mimeType: string }) => {
+  (_event, audioData: { data: string; mimeType: string }) => {
     console.log("[Main] Received audio chunk:", audioData.data.length, "bytes");
     if (isRecording) {
       sttService.receiveAudioData(audioData.data);
@@ -1246,13 +1245,13 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("window-hover-enter", (event) => {
+ipcMain.handle("window-hover-enter", (_event) => {
   if (windowManager.getRecordingWindow() && !isRecording) {
     windowManager.expandRecordingWindow();
   }
 });
 
-ipcMain.handle("window-hover-leave", (event) => {
+ipcMain.handle("window-hover-leave", (_event) => {
   if (
     !windowManager.getRecordingWindow() ||
     windowManager.getRecordingWindow().isDestroyed()
@@ -1279,7 +1278,7 @@ ipcMain.handle("open-external-link", (event, url) => {
 });
 
 // Authentication handlers
-ipcMain.handle("on-authentication-complete", (event, user) => {
+ipcMain.handle("on-authentication-complete", (_event, user) => {
   if (!user) {
     console.error("[Main] Authentication complete called with no user data");
     return { success: false, error: "No user data provided" };
@@ -1295,7 +1294,7 @@ ipcMain.handle("on-authentication-complete", (event, user) => {
 });
 
 // Auth state refresh handler - reload auth state from database after onboarding completion
-ipcMain.handle("refresh-auth-state", async (event) => {
+ipcMain.handle("refresh-auth-state", async (_event) => {
   console.log("[Main] Auth state refresh requested");
 
   if (!AuthUtils.isUserAuthenticated()) {
@@ -1482,6 +1481,28 @@ ipcMain.handle("end-hotkey-test", () => {
   console.log("[Main] Ending hotkey test mode");
   isHotkeyTestMode = false;
   return { success: true };
+});
+
+// Renderer readiness handler for auth state synchronization
+ipcMain.handle("renderer-ready-for-auth", async (_event) => {
+  console.log("[Main] Renderer signaled ready for auth events");
+  rendererReady = true;
+
+  // Check current auth state and send to now-ready renderer
+  try {
+    const currentUser = externalAPIManager.supabase.getCurrentUser();
+    if (currentUser) {
+      console.log("[Main] Sending auth state to ready renderer - user authenticated:", currentUser.email);
+      await handleAuthenticationSuccess(currentUser, "Renderer Ready");
+    } else {
+      console.log("[Main] Sending auth state to ready renderer - no user authenticated");
+      handleAuthenticationFailure("No active session", "Renderer Ready");
+    }
+    return { success: true };
+  } catch (error) {
+    console.error("[Main] Error handling renderer ready for auth:", error);
+    return { success: false, error: error.message };
+  }
 });
 
 export { sttService };
