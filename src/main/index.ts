@@ -39,6 +39,7 @@ import {
   getLanguageDisplayName,
 } from "../shared/constants/languages";
 import MicrophoneService from "./services/microphone_service";
+import { PermissionsService } from "./services/permissions_service";
 // Webpack entry points
 // declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 // declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -269,6 +270,15 @@ const handleAuthenticationSuccess = async (
       // Initialize authenticated services
       if (!windowManager.getRecordingWindow()) {
         windowManager.createRecordingWindow();
+      }
+
+      // Show/hide recording window based on onboarding status
+      if (userData.user?.onboarding_completed) {
+        console.log("[Main] User completed onboarding, showing recording window");
+        windowManager.showRecordingWindow();
+      } else {
+        console.log("[Main] User onboarding not completed, keeping recording window hidden");
+        windowManager.hideRecordingWindow();
       }
 
       // Create information window for user notifications (hidden by default)
@@ -1343,20 +1353,26 @@ ipcMain.handle("compact-recording-window", () => {
 });
 
 // Permission checking handlers
-ipcMain.handle("check-accessibility-permission", () => {
-  // This is a placeholder - actual implementation would depend on the platform
-  // For now, we'll return true to allow the demo to work
-  return true;
+ipcMain.handle("check-accessibility-permission", async () => {
+  const permissionsService = PermissionsService.getInstance();
+  const result = await permissionsService.checkAccessibilityPermission();
+  return result.granted;
 });
 
-ipcMain.handle("request-accessibility-permission", () => {
-  // Open system preferences to accessibility settings
-  if (process.platform === "darwin") {
-    shell.openExternal(
-      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    );
-  }
-  return { success: true };
+ipcMain.handle("check-microphone-permission", async () => {
+  const permissionsService = PermissionsService.getInstance();
+  const result = await permissionsService.checkMicrophonePermission();
+  return result.granted;
+});
+
+ipcMain.handle("request-accessibility-permission", async () => {
+  const permissionsService = PermissionsService.getInstance();
+  return await permissionsService.requestAccessibilityPermission();
+});
+
+ipcMain.handle("request-microphone-permission", async () => {
+  const permissionsService = PermissionsService.getInstance();
+  return await permissionsService.requestMicrophonePermission();
 });
 
 // Auto-updater IPC handlers

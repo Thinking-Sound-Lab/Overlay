@@ -83,7 +83,7 @@ export class WindowManager {
     });
 
     this.recordingWindow.loadURL(RECORDING_WINDOW_WEBPACK_ENTRY);
-    this.recordingWindow.show();
+    // Don't automatically show - will be shown when onboarding is completed
     return this.recordingWindow;
   }
 
@@ -185,6 +185,23 @@ export class WindowManager {
   hideInformation(): void {
     const window = this.getInformationWindow();
     if (window && window.isVisible()) {
+      window.hide();
+    }
+  }
+
+  // Recording Window Visibility Methods
+  showRecordingWindow(): void {
+    const window = this.getRecordingWindow();
+    if (window && !window.isVisible()) {
+      console.log("[WindowManager] Showing recording window (onboarding completed)");
+      window.show();
+    }
+  }
+
+  hideRecordingWindow(): void {
+    const window = this.getRecordingWindow();
+    if (window && window.isVisible()) {
+      console.log("[WindowManager] Hiding recording window (onboarding not completed)");
       window.hide();
     }
   }
