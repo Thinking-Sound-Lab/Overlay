@@ -1,7 +1,7 @@
 {
   "name": "overlay",
   "productName": "Overlay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered dictation app that transcribes speech and inserts text into any application",
   "main": ".webpack/main",
   "scripts": {
