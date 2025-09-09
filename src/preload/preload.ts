@@ -55,8 +55,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Permission handlers
   checkAccessibilityPermission: () =>
     ipcRenderer.invoke("check-accessibility-permission"),
+  checkMicrophonePermission: () =>
+    ipcRenderer.invoke("check-microphone-permission"),
   requestAccessibilityPermission: () =>
     ipcRenderer.invoke("request-accessibility-permission"),
+  requestMicrophonePermission: () =>
+    ipcRenderer.invoke("request-microphone-permission"),
 
   // Auto-updater handlers
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
@@ -146,6 +150,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Hotkey test mode for onboarding
   startHotkeyTest: () => ipcRenderer.invoke("start-hotkey-test"),
   endHotkeyTest: () => ipcRenderer.invoke("end-hotkey-test"),
+
+  // Renderer readiness for auth state synchronization
+  rendererReadyForAuth: () => ipcRenderer.invoke("renderer-ready-for-auth"),
 
   // Update event listeners
   onUpdateAvailable: (callback: (info: any) => void) => {
@@ -277,7 +284,9 @@ declare global {
 
       // Permission handlers
       checkAccessibilityPermission: () => Promise<boolean>;
+      checkMicrophonePermission: () => Promise<boolean>;
       requestAccessibilityPermission: () => Promise<{ success: boolean }>;
+      requestMicrophonePermission: () => Promise<{ success: boolean }>;
 
       // Auto-updater handlers
       checkForUpdates: () => Promise<{ success: boolean }>;
@@ -368,6 +377,9 @@ declare global {
       // Hotkey test mode for onboarding
       startHotkeyTest: () => Promise<{ success: boolean }>;
       endHotkeyTest: () => Promise<{ success: boolean }>;
+
+      // Renderer readiness for auth state synchronization
+      rendererReadyForAuth: () => Promise<{ success: boolean; error?: string }>;
     };
   }
 }

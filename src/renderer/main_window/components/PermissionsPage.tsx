@@ -34,20 +34,20 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
     setIsChecking(true);
 
     try {
-      // Check microphone permission
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setMicrophonePermission("granted");
-      stream.getTracks().forEach((track) => track.stop());
+      // Check microphone permission using the proper API
+      const hasMicrophone = await window.electronAPI.checkMicrophonePermission();
+      setMicrophonePermission(hasMicrophone ? "granted" : "denied");
     } catch (error) {
+      console.error("Error checking microphone permission:", error);
       setMicrophonePermission("denied");
     }
 
-    // Check accessibility permission (we'll need to implement this via IPC)
+    // Check accessibility permission using the proper API
     try {
-      const hasAccessibility =
-        await window.electronAPI.checkAccessibilityPermission();
+      const hasAccessibility = await window.electronAPI.checkAccessibilityPermission();
       setAccessibilityPermission(hasAccessibility ? "granted" : "denied");
     } catch (error) {
+      console.error("Error checking accessibility permission:", error);
       setAccessibilityPermission("denied");
     }
 
@@ -56,10 +56,19 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
 
   const requestMicrophonePermission = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setMicrophonePermission("granted");
-      stream.getTracks().forEach((track) => track.stop());
+      // Use Electron's native microphone permission request
+      const result = await window.electronAPI.requestMicrophonePermission();
+      
+      if (result.success) {
+        setMicrophonePermission("granted");
+      } else {
+        setMicrophonePermission("denied");
+      }
+      
+      // Re-check permissions after requesting to be sure
+      setTimeout(checkPermissions, 500);
     } catch (error) {
+      console.error("Error requesting microphone permission:", error);
       setMicrophonePermission("denied");
     }
   };
@@ -85,7 +94,19 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
 
   useEffect(() => {
     checkPermissions();
-  }, []);
+
+    // Set up periodic permission monitoring
+    const permissionCheckInterval = setInterval(() => {
+      // Only check if we don't already have both permissions
+      if (microphonePermission !== "granted" || accessibilityPermission !== "granted") {
+        checkPermissions();
+      }
+    }, 3000); // Check every 3 seconds
+
+    return () => {
+      clearInterval(permissionCheckInterval);
+    };
+  }, [microphonePermission, accessibilityPermission]);
 
   const getStatusIcon = (permission: string) => {
     switch (permission) {
@@ -224,12 +245,32 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
             <CardContent>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-2">
-                    Please enable Overlay in System Preferences → Security &
-                    Privacy → Accessibility
-                  </p>
+                  <div className="text-sm text-gray-600 mb-2">
+                    {window.electronAPI.platform === "darwin" ? (
+                      <>
+                        <p className="mb-1">Please enable Overlay in:</p>
+                        <p className="font-mono text-xs bg-gray-100 p-2 rounded">
+                          System Preferences → Security & Privacy → Privacy → Accessibility
+                        </p>
+                      </>
+                    ) : window.electronAPI.platform === "win32" ? (
+                      <>
+                        <p className="mb-1">Please enable accessibility access in:</p>
+                        <p className="font-mono text-xs bg-gray-100 p-2 rounded">
+                          Settings → Ease of Access → Narrator
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mb-1">Please ensure accessibility tools are enabled</p>
+                        <p className="font-mono text-xs bg-gray-100 p-2 rounded">
+                          Check your desktop environment's accessibility settings
+                        </p>
+                      </>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500">
-                    This will open System Preferences where you can grant access
+                    Click "Open Settings" to go directly to the system settings
                   </p>
                 </div>
                 <Button
@@ -267,6 +308,27 @@ export const PermissionsPage: React.FC<PermissionsPageProps> = ({
           <div className="text-center">
             <p className="text-sm text-green-600 font-medium">
               ✅ All permissions granted! You're ready to continue.
+            </p>
+          </div>
+        )}
+
+        {!allPermissionsGranted && (
+          <div className="text-center">
+            <p className="text-sm text-gray-500">
+              {isChecking ? (
+                <>
+                  <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 animate-spin border-t-gray-600 mr-2"></span>
+                  Checking permissions...
+                </>
+              ) : (
+                <>
+                  Monitoring permissions automatically every 3 seconds.
+                  <br />
+                  <span className="text-xs">
+                    Grant the permissions above, then wait a moment for automatic detection.
+                  </span>
+                </>
+              )}
             </p>
           </div>
         )}

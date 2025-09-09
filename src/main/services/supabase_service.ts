@@ -77,7 +77,7 @@ export class SupabaseService {
     this.attemptSessionRestore();
   }
 
-  private async attemptSessionRestore() {
+  async attemptSessionRestore() {
     try {
       console.log(
         "SupabaseService: Attempting to restore session from storage..."
@@ -262,7 +262,6 @@ export class SupabaseService {
       return { data: null as any, error };
     }
   }
-
 
   async signInWithGoogle() {
     try {

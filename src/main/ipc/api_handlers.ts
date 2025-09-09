@@ -309,6 +309,10 @@ export class APIHandlers {
           "[APIHandlers] Onboarding completed successfully via DataLoaderService"
         );
 
+        // Show recording window now that onboarding is completed
+        console.log("[APIHandlers] Showing recording window after onboarding completion");
+        this.windowManager.showRecordingWindow();
+
         return this.createResponse({ success: true, data: result.data });
       } else {
         console.error(

@@ -38,6 +38,7 @@ const config: ForgeConfig = {
     icon: "./assets/icon", // Base name, will look for .ico on Windows, .icns on macOS
     appBundleId: "com.overlay.app",
     appCategoryType: "public.app-category.productivity",
+    
     win32metadata: {
       CompanyName: "Overlay",
       FileDescription: "AI-powered dictation app",
@@ -121,8 +122,6 @@ const config: ForgeConfig = {
     ),
 
     new MakerZIP({}, ["darwin"]), // Keep ZIP as backup/alternative for macOS
-    new MakerRpm({}, ["linux"]),
-    new MakerDeb({}, ["linux"]),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
