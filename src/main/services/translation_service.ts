@@ -95,8 +95,6 @@ export class TranslationService {
     console.log("[Translation] Source language:", sourceLanguage);
 
     try {
-      let processedText = transcript;
-
       // Get auto-detected mode if enabled
       let selectedMode = settings.selectedMode;
       if (settings.enableAutoDetection) {

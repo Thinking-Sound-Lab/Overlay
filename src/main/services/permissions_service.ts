@@ -27,18 +27,13 @@ export class PermissionsService {
         const hasAccessibility = systemPreferences.isTrustedAccessibilityClient(false);
         return { granted: hasAccessibility };
       } else if (process.platform === "win32") {
-        // Windows: Limited accessibility API support in Electron
-        // For now, we assume granted (Windows doesn't have the same accessibility permission model)
-        console.warn("[PermissionsService] Windows accessibility checking limited - assuming granted");
-        return { granted: true };
-      } else if (process.platform === "linux") {
-        // Linux: No Electron API available, assume granted
-        console.warn("[PermissionsService] Linux accessibility checking not available - assuming granted");
+        // Windows: No accessibility permissions required for SendInput API
+        console.log("[PermissionsService] Windows: No accessibility permission required for native text insertion");
         return { granted: true };
       } else {
         return {
           granted: false,
-          error: `Accessibility permission checking not supported on ${process.platform}`,
+          error: `Platform ${process.platform} is not supported. Please use macOS or Windows.`,
         };
       }
     } catch (error) {
@@ -62,14 +57,10 @@ export class PermissionsService {
           granted: status === 'granted',
           error: status === 'denied' ? 'Microphone access denied' : undefined
         };
-      } else if (process.platform === "linux") {
-        // Linux: No standardized permission system, assume granted if we can enumerate devices
-        console.warn("[PermissionsService] Linux microphone permission checking limited - assuming granted");
-        return { granted: true };
       } else {
         return {
           granted: false,
-          error: `Microphone permission checking not supported on ${process.platform}`,
+          error: `Platform ${process.platform} is not supported. Please use macOS or Windows.`,
         };
       }
     } catch (error) {
@@ -92,25 +83,11 @@ export class PermissionsService {
         const granted = systemPreferences.isTrustedAccessibilityClient(true);
         return { success: granted };
       } else if (process.platform === "win32") {
-        // Windows: Open accessibility settings
-        try {
-          await shell.openExternal('ms-settings:easeofaccess-narrator');
-          return { success: true };
-        } catch (error) {
-          console.error("[PermissionsService] Failed to open Windows accessibility settings:", error);
-          return { success: false };
-        }
-      } else if (process.platform === "linux") {
-        // Linux: Try to open accessibility settings (varies by desktop environment)
-        try {
-          // Try GNOME Settings first
-          await shell.openExternal('gnome-control-center universal-access');
-          return { success: true };
-        } catch {
-          console.warn('[PermissionsService] Could not open accessibility settings automatically on Linux');
-          return { success: false };
-        }
+        // Windows: No accessibility permission required for native text insertion
+        console.log("[PermissionsService] Windows: No accessibility permission required");
+        return { success: true };
       } else {
+        console.error(`[PermissionsService] Platform ${process.platform} is not supported`);
         return { success: false };
       }
     } catch (error) {
@@ -128,11 +105,8 @@ export class PermissionsService {
         // macOS and Windows: Use Electron's built-in media access request
         const granted = await systemPreferences.askForMediaAccess('microphone');
         return { success: granted };
-      } else if (process.platform === "linux") {
-        // Linux: No standardized permission request, return success
-        console.warn("[PermissionsService] Linux microphone permission request not available");
-        return { success: true };
       } else {
+        console.error(`[PermissionsService] Platform ${process.platform} is not supported`);
         return { success: false };
       }
     } catch (error) {

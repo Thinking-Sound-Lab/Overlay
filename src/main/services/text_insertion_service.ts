@@ -1,4 +1,4 @@
-// TextInsertionService.ts - Cross-platform text insertion with clipboard primary and robotjs fallback
+// TextInsertionService.ts - RobotJS primary with clipboard fallback
 import { exec } from "child_process";
 import { promisify } from "util";
 import * as robot from "robotjs";
@@ -16,10 +16,13 @@ export class TextInsertionService {
   constructor() {
     this.platform = process.platform;
     console.log(`[TextInsertion] Initialized for platform: ${this.platform}`);
+    
+    // Configure robotjs settings
+    robot.setKeyboardDelay(2);
   }
 
   /**
-   * Insert text using clipboard as primary method with robotjs as fallback
+   * Insert text using robotjs as primary method with clipboard as fallback
    */
   async insertText(
     text: string,
@@ -46,9 +49,23 @@ export class TextInsertionService {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    // Primary method: Clipboard insertion (cross-platform, Unicode-safe)
+    // Primary method: RobotJS typing
     try {
-      console.log("[TextInsertion] Attempting clipboard method (primary)");
+      console.log("[TextInsertion] Attempting RobotJS method (primary)");
+      const robotSuccess = await this.insertTextViaRobot(processedText);
+      if (robotSuccess) {
+        console.log(
+          "[TextInsertion] Text inserted successfully via RobotJS"
+        );
+        return true;
+      }
+    } catch (error) {
+      console.warn("[TextInsertion] RobotJS method failed:", error);
+    }
+
+    // Fallback method: Clipboard insertion
+    try {
+      console.log("[TextInsertion] Attempting clipboard method (fallback)");
       const clipboardSuccess = await this.insertTextViaClipboard(
         processedText,
         preserveClipboard,
@@ -62,45 +79,30 @@ export class TextInsertionService {
       console.warn("[TextInsertion] Clipboard method failed:", error);
     }
 
-    // Fallback method: RobotJS direct typing
-    try {
-      console.log("[TextInsertion] Attempting RobotJS method (fallback)");
-      const robotSuccess = await this.insertTextViaRobot(processedText);
-      if (robotSuccess) {
-        console.log("[TextInsertion] Text inserted successfully via RobotJS");
-        return true;
-      }
-    } catch (error) {
-      console.error("[TextInsertion] RobotJS method failed:", error);
-    }
-
     console.error("[TextInsertion] All text insertion methods failed");
     return false;
   }
 
   /**
-   * RobotJS text insertion method (fallback)
+   * RobotJS text insertion method (primary)
    */
   private async insertTextViaRobot(text: string): Promise<boolean> {
     try {
-      console.log("[TextInsertion] Using RobotJS for direct text typing");
+      console.log("[TextInsertion] Using RobotJS for text insertion");
 
-      // Set typing delay for more reliable insertion
-      robot.setKeyboardDelay(10);
-
-      // Type the text directly
+      // Type the text using robotjs
       robot.typeString(text);
 
-      console.log("[TextInsertion] RobotJS: Text typed successfully");
+      console.log("[TextInsertion] RobotJS: Text inserted successfully");
       return true;
     } catch (error) {
-      console.error("[TextInsertion] RobotJS typing failed:", error);
+      console.error("[TextInsertion] RobotJS insertion failed:", error);
       return false;
     }
   }
 
   /**
-   * Clipboard method for text insertion (primary)
+   * Clipboard method for text insertion (fallback)
    */
   private async insertTextViaClipboard(
     text: string,
@@ -128,10 +130,14 @@ export class TextInsertionService {
               break;
             case "linux":
               const { stdout: linuxClipboard } = await execAsync(
-                "xclip -selection clipboard -out"
+                "xclip -selection clipboard -o"
               );
               originalClipboard = linuxClipboard;
               break;
+            default:
+              throw new Error(
+                `Unsupported platform for clipboard operations: ${this.platform}`
+              );
           }
         } catch (clipError) {
           console.warn(
@@ -151,7 +157,7 @@ export class TextInsertionService {
           break;
         case "win32":
           await execAsync(
-            `powershell -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`
+            `powershell -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'")`
           );
           await execAsync(
             'powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\\"^v\\")"'
@@ -163,6 +169,8 @@ export class TextInsertionService {
           );
           await execAsync("xdotool key ctrl+v");
           break;
+        default:
+          throw new Error(`Unsupported platform: ${platform}`);
       }
 
       // Restore original clipboard after delay
@@ -177,12 +185,17 @@ export class TextInsertionService {
                 break;
               case "win32":
                 await execAsync(
-                  `powershell -Command "Set-Clipboard -Value '${originalClipboard.replace(/'/g, "''")}'"`
+                  `powershell -Command "Set-Clipboard -Value '${originalClipboard.replace(/'/g, "''")}'")`
                 );
                 break;
               case "linux":
                 await execAsync(
                   `echo "${originalClipboard.replace(/"/g, '\\"')}" | xclip -selection clipboard`
+                );
+                break;
+              default:
+                console.warn(
+                  `Cannot restore clipboard on unsupported platform: ${platform}`
                 );
                 break;
             }
@@ -209,14 +222,19 @@ export class TextInsertionService {
   }
 
   /**
-   * Check if text insertion is available (clipboard + robotjs always available)
+   * Check if text insertion is available
    */
   async isAvailable(): Promise<boolean> {
     try {
-      // Clipboard method should work on all platforms
-      // RobotJS should also work as fallback
+      // Check if RobotJS is available
+      if (robot && typeof robot.typeString === 'function') {
+        console.log("[TextInsertion] RobotJS text insertion available");
+        return true;
+      }
+
+      // Fallback to clipboard method availability
       console.log(
-        "[TextInsertion] Text insertion available via clipboard + RobotJS"
+        "[TextInsertion] RobotJS not available, clipboard method available as fallback"
       );
       return true;
     } catch (error) {
@@ -226,18 +244,29 @@ export class TextInsertionService {
   }
 
   /**
-   * Get setup instructions for clipboard + RobotJS text insertion
+   * Get setup instructions for text insertion
    */
   getSetupInstructions(): string {
     switch (this.platform) {
       case "darwin":
-        return "macOS: Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility for RobotJS fallback";
+        return "macOS: Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility for optimal text insertion";
       case "win32":
-        return "Windows: No additional setup required for clipboard method. RobotJS may require running as administrator for some applications.";
+        return "Windows: No additional setup required for text insertion";
       case "linux":
-        return "Linux: Install xclip package for clipboard support: sudo apt-get install xclip";
+        return "Linux: Ensure xclip and xdotool are installed for clipboard method";
       default:
-        return "Clipboard method should work on all platforms";
+        return "Platform-specific setup instructions not available";
+    }
+  }
+
+  /**
+   * Check if RobotJS is available
+   */
+  isRobotAvailable(): boolean {
+    try {
+      return robot && typeof robot.typeString === 'function';
+    } catch {
+      return false;
     }
   }
 }
