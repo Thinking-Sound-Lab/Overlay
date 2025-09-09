@@ -13,7 +13,7 @@ import type {
   UITranscriptEntry,
 } from "../../../shared/types";
 import type { UserRecord } from "../../../shared/types/database";
-import { auth, db, analytics } from "../lib/api_client";
+import { auth } from "../lib/api_client";
 import { DEFAULT_SETTINGS } from "../../../shared/constants/default-settings";
 
 interface AppState {
@@ -391,9 +391,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // This ensures auth state changes are only sent after event listeners are registered
     const signalRendererReady = async () => {
       try {
-        console.log("AppContext: Signaling main process that renderer is ready for auth events");
+        console.log(
+          "AppContext: Signaling main process that renderer is ready for auth events"
+        );
         const result = await window.electronAPI.rendererReadyForAuth();
-        console.log("AppContext: Successfully signaled renderer readiness to main process:", result);
+        console.log(
+          "AppContext: Successfully signaled renderer readiness to main process:",
+          result
+        );
       } catch (error) {
         console.error("AppContext: Error signaling renderer readiness:", error);
       }

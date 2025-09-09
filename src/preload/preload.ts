@@ -55,8 +55,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Permission handlers
   checkAccessibilityPermission: () =>
     ipcRenderer.invoke("check-accessibility-permission"),
+  checkMicrophonePermission: () =>
+    ipcRenderer.invoke("check-microphone-permission"),
   requestAccessibilityPermission: () =>
     ipcRenderer.invoke("request-accessibility-permission"),
+  requestMicrophonePermission: () =>
+    ipcRenderer.invoke("request-microphone-permission"),
 
   // Auto-updater handlers
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
@@ -280,7 +284,9 @@ declare global {
 
       // Permission handlers
       checkAccessibilityPermission: () => Promise<boolean>;
+      checkMicrophonePermission: () => Promise<boolean>;
       requestAccessibilityPermission: () => Promise<{ success: boolean }>;
+      requestMicrophonePermission: () => Promise<{ success: boolean }>;
 
       // Auto-updater handlers
       checkForUpdates: () => Promise<{ success: boolean }>;
