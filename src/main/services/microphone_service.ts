@@ -12,7 +12,7 @@ export class MicrophoneService {
   private static instance: MicrophoneService;
   private availableDevices: MicrophoneDevice[] = [];
   private mainWindow: BrowserWindow | null = null;
-  private currentDeviceId: string = "default";
+  private currentDeviceId = "default";
   private deviceChangeCallbacks: Set<(deviceId: string) => void> = new Set();
 
   private constructor() {

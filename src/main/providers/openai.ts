@@ -93,7 +93,7 @@ function combineAudioChunks(audioChunks: string[]): Buffer {
   return amplifyAudioGain(combinedBuffer);
 }
 
-function amplifyAudioGain(audioBuffer: Buffer, gainFactor: number = 2.0): Buffer {
+function amplifyAudioGain(audioBuffer: Buffer, gainFactor = 2.0): Buffer {
   // Convert buffer to 16-bit signed integers for audio processing
   const samples = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength / 2);
   const amplifiedSamples = new Int16Array(samples.length);

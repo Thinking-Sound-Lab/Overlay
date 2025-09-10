@@ -959,7 +959,7 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // This is the first instance, handle second instance attempts
-  app.on("second-instance", (event, commandLine, workingDirectory) => {
+  app.on("second-instance", (event, commandLine, _workingDirectory) => {
     console.log("[Main] Second instance detected, focusing existing window");
 
     // Focus main window if it exists
