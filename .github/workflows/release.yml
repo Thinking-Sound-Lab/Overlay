@@ -87,14 +87,18 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
-      # Upload Windows artifacts
-      - name: Upload Windows artifacts
+      # Upload Windows artifacts to Supabase Storage
+      - name: Upload Windows artifacts to Supabase Storage
         if: matrix.platform == 'win32'
-        uses: actions/upload-artifact@v4
+        uses: datapods/upload-to-supabase-storage@v1.0.2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
-          retention-days: 90
+          file_path: ${{ matrix.artifact_path }}
+          bucket: build-artifacts
+          content_type: application/octet-stream
+          upsert: true
 
       # macOS Release Build
       - name: Build and publish macOS
@@ -120,15 +124,18 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
-      # Upload macOS artifacts
-      - name: Upload macOS artifacts
+      # Upload macOS artifacts to Supabase Storage  
+      - name: Upload macOS artifacts to Supabase Storage
         if: matrix.platform == 'darwin'
-        uses: actions/upload-artifact@v4
+        uses: datapods/upload-to-supabase-storage@v1.0.2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
-          retention-days: 90
-
+          file_path: ${{ matrix.artifact_path }}
+          bucket: build-artifacts
+          content_type: application/octet-stream
+          upsert: true
 
   # Create GitHub Release
   create-release:
@@ -143,53 +150,131 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cleanup old artifacts
-        uses: actions/github-script@v7
+      - name: Setup Node.js for release
+        uses: actions/setup-node@v4
         with:
-          script: |
-            console.log('🧹 Starting aggressive artifact cleanup...');
-            
-            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-            
-            console.log(`Found ${artifacts.artifacts.length} total artifacts`);
-            
-            let deletedCount = 0;
-            let failedCount = 0;
-            
-            // Delete ALL existing artifacts to start fresh (aggressive cleanup for storage reset)
-            for (const artifact of artifacts.artifacts) {
-              try {
-                console.log(`Deleting artifact: ${artifact.name} (ID: ${artifact.id}, Size: ${artifact.size_in_bytes} bytes, Created: ${artifact.created_at})`);
-                await github.rest.actions.deleteArtifact({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  artifact_id: artifact.id,
-                });
-                deletedCount++;
-              } catch (error) {
-                console.error(`Failed to delete artifact ${artifact.name} (ID: ${artifact.id}):`, error.message);
-                failedCount++;
-              }
-            }
-            
-            console.log(`✅ Cleanup complete: ${deletedCount} artifacts deleted, ${failedCount} failures`);
-            
-            // Also check for any remaining artifacts on subsequent pages
-            if (artifacts.artifacts.length === 100) {
-              console.log('⚠️  More artifacts may exist (hit pagination limit). Consider running cleanup again if needed.');
-            }
+          node-version: "18"
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
+      - name: Install Supabase client
+        run: npm install @supabase/supabase-js
+
+      - name: Download artifacts from Supabase Storage
+        run: |
+          cat << 'EOF' > download_artifacts.js
+          const { createClient } = require('@supabase/supabase-js');
+          const fs = require('fs');
+          const path = require('path');
+
+          async function downloadArtifacts() {
+            const supabase = createClient(
+              process.env.SUPABASE_URL,
+              process.env.SUPABASE_SERVICE_ROLE_KEY
+            );
+
+            // Create release-artifacts directory structure
+            const baseDir = 'release-artifacts';
+            const windowsDir = path.join(baseDir, 'overlay-windows');  
+            const macosDir = path.join(baseDir, 'overlay-macos');
+
+            fs.mkdirSync(windowsDir, { recursive: true });
+            fs.mkdirSync(macosDir, { recursive: true });
+
+            try {
+              console.log('🔍 Listing files in build-artifacts bucket...');
+              
+              // List all files in build-artifacts bucket
+              const { data: files, error } = await supabase.storage
+                .from('build-artifacts')
+                .list('', { limit: 100 });
+
+              if (error) {
+                console.error('Error listing files:', error);
+                process.exit(1);
+              }
+
+              console.log('📁 Found files:', files.map(f => f.name));
+
+              if (files.length === 0) {
+                console.log('⚠️  No artifacts found in Supabase storage');
+                process.exit(1);
+              }
+
+              // Download Windows artifacts
+              console.log('📥 Downloading Windows artifacts...');
+              const windowsFiles = files.filter(f => 
+                f.name.includes('win') || f.name.includes('Windows') || f.name.includes('squirrel') || f.name.includes('.exe') || f.name.includes('.msi')
+              );
+
+              for (const file of windowsFiles) {
+                const { data, error } = await supabase.storage
+                  .from('build-artifacts')
+                  .download(file.name);
+
+                if (error) {
+                  console.error(`Error downloading ${file.name}:`, error);
+                  continue;
+                }
+
+                const arrayBuffer = await data.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const filePath = path.join(windowsDir, file.name);
+                
+                // Create subdirectories if needed
+                const dir = path.dirname(filePath);
+                fs.mkdirSync(dir, { recursive: true });
+                
+                fs.writeFileSync(filePath, buffer);
+                console.log(`✅ Downloaded: ${filePath} (${buffer.length} bytes)`);
+              }
+
+              // Download macOS artifacts
+              console.log('📥 Downloading macOS artifacts...');
+              const macosFiles = files.filter(f => 
+                f.name.includes('darwin') || f.name.includes('mac') || f.name.includes('.dmg') || f.name.includes('.zip')
+              );
+
+              for (const file of macosFiles) {
+                const { data, error } = await supabase.storage
+                  .from('build-artifacts')
+                  .download(file.name);
+
+                if (error) {
+                  console.error(`Error downloading ${file.name}:`, error);
+                  continue;
+                }
+
+                const arrayBuffer = await data.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const filePath = path.join(macosDir, file.name);
+                
+                // Create subdirectories if needed
+                const dir = path.dirname(filePath);
+                fs.mkdirSync(dir, { recursive: true });
+                
+                fs.writeFileSync(filePath, buffer);
+                console.log(`✅ Downloaded: ${filePath} (${buffer.length} bytes)`);
+              }
+
+              console.log('🎉 All artifacts downloaded successfully from Supabase storage');
+
+            } catch (error) {
+              console.error('❌ Download failed:', error);
+              process.exit(1);
+            }
+          }
+
+          downloadArtifacts();
+          EOF
+
+          node download_artifacts.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Display artifact structure
-        run: ls -la release-artifacts/
+        run: |
+          echo "=== Release Artifacts Structure ==="
+          find release-artifacts -type f -exec ls -la {} \;
 
       - name: Get version
         id: version
@@ -207,11 +292,11 @@ jobs:
             VERSION="v$VERSION"
             echo "Package.json version: $VERSION"
           fi
-          
+
           # Create and push tag
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           # Check if tag already exists
           if git rev-parse "$VERSION" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists, skipping tag creation"
@@ -220,11 +305,10 @@ jobs:
             git push origin $VERSION
             echo "Created and pushed tag: $VERSION"
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
-
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
