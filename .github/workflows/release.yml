@@ -3,14 +3,12 @@ name: Release
 on:
   push:
     branches: [main]
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
         description: "Version to release (e.g., v1.0.0)"
-        required: true
-        default: "v1.0.0"
+        required: false
+        default: ""
 
 jobs:
   release:
@@ -89,6 +87,15 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
+      # Upload Windows artifacts
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 90
+
       # macOS Release Build
       - name: Build and publish macOS
         if: matrix.platform == 'darwin'
@@ -113,13 +120,15 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           BASETEN_API_KEY: ${{ secrets.BASETEN_API_KEY }}
 
-      # Upload release artifacts
-      - name: Upload release artifacts
+      # Upload macOS artifacts
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'darwin'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           retention-days: 90
+
 
   # Create GitHub Release
   create-release:
@@ -134,6 +143,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cleanup old artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            // Delete artifacts older than the current workflow run
+            for (const artifact of artifacts.artifacts) {
+              if (artifact.workflow_run.id !== context.runId) {
+                console.log(`Deleting artifact: ${artifact.name} (ID: ${artifact.id})`);
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id,
+                });
+              }
+            }
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -145,82 +175,73 @@ jobs:
       - name: Get version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # Tag-based push: extract version from tag
-            VERSION=${GITHUB_REF#refs/tags/}
-            echo "Tag-based release: $VERSION"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual workflow: use input version
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
+            # Manual workflow with version input
             VERSION=${{ github.event.inputs.version }}
+            # Remove 'v' prefix if present, then add it back
+            VERSION=${VERSION#v}
+            VERSION="v$VERSION"
             echo "Manual release: $VERSION"
           else
-            # Main branch push: use package.json version
+            # Always use package.json version for main branch pushes
             VERSION=$(node -p "require('./package.json').version")
             VERSION="v$VERSION"
-            echo "Main branch release: $VERSION"
-            
-            # Create and push tag for main branch releases
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+            echo "Package.json version: $VERSION"
+          fi
+          
+          # Create and push tag
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if tag already exists
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists, skipping tag creation"
+          else
             git tag $VERSION
             git push origin $VERSION
             echo "Created and pushed tag: $VERSION"
-          fi
-          
-          # Validate version is not empty
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Version detection failed - VERSION is empty"
-            exit 1
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
 
-      - name: Validate tag exists
-        run: |
-          # Check if tag exists (either created above or pre-existing)
-          if ! git tag -l "${{ steps.version.outputs.tag }}"; then
-            echo "ERROR: Tag ${{ steps.version.outputs.tag }} does not exist"
-            exit 1
-          fi
-          echo "Tag ${{ steps.version.outputs.tag }} confirmed to exist"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: Beta Release ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
           body: |
-            ## 🧪 Beta Release - Overlay ${{ steps.version.outputs.version }}
+            ## 🚀 Overlay ${{ steps.version.outputs.version }}
 
-            **This is a beta release for testing purposes.**
+            **Automatically built from main branch**
 
             ### 📦 Downloads
 
-            - **Windows**: Download `OverlaySetup.exe` from the assets below
+            - **Windows**: Download the `.exe` installer from the assets below
             - **macOS**: Download the `.dmg` file from the assets below
 
-            ### ⚠️ Beta Release Notes
+            ### 🔧 Installation Notes
 
-            - **Unsigned builds**: For testing purposes only
-            - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway"
-            - **macOS**: You may need to allow the app in System Preferences → Privacy & Security
-            - **Bug reports welcome**: Please report issues via GitHub Issues
+            - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway" (unsigned builds)
+            - **macOS**: You may need to allow the app in System Preferences → Privacy & Security (unsigned builds)
+            - **Bug reports**: Please report issues via GitHub Issues
 
-            ### 🧪 Testing Features
+            ### ✨ Features
 
             - AI-powered speech-to-text transcription
             - Cross-platform text insertion
             - Dictionary replacements and customization
             - Multiple window management
+            - Hotkey support (Option+Space on macOS, Ctrl+Windows+Space on Windows)
 
             ---
 
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ github.event.before }}...v${{ steps.version.outputs.tag }}
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${{ github.event.before }}...${{ steps.version.outputs.tag }}
           files: |
             release-artifacts/**/*
         env:
@@ -235,15 +256,15 @@ jobs:
     steps:
       - name: Deployment Summary
         run: |
-          echo "## 🧪 Beta Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Build Status | Release Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|----------------|" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Beta Testing Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. ✅ Beta release published automatically in GitHub Releases" >> $GITHUB_STEP_SUMMARY
-          echo "2. 🧪 Test the unsigned builds on target platforms" >> $GITHUB_STEP_SUMMARY
-          echo "3. 🐛 Report any issues via GitHub Issues" >> $GITHUB_STEP_SUMMARY
-          echo "4. 🚀 When ready for production: configure code signing and create stable release" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Automated Release Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "1. ✅ Release created automatically from main branch" >> $GITHUB_STEP_SUMMARY
+          echo "2. 📦 Installers available for download in GitHub Releases" >> $GITHUB_STEP_SUMMARY
+          echo "3. 🔄 Old artifacts automatically cleaned up" >> $GITHUB_STEP_SUMMARY
+          echo "4. 🏷️ Version tag created from package.json" >> $GITHUB_STEP_SUMMARY

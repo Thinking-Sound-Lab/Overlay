@@ -31,7 +31,6 @@ import { WindowManager } from "./windows/window-manager";
 import { ExternalAPIManager } from "./services/external_api_manager";
 import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
-import { config } from "../../config/environment";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
 import { DictionaryService } from "./services/dictionary_service";
@@ -129,6 +128,7 @@ let dataLoaderService: DataLoaderService | null = null;
 // Enhanced Auth State Management Helper Functions with Type Safety
 import type { UserStats, UITranscriptEntry, UserRecord } from "../shared/types";
 import { User } from "@supabase/auth-js/dist/module";
+import { isDevelopment, isProduction } from "../shared/utils/environment";
 
 interface AuthStateEventData {
   user: UserRecord | null;
@@ -275,10 +275,14 @@ const handleAuthenticationSuccess = async (
 
       // Show/hide recording window based on onboarding status
       if (userData.user?.onboarding_completed) {
-        console.log("[Main] User completed onboarding, showing recording window");
+        console.log(
+          "[Main] User completed onboarding, showing recording window"
+        );
         windowManager.showRecordingWindow();
       } else {
-        console.log("[Main] User onboarding not completed, keeping recording window hidden");
+        console.log(
+          "[Main] User onboarding not completed, keeping recording window hidden"
+        );
         windowManager.hideRecordingWindow();
       }
 
@@ -293,7 +297,7 @@ const handleAuthenticationSuccess = async (
         await sttService.initialize();
       }
 
-      if (config.isDevelopment) {
+      if (isDevelopment()) {
         windowManager.openDevTools("recording");
         windowManager.openDevTools("information");
       }
@@ -329,12 +333,16 @@ const handleAuthenticationFailure = (
 
   // CRITICAL: Completely disable STT service for unauthenticated users to prevent realtime mode from continuing
   if (sttService) {
-    console.log("[Main] Disabling STT service during logout - stopping all connections and realtime mode...");
-    
+    console.log(
+      "[Main] Disabling STT service during logout - stopping all connections and realtime mode..."
+    );
+
     // Disable STT service completely for unauthenticated user
     sttService.disableForUnauthenticatedUser();
-    
-    console.log("[Main] STT service disabled completely - realtime mode will not operate until user re-authenticates");
+
+    console.log(
+      "[Main] STT service disabled completely - realtime mode will not operate until user re-authenticates"
+    );
   }
 
   // Close authenticated-only windows
@@ -407,10 +415,12 @@ const createMainWindow = () => {
 
   // Window ready - wait for renderer to signal when it's ready for auth events
   mainWindow.webContents.once("did-finish-load", async () => {
-    console.log("[Main] Main window loaded, waiting for renderer to signal ready for auth events");
+    console.log(
+      "[Main] Main window loaded, waiting for renderer to signal ready for auth events"
+    );
   });
 
-  if (config.isDevelopment) {
+  if (isDevelopment()) {
     windowManager.openDevTools("main");
   }
 };
@@ -1006,7 +1016,9 @@ app.whenReady().then(async () => {
     AuthUtils.setAuthManager(externalAPIManager);
 
     // Initialize STT service with analytics and dictionary support
-    const dictionaryService = DictionaryService.getInstance(externalAPIManager.supabase, externalAPIManager.analytics);
+    const dictionaryService = DictionaryService.getInstance(
+      externalAPIManager.supabase
+    );
     sttService = new STTService(
       dataLoaderService,
       async (
@@ -1133,7 +1145,7 @@ app.whenReady().then(async () => {
           console.log(
             "[Main] User not authenticated, transcript will not be saved to database"
           );
-        };
+        }
       },
       externalAPIManager.analytics,
       windowManager,
@@ -1152,10 +1164,15 @@ app.whenReady().then(async () => {
       } else {
         // Renderer not ready yet - only handle logout (cleanup), defer login events
         if (!user) {
-          handleAuthenticationFailure("User signed out", "Auth State Change - Early");
+          handleAuthenticationFailure(
+            "User signed out",
+            "Auth State Change - Early"
+          );
         }
         // For login events, wait for renderer to signal ready and check auth state then
-        console.log("[Main] Auth state change detected but renderer not ready, deferring login event");
+        console.log(
+          "[Main] Auth state change detected but renderer not ready, deferring login event"
+        );
       }
     });
 
@@ -1184,7 +1201,7 @@ app.whenReady().then(async () => {
     registerGlobalHotkey();
 
     // Check for updates after initial setup (only in production)
-    if (config.isProduction) {
+    if (isProduction()) {
       autoUpdater.checkForUpdatesAndNotify();
 
       // Schedule daily update checks
@@ -1514,10 +1531,15 @@ ipcMain.handle("renderer-ready-for-auth", async (_event) => {
   try {
     const currentUser = externalAPIManager.supabase.getCurrentUser();
     if (currentUser) {
-      console.log("[Main] Sending auth state to ready renderer - user authenticated:", currentUser.email);
+      console.log(
+        "[Main] Sending auth state to ready renderer - user authenticated:",
+        currentUser.email
+      );
       await handleAuthenticationSuccess(currentUser, "Renderer Ready");
     } else {
-      console.log("[Main] Sending auth state to ready renderer - no user authenticated");
+      console.log(
+        "[Main] Sending auth state to ready renderer - no user authenticated"
+      );
       handleAuthenticationFailure("No active session", "Renderer Ready");
     }
     return { success: true };
