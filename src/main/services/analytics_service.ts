@@ -15,6 +15,12 @@ export class AnalyticsService {
 
   private initialize() {
     try {
+      // Only initialize analytics in production
+      if (process.env.NODE_ENV !== 'production') {
+        console.log("AnalyticsService: Skipping initialization - not in production environment");
+        return;
+      }
+
       // Import centralized config
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       //   const { config } = require("../../../config/environment");

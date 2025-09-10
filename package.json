@@ -39,8 +39,8 @@
     "productivity"
   ],
   "author": {
-    "name": "Abhishekucs",
-    "email": "abhishekucskumar@gmail.com"
+    "name": "Thinking Sound Lab",
+    "email": "hello@thinkingsoundlab.com"
   },
   "repository": {
     "type": "git",
@@ -49,7 +49,7 @@
   "build": {
     "appId": "com.overlay.app",
     "productName": "Overlay",
-    "copyright": "Copyright © 2025 Abhishekucs",
+    "copyright": "Copyright © 2025 Thinking Sound Lab",
     "mac": {
       "hardenedRuntime": true,
       "entitlements": "entitlements.plist",

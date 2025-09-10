@@ -63,3 +63,12 @@ export interface UserSettings {
   };
   updated_at: string;
 }
+
+export interface DictionaryEntry {
+  id: string;
+  user_id: string;
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+}

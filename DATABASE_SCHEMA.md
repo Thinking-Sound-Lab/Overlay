@@ -96,6 +96,41 @@ CREATE POLICY "Users can insert own settings" ON public.user_settings
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
+### 5. Dictionary Entries
+```sql
+CREATE TABLE public.dictionary_entries (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  key VARCHAR(255) NOT NULL,
+  value TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE public.dictionary_entries ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies
+CREATE POLICY "Users can view own dictionary entries" ON public.dictionary_entries
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own dictionary entries" ON public.dictionary_entries
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own dictionary entries" ON public.dictionary_entries
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own dictionary entries" ON public.dictionary_entries
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Indexes for performance
+CREATE INDEX dictionary_entries_user_id_created_at_idx ON public.dictionary_entries(user_id, created_at DESC);
+CREATE INDEX dictionary_entries_user_id_key_idx ON public.dictionary_entries(user_id, key);
+
+-- Unique constraint to prevent duplicate keys per user
+CREATE UNIQUE INDEX dictionary_entries_user_key_unique_idx ON public.dictionary_entries(user_id, LOWER(key));
+```
+
 ## Functions
 
 ### Auto-update timestamps
@@ -118,6 +153,12 @@ CREATE TRIGGER handle_updated_at_user_profiles
 -- Apply to user_settings  
 CREATE TRIGGER handle_updated_at_user_settings
   BEFORE UPDATE ON public.user_settings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_updated_at();
+
+-- Apply to dictionary_entries
+CREATE TRIGGER handle_updated_at_dictionary_entries
+  BEFORE UPDATE ON public.dictionary_entries
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
 ```
@@ -203,13 +244,16 @@ BEGIN
   -- 1. Delete user settings
   DELETE FROM public.user_settings WHERE user_id = current_user_id;
   
-  -- 2. Delete transcripts
+  -- 2. Delete dictionary entries
+  DELETE FROM public.dictionary_entries WHERE user_id = current_user_id;
+  
+  -- 3. Delete transcripts
   DELETE FROM public.transcripts WHERE user_id = current_user_id;
   
-  -- 3. Delete user profile
+  -- 4. Delete user profile
   DELETE FROM public.user_profiles WHERE id = current_user_id;
   
-  -- 4. Delete auth user (this requires admin privileges)
+  -- 5. Delete auth user (this requires admin privileges)
   -- Note: This will only work if RLS is properly configured
   DELETE FROM auth.users WHERE id = current_user_id;
   

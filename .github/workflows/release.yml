@@ -145,43 +145,78 @@ jobs:
       - name: Get version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Tag-based push: extract version from tag
             VERSION=${GITHUB_REF#refs/tags/}
-          else
+            echo "Tag-based release: $VERSION"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual workflow: use input version
             VERSION=${{ github.event.inputs.version }}
+            echo "Manual release: $VERSION"
+          else
+            # Main branch push: use package.json version
+            VERSION=$(node -p "require('./package.json').version")
+            VERSION="v$VERSION"
+            echo "Main branch release: $VERSION"
+            
+            # Create and push tag for main branch releases
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag $VERSION
+            git push origin $VERSION
+            echo "Created and pushed tag: $VERSION"
           fi
+          
+          # Validate version is not empty
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Version detection failed - VERSION is empty"
+            exit 1
+          fi
+          
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Final version: $VERSION"
+
+      - name: Validate tag exists
+        run: |
+          # Check if tag exists (either created above or pre-existing)
+          if ! git tag -l "${{ steps.version.outputs.tag }}"; then
+            echo "ERROR: Tag ${{ steps.version.outputs.tag }} does not exist"
+            exit 1
+          fi
+          echo "Tag ${{ steps.version.outputs.tag }} confirmed to exist"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: Release ${{ steps.version.outputs.version }}
-          draft: true
-          prerelease: false
+          name: Beta Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: true
           generate_release_notes: true
           body: |
-            ## Overlay ${{ steps.version.outputs.version }}
+            ## 🧪 Beta Release - Overlay ${{ steps.version.outputs.version }}
+
+            **This is a beta release for testing purposes.**
 
             ### 📦 Downloads
 
             - **Windows**: Download `OverlaySetup.exe` from the assets below
             - **macOS**: Download the `.dmg` file from the assets below
 
-            ### ⚠️ Security Note
+            ### ⚠️ Beta Release Notes
 
-            **Current builds are unsigned for testing purposes.**
-
+            - **Unsigned builds**: For testing purposes only
             - **Windows**: You may see SmartScreen warnings - click "More info" → "Run anyway"
             - **macOS**: You may need to allow the app in System Preferences → Privacy & Security
+            - **Bug reports welcome**: Please report issues via GitHub Issues
 
-            ### 🚀 Production Ready
+            ### 🧪 Testing Features
 
-            For production deployment with code signing:
-            1. Configure certificates in repository secrets
-            2. Uncomment signing configuration in workflows
-            3. Re-run the release workflow
+            - AI-powered speech-to-text transcription
+            - Cross-platform text insertion
+            - Dictionary replacements and customization
+            - Multiple window management
 
             ---
 
@@ -200,15 +235,15 @@ jobs:
     steps:
       - name: Deployment Summary
         run: |
-          echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Beta Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Build Status | Release Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|----------------|" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | ${{ needs.release.result }} | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review the draft release in GitHub Releases" >> $GITHUB_STEP_SUMMARY
-          echo "2. Test the unsigned builds on target platforms" >> $GITHUB_STEP_SUMMARY
-          echo "3. For production: configure code signing and re-release" >> $GITHUB_STEP_SUMMARY
-          echo "4. Publish the release when ready" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Beta Testing Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. ✅ Beta release published automatically in GitHub Releases" >> $GITHUB_STEP_SUMMARY
+          echo "2. 🧪 Test the unsigned builds on target platforms" >> $GITHUB_STEP_SUMMARY
+          echo "3. 🐛 Report any issues via GitHub Issues" >> $GITHUB_STEP_SUMMARY
+          echo "4. 🚀 When ready for production: configure code signing and create stable release" >> $GITHUB_STEP_SUMMARY

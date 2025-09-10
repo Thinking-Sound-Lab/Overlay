@@ -10,6 +10,7 @@ import {
   Settings,
   UserStats,
 } from "../../shared/types";
+import { DictionaryEntry } from "../../shared/types/database";
 import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
 export class SupabaseService {
@@ -918,6 +919,155 @@ export class SupabaseService {
     } catch (error) {
       console.error("SupabaseService: Complete onboarding error:", error);
       return { data: null as any, error };
+    }
+  }
+
+  // Dictionary CRUD operations
+  async getDictionaryEntries(): Promise<{
+    data: DictionaryEntry[] | null;
+    error: any;
+  }> {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log(
+        "SupabaseService: Getting dictionary entries for user:",
+        this.currentUser.id
+      );
+
+      const { data, error } = await this.supabase
+        .from("dictionary_entries")
+        .select("*")
+        .eq("user_id", this.currentUser.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("SupabaseService: Get dictionary entries error:", error);
+        return { data: null, error };
+      }
+
+      console.log(
+        `SupabaseService: Retrieved ${data?.length || 0} dictionary entries`
+      );
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error("SupabaseService: Get dictionary entries error:", error);
+      return { data: null, error };
+    }
+  }
+
+  async addDictionaryEntry(
+    key: string,
+    value: string
+  ): Promise<{ data: DictionaryEntry | null; error: any }> {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log(
+        `SupabaseService: Adding dictionary entry: ${key} -> ${value}`
+      );
+
+      const { data, error } = await this.supabase
+        .from("dictionary_entries")
+        .insert([
+          {
+            user_id: this.currentUser.id,
+            key: key,
+            value: value,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("SupabaseService: Add dictionary entry error:", error);
+        return { data: null, error };
+      }
+
+      console.log(
+        "SupabaseService: Dictionary entry added successfully:",
+        data
+      );
+      return { data, error: null };
+    } catch (error) {
+      console.error("SupabaseService: Add dictionary entry error:", error);
+      return { data: null, error };
+    }
+  }
+
+  async updateDictionaryEntry(
+    id: string,
+    key: string,
+    value: string
+  ): Promise<{ data: DictionaryEntry | null; error: any }> {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log(`SupabaseService: Updating dictionary entry: ${id}`);
+
+      const { data, error } = await this.supabase
+        .from("dictionary_entries")
+        .update({
+          key: key,
+          value: value,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("user_id", this.currentUser.id) // Ensure user can only update their own entries
+        .select()
+        .single();
+
+      if (error) {
+        console.error("SupabaseService: Update dictionary entry error:", error);
+        return { data: null, error };
+      }
+
+      console.log(
+        "SupabaseService: Dictionary entry updated successfully:",
+        data
+      );
+      return { data, error: null };
+    } catch (error) {
+      console.error("SupabaseService: Update dictionary entry error:", error);
+      return { data: null, error };
+    }
+  }
+
+  async deleteDictionaryEntry(
+    id: string
+  ): Promise<{ data: any; error: any }> {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log(`SupabaseService: Deleting dictionary entry: ${id}`);
+
+      const { error } = await this.supabase
+        .from("dictionary_entries")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", this.currentUser.id); // Ensure user can only delete their own entries
+
+      if (error) {
+        console.error("SupabaseService: Delete dictionary entry error:", error);
+        return { data: null, error };
+      }
+
+      console.log(
+        "SupabaseService: Dictionary entry deleted successfully:",
+        id
+      );
+      return { data: { success: true }, error: null };
+    } catch (error) {
+      console.error("SupabaseService: Delete dictionary entry error:", error);
+      return { data: null, error };
     }
   }
 

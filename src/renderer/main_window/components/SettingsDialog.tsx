@@ -11,7 +11,8 @@ import {
   Wand2,
 } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
-import { db } from "../lib/api_client";
+import { db, analytics } from "../lib/api_client";
+import { shouldTrackAnalytics } from "../../../shared/utils/environment";
 import {
   GeneralSettings,
   SystemSettings,
@@ -54,6 +55,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           `Setting ${key} updated successfully via DataLoaderService:`,
           value
         );
+        
+        // Track analytics for setting changes
+        if (shouldTrackAnalytics()) {
+          await analytics.trackSettingChanged(key, value);
+        }
       } else {
         throw new Error(result.error || "Failed to save settings");
       }

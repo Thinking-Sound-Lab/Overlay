@@ -10,6 +10,7 @@ import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
 import { DataLoaderService } from "./data_loader_service";
+import { DictionaryService } from "./dictionary_service";
 import { getLanguageDisplayName } from "../../shared/constants/languages";
 // robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
@@ -35,22 +36,27 @@ export class TranslationService {
     [ApplicationContextType.UNKNOWN]: "notes", // fallback
   };
 
-  constructor(dataLoaderService?: DataLoaderService) {
+  constructor(dataLoaderService?: DataLoaderService, dictionaryService?: DictionaryService) {
     this.applicationDetector = ApplicationDetector.getInstance();
     this.dataLoaderService = dataLoaderService || null;
-    this.textInsertionService = new TextInsertionService();
+    this.textInsertionService = new TextInsertionService(dictionaryService);
   }
 
   public static getInstance(
-    dataLoaderService?: DataLoaderService
+    dataLoaderService?: DataLoaderService,
+    dictionaryService?: DictionaryService
   ): TranslationService {
     if (!TranslationService.instance) {
-      TranslationService.instance = new TranslationService(dataLoaderService);
+      TranslationService.instance = new TranslationService(dataLoaderService, dictionaryService);
     } else if (
       dataLoaderService &&
       !TranslationService.instance.dataLoaderService
     ) {
       TranslationService.instance.dataLoaderService = dataLoaderService;
+      // Update TextInsertionService with DictionaryService if provided
+      if (dictionaryService) {
+        TranslationService.instance.textInsertionService = new TextInsertionService(dictionaryService);
+      }
     }
     return TranslationService.instance;
   }
