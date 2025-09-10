@@ -286,7 +286,7 @@ export class RealtimeSTTProvider extends EventEmitter {
     }
   }
 
-  private amplifyAudioGain(audioBytes: Uint8Array, gainFactor: number = 2.0): Uint8Array {
+  private amplifyAudioGain(audioBytes: Uint8Array, gainFactor = 2.0): Uint8Array {
     // Convert bytes to 16-bit signed integers for audio processing
     const samples = new Int16Array(audioBytes.buffer, audioBytes.byteOffset, audioBytes.byteLength / 2);
     const amplifiedSamples = new Int16Array(samples.length);

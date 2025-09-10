@@ -386,7 +386,7 @@ export class APIHandlers {
       const result = await this.dataLoaderService.updateUserSettings(settings);
       if (result.success) {
         // Reinitialize STT service if realtime mode changed
-        if (settings.hasOwnProperty("enableRealtimeMode") && sttService) {
+        if (Object.prototype.hasOwnProperty.call(settings, "enableRealtimeMode") && sttService) {
           console.log(
             "[API] Realtime mode setting changed, reinitializing STT service"
           );

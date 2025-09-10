@@ -1,10 +1,5 @@
 // Unit tests for MicrophoneService
 import MicrophoneService from "../../../src/main/services/microphone_service";
-import {
-  createMockAudioDevice,
-  MockMediaStream,
-  MockMediaStreamTrack,
-} from "../../helpers/test-utils";
 
 // Mock navigator.mediaDevices
 const mockGetUserMedia = jest.fn();

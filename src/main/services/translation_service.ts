@@ -220,7 +220,7 @@ Text to process: "${transcript}"
         max_tokens: Math.max(300, this.countWords(transcript) * 2), // Optimized token limit
       });
 
-      let finalText = response.choices[0].message.content;
+      const finalText = response.choices[0].message.content;
       console.log("[Translation] Raw LLM response:", finalText);
 
       // Parse the response to extract only the final processed text

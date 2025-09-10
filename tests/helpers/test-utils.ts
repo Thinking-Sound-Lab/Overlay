@@ -189,13 +189,13 @@ export class MockMediaStream {
  * Mock implementation of MediaStreamTrack for testing
  */
 export class MockMediaStreamTrack implements MediaStreamTrack {
-  kind: string = 'audio';
-  label: string = 'Mock Audio Track';
-  enabled: boolean = true;
+  kind = 'audio';
+  label = 'Mock Audio Track';
+  enabled = true;
   readyState: MediaStreamTrackState = 'live';
-  id: string = 'mock-track-id';
-  contentHint: string = '';
-  muted: boolean = false;
+  id = 'mock-track-id';
+  contentHint = '';
+  muted = false;
   onended: ((this: MediaStreamTrack, ev: Event) => any) | null = null;
   onmute: ((this: MediaStreamTrack, ev: Event) => any) | null = null;
   onunmute: ((this: MediaStreamTrack, ev: Event) => any) | null = null;
