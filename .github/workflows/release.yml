@@ -99,7 +99,7 @@ jobs:
           async function uploadArtifacts() {
             const supabase = createClient(
               process.env.SUPABASE_URL,
-              process.env.SUPABASE_SERVICE_ROLE_KEY
+              process.env.SUPABASE_ANON_KEY
             );
 
             // Find Windows artifacts
@@ -135,8 +135,8 @@ jobs:
           
           node upload_artifacts.js
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
       # macOS Release Build
       - name: Build and publish macOS
@@ -179,7 +179,7 @@ jobs:
           async function uploadArtifacts() {
             const supabase = createClient(
               process.env.SUPABASE_URL,
-              process.env.SUPABASE_SERVICE_ROLE_KEY
+              process.env.SUPABASE_ANON_KEY
             );
 
             // Find macOS artifacts
@@ -215,8 +215,8 @@ jobs:
           
           node upload_artifacts.js
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
   # Create GitHub Release
   create-release:
@@ -249,7 +249,7 @@ jobs:
           async function downloadArtifacts() {
             const supabase = createClient(
               process.env.SUPABASE_URL,
-              process.env.SUPABASE_SERVICE_ROLE_KEY
+              process.env.SUPABASE_ANON_KEY
             );
 
             // Create release-artifacts directory structure
@@ -349,8 +349,8 @@ jobs:
 
           node download_artifacts.js
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
       - name: Display artifact structure
         run: |
