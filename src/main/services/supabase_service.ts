@@ -1090,4 +1090,129 @@ export class SupabaseService {
       console.error("[SupabaseService] Error clearing cache:", error);
     }
   }
+
+  /**
+   * Update user's monthly word usage in the database
+   */
+  async updateUserWordUsage(wordsUsed: number): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      if (!this.currentUser) {
+        throw new Error("No authenticated user");
+      }
+
+      console.log(`[SupabaseService] Updating word usage to: ${wordsUsed}`);
+
+      const { error } = await this.supabase
+        .from("user_profiles")
+        .update({ words_used_this_month: wordsUsed })
+        .eq("id", this.currentUser.id);
+
+      if (error) {
+        console.error("[SupabaseService] Error updating word usage:", error);
+        return { success: false, error: error.message };
+      }
+
+      console.log("[SupabaseService] Word usage updated successfully");
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("[SupabaseService] Failed to update word usage:", errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Update user's subscription tier and trial information
+   */
+  async updateUserSubscription(
+    tier: "free" | "pro_trial" | "pro",
+    trialStartedAt?: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      if (!this.currentUser) {
+        throw new Error("No authenticated user");
+      }
+
+      console.log(`[SupabaseService] Updating subscription tier to: ${tier}`);
+
+      const updateData: any = {
+        subscription_tier: tier,
+      };
+
+      // Set trial start date for pro_trial tier
+      if (tier === "pro_trial" && trialStartedAt) {
+        updateData.trial_started_at = trialStartedAt;
+      }
+
+      // Clear trial data when moving away from trial
+      if (tier !== "pro_trial") {
+        updateData.trial_started_at = null;
+      }
+
+      // Reset word usage when upgrading to pro
+      if (tier === "pro") {
+        updateData.words_used_this_month = 0;
+      }
+
+      const { error } = await this.supabase
+        .from("user_profiles")
+        .update(updateData)
+        .eq("id", this.currentUser.id);
+
+      if (error) {
+        console.error("[SupabaseService] Error updating subscription:", error);
+        return { success: false, error: error.message };
+      }
+
+      console.log("[SupabaseService] Subscription updated successfully");
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("[SupabaseService] Failed to update subscription:", errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Get user's current word usage and subscription information
+   */
+  async getUserSubscriptionInfo(): Promise<{
+    data: {
+      subscription_tier: "free" | "pro_trial" | "pro";
+      trial_started_at?: string;
+      words_used_this_month?: number;
+    } | null;
+    error: any;
+  }> {
+    try {
+      if (!this.currentUser) {
+        throw new Error("No authenticated user");
+      }
+
+      console.log("[SupabaseService] Fetching user subscription info");
+
+      const { data, error } = await this.supabase
+        .from("user_profiles")
+        .select("subscription_tier, trial_started_at, words_used_this_month")
+        .eq("id", this.currentUser.id)
+        .single();
+
+      if (error) {
+        console.error("[SupabaseService] Error fetching subscription info:", error);
+        return { data: null, error };
+      }
+
+      console.log("[SupabaseService] Subscription info fetched successfully");
+      return { data, error: null };
+    } catch (error) {
+      console.error("[SupabaseService] Failed to fetch subscription info:", error);
+      return { data: null, error };
+    }
+  }
 }

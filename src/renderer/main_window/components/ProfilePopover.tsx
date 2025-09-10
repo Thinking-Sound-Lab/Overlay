@@ -13,9 +13,11 @@ import {
   Trophy, 
   Target, 
   TrendingUp,
-  AlertTriangle 
+  AlertTriangle,
+  Clock
 } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
+import { useProFeatures } from "../hooks/useProFeatures";
 
 interface ProfilePopoverProps {
   trigger: React.ReactNode;
@@ -24,6 +26,7 @@ interface ProfilePopoverProps {
 export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
   const { state, signOut } = useAppContext();
   const { user, userStats } = state;
+  const { subscriptionInfo } = useProFeatures();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState('');
 
@@ -99,9 +102,15 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
             </div>
             <Badge 
               variant="secondary"
-              className={user?.subscription_tier === 'pro' ? 'bg-gray-200 text-gray-800' : 'bg-gray-100 text-gray-800'}
+              className={
+                subscriptionInfo.tier === "pro" 
+                  ? 'bg-gray-800 text-white' 
+                  : subscriptionInfo.tier === "pro_trial" 
+                  ? 'bg-amber-600 text-white' 
+                  : 'bg-gray-100 text-gray-800'
+              }
             >
-              {user?.subscription_tier === 'pro' ? 'Pro' : 'Free'}
+              {subscriptionInfo.displayName}
             </Badge>
           </div>
 
@@ -113,6 +122,15 @@ export const ProfilePopover: React.FC<ProfilePopoverProps> = ({ trigger }) => {
                 Member since {user?.created_at ? formatDate(user.created_at) : 'Unknown'}
               </span>
             </div>
+            
+            {subscriptionInfo.isOnTrial && subscriptionInfo.trialInfo && (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-500" />
+                <span className="text-amber-700">
+                  Trial expires in {subscriptionInfo.trialInfo.daysRemaining} days
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Quick Stats */}

@@ -4,7 +4,7 @@ export interface WindowSizes {
 }
 
 export interface InformationMessage {
-  type: 'empty-transcript' | 'silent-recording' | 'permission-error' | 'processing-error';
+  type: 'empty-transcript' | 'silent-recording' | 'permission-error' | 'processing-error' | 'word-limit-reached';
   title: string;
   message: string;
   duration?: number; // Auto-dismiss duration in ms, default 3000

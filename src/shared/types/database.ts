@@ -8,8 +8,10 @@ export interface UserRecord {
   email: string;
   name: string;
   created_at: string;
-  subscription_tier: "free" | "pro";
+  subscription_tier: "free" | "pro_trial" | "pro";
   onboarding_completed: boolean;
+  trial_started_at?: string; // For pro_trial users
+  words_used_this_month?: number; // For tracking free tier usage
 }
 
 export interface DatabaseTranscriptEntry {

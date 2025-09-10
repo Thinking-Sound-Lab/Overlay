@@ -5,6 +5,7 @@ import { Badge } from "./ui/badge";
 import { Home, BookOpen, HelpCircle, Gift, Settings } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 import { SettingsDialog } from "./SettingsDialog";
+import { useProFeatures } from "../hooks/useProFeatures";
 
 interface LayoutProps {
   activeView: ViewType;
@@ -19,11 +20,8 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const { state } = useAppContext();
   const { user } = state;
+  const { subscriptionInfo, shouldShowUpgrade, upgradeReason } = useProFeatures();
   const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // Get subscription tier from user profile, defaulting to 'free'
-  const subscriptionTier = user?.subscription_tier || "free";
-  const isPro = subscriptionTier === "pro";
   return (
     <div className="h-full bg-gray-100 font-inter flex overflow-hidden">
       {/* Sidebar */}
@@ -33,10 +31,14 @@ export const Layout: React.FC<LayoutProps> = ({
           <span className="text-xl font-bold text-gray-900">Overlay</span>
           <Badge
             className={`text-xs px-2 py-1 ${
-              isPro ? "bg-gray-800 text-white" : "bg-gray-500 text-white"
+              subscriptionInfo.tier === "pro"
+                ? "bg-gray-800 text-white"
+                : subscriptionInfo.tier === "pro_trial"
+                ? "bg-amber-600 text-white"
+                : "bg-gray-500 text-white"
             }`}
           >
-            {isPro ? "PRO" : "FREE"}
+            {subscriptionInfo.displayName}
           </Badge>
         </div>
 
@@ -68,15 +70,15 @@ export const Layout: React.FC<LayoutProps> = ({
         {/* Spacer to push bottom content down */}
         <div className="flex-1"></div>
 
-        {/* Upgrade Box - shown for free users only */}
-        {!isPro && (
+        {/* Upgrade Box - shown for free users and trial users nearing expiry */}
+        {shouldShowUpgrade && (
           <div className="px-4 py-4">
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
               <div className="text-sm font-medium text-gray-800 mb-1">
                 Upgrade to Pro
               </div>
               <div className="text-xs text-gray-600 mb-2">
-                Unlock premium features & unlimited access
+                {upgradeReason || "Unlock premium features & unlimited access"}
               </div>
               <Button
                 size="sm"

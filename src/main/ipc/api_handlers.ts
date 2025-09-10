@@ -1,11 +1,12 @@
 import { ipcMain } from "electron";
 import { ExternalAPIManager } from "../services/external_api_manager";
-import { IPCResponse } from "../../shared/types";
+import { IPCResponse, Settings } from "../../shared/types";
 import MicrophoneService from "../services/microphone_service";
 import { DataLoaderService } from "../services/data_loader_service";
 import { DictionaryService } from "../services/dictionary_service";
 import { WindowManager } from "../windows/window-manager";
 import { sttService } from "../index";
+import { filterSettingsByAccess } from "../../shared/utils/subscription-permissions";
 
 // Re-export IPCResponse type for compatibility
 // export { IPCResponse } from "../utils/ipc-handler";
@@ -79,6 +80,11 @@ export class APIHandlers {
     ipcMain.handle("dictionary:addDictionaryEntry", this.handleAddDictionaryEntry.bind(this));
     ipcMain.handle("dictionary:updateDictionaryEntry", this.handleUpdateDictionaryEntry.bind(this));
     ipcMain.handle("dictionary:deleteDictionaryEntry", this.handleDeleteDictionaryEntry.bind(this));
+
+    // Pro feature handlers
+    ipcMain.handle("pro:startTrial", this.handleStartProTrial.bind(this));
+    ipcMain.handle("pro:updateSubscription", this.handleUpdateSubscription.bind(this));
+    ipcMain.handle("pro:getSubscriptionInfo", this.handleGetSubscriptionInfo.bind(this));
 
     // Analytics handlers
     ipcMain.handle("analytics:track", this.handleTrackEvent.bind(this));
@@ -382,11 +388,25 @@ export class APIHandlers {
     }
 
     try {
-      // Use DataLoaderService for DB-first settings update
-      const result = await this.dataLoaderService.updateUserSettings(settings);
+      // Get user data for Pro access validation
+      const userData = this.dataLoaderService.getCurrentUser();
+      
+      // Filter settings to remove Pro features user doesn't have access to
+      const validatedSettings = filterSettingsByAccess(userData, settings);
+      
+      // Log any settings that were filtered out
+      const filteredKeys = Object.keys(settings).filter(key => 
+        settings[key] !== validatedSettings[key]
+      );
+      if (filteredKeys.length > 0) {
+        console.warn("[API] Filtered Pro settings user doesn't have access to:", filteredKeys);
+      }
+      
+      // Use DataLoaderService for DB-first settings update with validated settings
+      const result = await this.dataLoaderService.updateUserSettings(validatedSettings as Settings);
       if (result.success) {
         // Reinitialize STT service if realtime mode changed
-        if (Object.prototype.hasOwnProperty.call(settings, "enableRealtimeMode") && sttService) {
+        if (Object.prototype.hasOwnProperty.call(validatedSettings, "enableRealtimeMode") && sttService) {
           console.log(
             "[API] Realtime mode setting changed, reinitializing STT service"
           );
@@ -812,6 +832,49 @@ export class APIHandlers {
     }
   }
 
+  // Pro feature handlers
+  private async handleStartProTrial(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dataLoaderService.startProTrial();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleUpdateSubscription(
+    event: any,
+    tier: "free" | "pro_trial" | "pro"
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dataLoaderService.updateSubscriptionTier(tier);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleGetSubscriptionInfo(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.apiManager.supabase.getUserSubscriptionInfo();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
   // Cleanup method
   removeAllHandlers() {
     console.log("APIHandlers: Removing all IPC handlers...");
@@ -849,5 +912,8 @@ export class APIHandlers {
     ipcMain.removeAllListeners("dictionary:addDictionaryEntry");
     ipcMain.removeAllListeners("dictionary:updateDictionaryEntry");
     ipcMain.removeAllListeners("dictionary:deleteDictionaryEntry");
+    ipcMain.removeAllListeners("pro:startTrial");
+    ipcMain.removeAllListeners("pro:updateSubscription");
+    ipcMain.removeAllListeners("pro:getSubscriptionInfo");
   }
 }
