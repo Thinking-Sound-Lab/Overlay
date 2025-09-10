@@ -9,6 +9,7 @@ import TranslationService from "./translation_service";
 import { AnalyticsService } from "./analytics_service";
 import { ApplicationMappingsConfig } from "../config/application_mappings";
 import { DataLoaderService } from "./data_loader_service";
+import { DictionaryService } from "./dictionary_service";
 import { WindowManager } from "../windows/window-manager";
 import { InformationMessage } from "../windows/types";
 import { Settings, SpeechMetrics, TranslationResult } from "../../shared/types";
@@ -28,6 +29,7 @@ class STTService {
   private translationService: TranslationService;
   private analyticsService?: AnalyticsService;
   private dataLoaderService: DataLoaderService;
+  private dictionaryService?: DictionaryService;
   private accumulatedTranscript = "";
   private isProcessingTranscript = false;
   private windowManager: WindowManager | null = null;
@@ -40,13 +42,15 @@ class STTService {
       translationMeta?: TranslationResult
     ) => void,
     analyticsService?: AnalyticsService,
-    windowManager?: WindowManager
+    windowManager?: WindowManager,
+    dictionaryService?: DictionaryService
   ) {
     this.sttSession = null;
     this.realtimeProvider = null;
     this.dataLoaderService = dataLoaderService;
+    this.dictionaryService = dictionaryService;
     this.onMetricsUpdate = onMetricsUpdate;
-    this.translationService = TranslationService.getInstance(dataLoaderService);
+    this.translationService = TranslationService.getInstance(dataLoaderService, dictionaryService);
     this.analyticsService = analyticsService;
     this.windowManager = windowManager || null;
   }
@@ -63,38 +67,48 @@ class STTService {
 
   /**
    * Check if realtime mode is enabled in user settings
+   * CRITICAL: Only return true if user is authenticated AND has explicitly enabled realtime mode
    */
   private isRealtimeModeEnabled(): boolean {
     // First check if user is authenticated
     const cacheInfo = this.dataLoaderService.getCacheInfo();
-    if (!cacheInfo.hasUser) {
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
       console.log("[STT] No authenticated user - realtime mode disabled");
       return false;
     }
 
+    // Check if we have valid user settings
     const settings: Settings = this.dataLoaderService.getUserSettings();
-    const enabled: boolean = settings.enableRealtimeMode;
-    console.log("[STT] Realtime mode enabled in settings:", enabled);
+    if (!settings) {
+      console.log("[STT] No user settings available - realtime mode disabled");
+      return false;
+    }
+
+    const enabled: boolean = settings.enableRealtimeMode || false;
+    console.log(`[STT] User authenticated (${cacheInfo.userId}), realtime mode enabled in settings: ${enabled}`);
     return enabled;
   }
 
   async initialize(): Promise<void> {
     // Check authentication before initializing
     const cacheInfo = this.dataLoaderService.getCacheInfo();
-    if (!cacheInfo.hasUser) {
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
       console.log("[STT] No authenticated user - skipping STT initialization");
+      this.closeSession(); // Ensure any existing connections are closed
       return;
     }
+
+    console.log(`[STT] Initializing STT service for authenticated user: ${cacheInfo.userId}`);
 
     // Auto-select mode based on user settings
     if (this.isRealtimeModeEnabled()) {
       console.log(
-        "[STT] Settings indicate realtime mode - initializing realtime"
+        "[STT] User authenticated and realtime mode enabled - initializing realtime"
       );
       await this.initializeRealtime();
     } else {
       console.log(
-        "[STT] Settings indicate regular mode - initializing regular"
+        "[STT] User authenticated but realtime mode disabled - initializing regular"
       );
       await this.initializeRegular();
     }
@@ -171,7 +185,7 @@ class STTService {
           "[STT] Speech detected - waiting for Finalize message for complete transcript"
         );
 
-        if (this.analyticsService) {
+        if (this.analyticsService && process.env.NODE_ENV === 'production') {
           this.analyticsService.trackRecordingStarted();
         }
       },
@@ -185,7 +199,7 @@ class STTService {
           "[STT] Natural speech pause - transcript will be complete when user stops recording"
         );
 
-        if (this.analyticsService) {
+        if (this.analyticsService && process.env.NODE_ENV === 'production') {
           const recordingDuration =
             (Date.now() - this.recordingStartTime) / 1000;
           this.analyticsService.trackRecordingStopped(recordingDuration);
@@ -208,10 +222,16 @@ class STTService {
   }
 
   async reinitialize(): Promise<void> {
+    console.log("[STT] Reinitialize requested - checking authentication first");
+    
     // Check authentication before reinitializing
     const cacheInfo = this.dataLoaderService.getCacheInfo();
-    if (!cacheInfo.hasUser) {
-      console.log("[STT] No authenticated user - skipping STT reinitialize");
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
+      console.log("[STT] No authenticated user - cleaning up and skipping STT reinitialize");
+      
+      // Clean up any existing connections since user is not authenticated
+      this.closeSession();
+      this.resetRuntimeData();
       return;
     }
 
@@ -219,10 +239,10 @@ class STTService {
     const isRealtimeEnabled: boolean = this.isRealtimeModeEnabled();
 
     console.log(
-      `[STT] Reinitializing with language: ${newLanguage}, realtime: ${isRealtimeEnabled}`
+      `[STT] Reinitializing for authenticated user ${cacheInfo.userId} with language: ${newLanguage}, realtime: ${isRealtimeEnabled}`
     );
 
-    // Close existing sessions
+    // Close existing sessions first
     if (this.sttSession) {
       this.sttSession.close();
       this.sttSession = null;
@@ -245,7 +265,7 @@ class STTService {
     this.accumulatedTranscript = "";
     this.isProcessingTranscript = false;
 
-    // Initialize based on current settings
+    // Initialize based on current settings (this will also check authentication again)
     await this.initialize();
 
     console.log(
@@ -255,6 +275,13 @@ class STTService {
 
   // This method will be called from your audio capture mechanism
   handleAudioChunk(audioData: string) {
+    // CRITICAL: Check authentication before processing any audio
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
+      console.warn("[STT] User not authenticated - ignoring audio chunk");
+      return;
+    }
+    
     if (!this.isRecording) return;
 
     // Always buffer audio for fallback purposes, even in realtime mode
@@ -264,19 +291,28 @@ class STTService {
       // Send audio chunk immediately to realtime provider
       this.realtimeProvider.sendAudioChunk(audioData);
       console.log(
-        `[STT] Streaming audio chunk to realtime, buffer size: ${this.audioBuffer.length}`
+        `[STT] Streaming audio chunk to realtime for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
       );
     } else {
       // Buffer for batch processing in regular mode
       console.log(
-        `[STT] Buffering audio chunk, buffer size: ${this.audioBuffer.length}`
+        `[STT] Buffering audio chunk for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
       );
     }
   }
 
   startDictation() {
+    // CRITICAL: Check authentication before starting dictation
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
+      console.warn("[STT] User not authenticated - cannot start dictation");
+      return;
+    }
+    
     if (this.isRecording) return; // Already recording
 
+    console.log(`[STT] Starting dictation for authenticated user: ${cacheInfo.userId}`);
+    
     this.isRecording = true;
     this.audioBuffer = [];
     this.recordingStartTime = Date.now();
@@ -289,7 +325,7 @@ class STTService {
     console.log("[STT] Started dictation - speak now...");
 
     // Track recording started
-    if (this.analyticsService) {
+    if (this.analyticsService && process.env.NODE_ENV === 'production') {
       this.analyticsService.trackRecordingStarted();
     }
   }
@@ -331,7 +367,7 @@ class STTService {
     );
 
     // Track recording stopped
-    if (this.analyticsService) {
+    if (this.analyticsService && process.env.NODE_ENV === 'production') {
       this.analyticsService.trackRecordingStopped(recordingDuration);
     }
 
@@ -519,21 +555,35 @@ class STTService {
   }
 
   closeSession() {
+    console.log("[STT] Closing STT session and cleaning up all connections...");
+    
     this.isRecording = false;
 
     // Close regular STT session
-    this.sttSession?.close();
-    this.sttSession = null;
+    if (this.sttSession) {
+      try {
+        this.sttSession.close();
+      } catch (error) {
+        console.warn("[STT] Error closing regular STT session:", error);
+      }
+      this.sttSession = null;
+    }
 
-    // Close realtime provider
+    // Close realtime provider with explicit cleanup
     if (this.realtimeProvider) {
-      this.realtimeProvider.disconnect();
+      console.log("[STT] Disconnecting realtime provider and stopping all reconnection attempts");
+      try {
+        this.realtimeProvider.disconnect();
+      } catch (error) {
+        console.warn("[STT] Error disconnecting realtime provider:", error);
+      }
       this.realtimeProvider = null;
     }
 
+    // Clear audio buffer
     this.audioBuffer = [];
 
-    console.log("[STT] Session closed, shortcuts unregistered");
+    console.log("[STT] Session closed and all connections cleaned up");
   }
 
   // Getter for recording status (useful for UI indicators)
@@ -618,9 +668,19 @@ class STTService {
   }
 
   private async attemptRealtimeReconnection(): Promise<void> {
-    if (!this.isRealtimeModeEnabled()) return;
+    // CRITICAL: Check authentication first - never attempt to reconnect for unauthenticated users
+    const cacheInfo = this.dataLoaderService.getCacheInfo();
+    if (!cacheInfo.hasUser || !cacheInfo.userId) {
+      console.log("[STT] User not authenticated - aborting realtime reconnection attempt");
+      return;
+    }
+    
+    if (!this.isRealtimeModeEnabled()) {
+      console.log("[STT] Realtime mode not enabled - aborting reconnection attempt");
+      return;
+    }
 
-    console.log("[STT] Attempting realtime reconnection...");
+    console.log(`[STT] Attempting realtime reconnection for authenticated user: ${cacheInfo.userId}`);
 
     try {
       // Close existing provider if it exists
@@ -642,26 +702,58 @@ class STTService {
   }
 
   /**
-   * Reset STTService runtime data (for cache clearing)
+   * Reset STTService runtime data (for cache clearing and logout)
+   * This is called when user signs out to ensure complete cleanup
    */
   public resetRuntimeData(): void {
-    console.log("[STT] Resetting runtime data...");
+    console.log("[STT] Resetting STT runtime data and stopping all connections...");
 
+    // Reset all runtime state
     this.audioBuffer = [];
     this.accumulatedTranscript = "";
     this.isRecording = false;
+    this.isProcessingTranscript = false;
     this.lastRecordingDuration = 0;
     this.recordingStartTime = 0;
 
-    // Close any active connections
+    // Close any active connections with explicit cleanup
     if (this.realtimeProvider) {
-      this.realtimeProvider.disconnect();
+      console.log("[STT] Disconnecting realtime provider during runtime data reset");
+      try {
+        this.realtimeProvider.disconnect();
+      } catch (error) {
+        console.warn("[STT] Error disconnecting realtime provider during reset:", error);
+      }
       this.realtimeProvider = null;
     }
 
-    this.sttSession = null;
+    // Close regular STT session
+    if (this.sttSession) {
+      try {
+        this.sttSession.close();
+      } catch (error) {
+        console.warn("[STT] Error closing STT session during reset:", error);
+      }
+      this.sttSession = null;
+    }
 
-    console.log("[STT] Runtime data reset completed");
+    console.log("[STT] Runtime data reset completed - all connections closed");
+  }
+
+  /**
+   * Disable STT service completely for unauthenticated users
+   * This ensures no realtime connections or audio processing occurs
+   */
+  public disableForUnauthenticatedUser(): void {
+    console.log("[STT] Disabling STT service for unauthenticated user - stopping all operations");
+    
+    // First close all sessions
+    this.closeSession();
+    
+    // Then reset all runtime data
+    this.resetRuntimeData();
+    
+    console.log("[STT] STT service disabled - no further operations will be performed until user authenticates");
   }
 }
 

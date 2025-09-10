@@ -3,6 +3,7 @@ import { ExternalAPIManager } from "../services/external_api_manager";
 import { IPCResponse } from "../../shared/types";
 import MicrophoneService from "../services/microphone_service";
 import { DataLoaderService } from "../services/data_loader_service";
+import { DictionaryService } from "../services/dictionary_service";
 import { WindowManager } from "../windows/window-manager";
 import { sttService } from "../index";
 
@@ -13,12 +14,14 @@ export class APIHandlers {
   private apiManager: ExternalAPIManager;
   private microphoneService: MicrophoneService;
   private dataLoaderService: DataLoaderService;
+  private dictionaryService: DictionaryService;
   private windowManager: WindowManager;
 
   constructor(apiManager: ExternalAPIManager, windowManager: WindowManager) {
     this.apiManager = apiManager;
     this.microphoneService = MicrophoneService.getInstance();
     this.dataLoaderService = DataLoaderService.getInstance(apiManager.supabase);
+    this.dictionaryService = DictionaryService.getInstance(apiManager.supabase, apiManager.analytics);
     this.windowManager = windowManager;
     this.setupHandlers();
   }
@@ -70,6 +73,12 @@ export class APIHandlers {
     );
     ipcMain.handle("db:getUserSettings", this.handleGetUserSettings.bind(this));
     ipcMain.handle("db:getUserStats", this.handleGetUserStats.bind(this));
+
+    // Dictionary handlers
+    ipcMain.handle("dictionary:getDictionaryEntries", this.handleGetDictionaryEntries.bind(this));
+    ipcMain.handle("dictionary:addDictionaryEntry", this.handleAddDictionaryEntry.bind(this));
+    ipcMain.handle("dictionary:updateDictionaryEntry", this.handleUpdateDictionaryEntry.bind(this));
+    ipcMain.handle("dictionary:deleteDictionaryEntry", this.handleDeleteDictionaryEntry.bind(this));
 
     // Analytics handlers
     ipcMain.handle("analytics:track", this.handleTrackEvent.bind(this));
@@ -738,6 +747,71 @@ export class APIHandlers {
     }
   }
 
+  // Dictionary handlers
+  private async handleGetDictionaryEntries(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dictionaryService.getDictionaryEntries();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleAddDictionaryEntry(
+    event: any,
+    key: string,
+    value: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dictionaryService.addDictionaryEntry(key, value);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleUpdateDictionaryEntry(
+    event: any,
+    id: string,
+    key: string,
+    value: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dictionaryService.updateDictionaryEntry(id, key, value);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleDeleteDictionaryEntry(
+    event: any,
+    id: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.dictionaryService.deleteDictionaryEntry(id);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
   // Cleanup method
   removeAllHandlers() {
     console.log("APIHandlers: Removing all IPC handlers...");
@@ -771,5 +845,9 @@ export class APIHandlers {
     ipcMain.removeAllListeners("microphone:setCurrentDevice");
     ipcMain.removeAllListeners("microphone:requestPermissions");
     ipcMain.removeAllListeners("microphone:checkPermissions");
+    ipcMain.removeAllListeners("dictionary:getDictionaryEntries");
+    ipcMain.removeAllListeners("dictionary:addDictionaryEntry");
+    ipcMain.removeAllListeners("dictionary:updateDictionaryEntry");
+    ipcMain.removeAllListeners("dictionary:deleteDictionaryEntry");
   }
 }

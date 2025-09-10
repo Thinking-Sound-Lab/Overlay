@@ -11,6 +11,7 @@ import { Settings, UserStats, UITranscriptEntry } from "../../shared/types";
 import {
   UserRecord,
   DatabaseTranscriptEntry,
+  DictionaryEntry,
 } from "../../shared/types/database";
 import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
@@ -21,6 +22,7 @@ export interface AuthStateEventData {
   settings: Settings | null;
   recentTranscripts: UITranscriptEntry[];
   totalTranscriptCount: number;
+  dictionaryEntries: DictionaryEntry[];
   error?: string;
   source?: string;
 }
@@ -68,6 +70,7 @@ export class DataLoaderService {
             statistics: cachedData.stats,
             recentTranscripts: cachedData.transcripts,
             totalTranscriptCount: cachedData.totalTranscriptCount,
+            dictionaryEntries: cachedData.dictionaryEntries,
           };
         }
       }
@@ -87,6 +90,7 @@ export class DataLoaderService {
           stats: freshData.statistics,
           transcripts: freshData.recentTranscripts,
           totalTranscriptCount: freshData.totalTranscriptCount,
+          dictionaryEntries: freshData.dictionaryEntries,
         });
       }
 
@@ -108,6 +112,7 @@ export class DataLoaderService {
           statistics: staleData.stats,
           recentTranscripts: staleData.transcripts,
           totalTranscriptCount: staleData.totalTranscriptCount,
+          dictionaryEntries: staleData.dictionaryEntries,
           error: `Failed to refresh data: ${error instanceof Error ? error.message : "Unknown error"}`,
         };
       }
@@ -120,6 +125,7 @@ export class DataLoaderService {
         statistics: null,
         recentTranscripts: [],
         totalTranscriptCount: 0,
+        dictionaryEntries: [],
         error: `Failed to load user data: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
@@ -203,12 +209,25 @@ export class DataLoaderService {
       );
     }
 
+    // Load dictionary entries
+    let dictionaryEntries: DictionaryEntry[] = [];
+    const dictionaryResult = await this.supabaseService.getDictionaryEntries();
+    if (dictionaryResult.data && !dictionaryResult.error) {
+      dictionaryEntries = dictionaryResult.data;
+    } else {
+      console.warn(
+        `[DataLoader] Failed to load dictionary entries, using empty array:`,
+        dictionaryResult.error?.message
+      );
+    }
+
     console.log(`[DataLoader] Database loading complete for user: ${userId}`, {
       hasUser: !!user,
       settingsKeys: Object.keys(settings),
       statsTotal: statistics.totalWordCount,
       transcriptCount: recentTranscripts.length,
       totalTranscriptCount,
+      dictionaryEntriesCount: dictionaryEntries.length,
     });
 
     return {
@@ -218,6 +237,7 @@ export class DataLoaderService {
       statistics,
       recentTranscripts,
       totalTranscriptCount,
+      dictionaryEntries,
     };
   }
 
@@ -483,6 +503,7 @@ export class DataLoaderService {
       statistics: cacheData.stats,
       recentTranscripts: cacheData.transcripts,
       totalTranscriptCount: cacheData.totalTranscriptCount,
+      dictionaryEntries: cacheData.dictionaryEntries,
     };
   }
 
@@ -530,6 +551,7 @@ export class DataLoaderService {
           statistics: cachedData.stats,
           recentTranscripts: cachedData.transcripts,
           totalTranscriptCount: cachedData.totalTranscriptCount,
+          dictionaryEntries: cachedData.dictionaryEntries,
         };
 
         return { success: true, data: authStateData };

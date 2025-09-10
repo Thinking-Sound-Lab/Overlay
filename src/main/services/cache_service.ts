@@ -12,7 +12,7 @@
 
 import Store from "electron-store";
 import { Settings, UserStats, UITranscriptEntry } from "../../shared/types";
-import { UserRecord } from "../../shared/types/database";
+import { UserRecord, DictionaryEntry } from "../../shared/types/database";
 import { DEFAULT_SETTINGS } from "../../shared/constants/default-settings";
 
 interface CacheData {
@@ -22,6 +22,7 @@ interface CacheData {
   userStats: UserStats;
   recentTranscripts: UITranscriptEntry[];
   totalTranscriptCount?: number;
+  dictionaryEntries: DictionaryEntry[];
 
   // Cache metadata
   lastUpdated: number;
@@ -46,6 +47,7 @@ export class CacheService {
         },
         recentTranscripts: [],
         totalTranscriptCount: 0,
+        dictionaryEntries: [],
         lastUpdated: 0,
         userId: null,
       },
@@ -145,6 +147,56 @@ export class CacheService {
   }
 
   /**
+   * Get cached dictionary entries
+   */
+  getDictionaryEntries(): DictionaryEntry[] {
+    return this.store.get("dictionaryEntries");
+  }
+
+  /**
+   * Set dictionary entries in cache
+   */
+  setDictionaryEntries(entries: DictionaryEntry[]): void {
+    this.store.set("dictionaryEntries", entries);
+    this.updateLastModified();
+  }
+
+  /**
+   * Add a single dictionary entry to cache
+   */
+  addDictionaryEntry(entry: DictionaryEntry): void {
+    const current = this.getDictionaryEntries();
+    const updated = [...current, entry];
+    this.setDictionaryEntries(updated);
+  }
+
+  /**
+   * Update a dictionary entry in cache
+   */
+  updateDictionaryEntry(entry: DictionaryEntry): void {
+    const current = this.getDictionaryEntries();
+    const updated = current.map(e => e.id === entry.id ? entry : e);
+    this.setDictionaryEntries(updated);
+  }
+
+  /**
+   * Remove a dictionary entry from cache
+   */
+  removeDictionaryEntry(id: string): void {
+    const current = this.getDictionaryEntries();
+    const updated = current.filter(e => e.id !== id);
+    this.setDictionaryEntries(updated);
+  }
+
+  /**
+   * Clear all dictionary entries from cache
+   */
+  clearDictionaryEntries(): void {
+    this.store.set("dictionaryEntries", []);
+    this.updateLastModified();
+  }
+
+  /**
    * Get current cached user ID
    */
   getCachedUserId(): string | null {
@@ -206,6 +258,7 @@ export class CacheService {
     });
     this.store.set("recentTranscripts", []);
     this.store.set("totalTranscriptCount", 0);
+    this.store.set("dictionaryEntries", []);
     this.store.set("lastUpdated", 0);
     this.store.set("userId", null);
 
@@ -222,6 +275,7 @@ export class CacheService {
     stats: UserStats;
     transcripts: UITranscriptEntry[];
     totalTranscriptCount?: number;
+    dictionaryEntries: DictionaryEntry[];
   } {
     return {
       user: this.getUser(),
@@ -229,6 +283,7 @@ export class CacheService {
       stats: this.getUserStats(),
       transcripts: this.getRecentTranscripts(),
       totalTranscriptCount: this.getTotalTranscriptCount(),
+      dictionaryEntries: this.getDictionaryEntries(),
     };
   }
 
@@ -242,6 +297,7 @@ export class CacheService {
     stats?: UserStats;
     transcripts?: UITranscriptEntry[];
     totalTranscriptCount?: number;
+    dictionaryEntries?: DictionaryEntry[];
   }): void {
     if (data.user !== undefined) {
       this.setUser(data.user);
@@ -257,6 +313,9 @@ export class CacheService {
     }
     if (data.totalTranscriptCount !== undefined) {
       this.setTotalTranscriptCount(data.totalTranscriptCount);
+    }
+    if (data.dictionaryEntries !== undefined) {
+      this.setDictionaryEntries(data.dictionaryEntries);
     }
   }
 

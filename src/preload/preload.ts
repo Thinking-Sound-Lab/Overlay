@@ -147,6 +147,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     checkPermissions: () => ipcRenderer.invoke("microphone:checkPermissions"),
   },
 
+  // Dictionary management
+  dictionary: {
+    getDictionaryEntries: () =>
+      ipcRenderer.invoke("dictionary:getDictionaryEntries"),
+    addDictionaryEntry: (key: string, value: string) =>
+      ipcRenderer.invoke("dictionary:addDictionaryEntry", key, value),
+    updateDictionaryEntry: (id: string, key: string, value: string) =>
+      ipcRenderer.invoke("dictionary:updateDictionaryEntry", id, key, value),
+    deleteDictionaryEntry: (id: string) =>
+      ipcRenderer.invoke("dictionary:deleteDictionaryEntry", id),
+  },
+
   // Hotkey test mode for onboarding
   startHotkeyTest: () => ipcRenderer.invoke("start-hotkey-test"),
   endHotkeyTest: () => ipcRenderer.invoke("end-hotkey-test"),
@@ -372,6 +384,13 @@ declare global {
         setCurrentDevice: (deviceId: string) => Promise<any>;
         requestPermissions: () => Promise<any>;
         checkPermissions: () => Promise<any>;
+      };
+
+      dictionary: {
+        getDictionaryEntries: () => Promise<any>;
+        addDictionaryEntry: (key: string, value: string) => Promise<any>;
+        updateDictionaryEntry: (id: string, key: string, value: string) => Promise<any>;
+        deleteDictionaryEntry: (id: string) => Promise<any>;
       };
 
       // Hotkey test mode for onboarding

@@ -223,9 +223,15 @@ export class RealtimeSTTProvider extends EventEmitter {
     this.isRecordingActive = false; // Reset recording state on connection close
     this.callback.onConnectionClose();
 
-    // Attempt reconnection if not intentionally closed
-    if (code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+    // Only attempt reconnection if not intentionally closed AND not already at max attempts
+    // This prevents reconnection after explicit disconnect() calls
+    if (code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts && this.reconnectTimer === null) {
+      console.log(`[RealtimeSTT] Unintentional connection close (${code}), attempting reconnection`);
       this.attemptReconnection();
+    } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log(`[RealtimeSTT] Max reconnection attempts reached (${this.maxReconnectAttempts}), no further attempts`);
+    } else {
+      console.log(`[RealtimeSTT] Connection intentionally closed or already disconnecting, no reconnection attempted`);
     }
   }
 
@@ -337,7 +343,7 @@ export class RealtimeSTTProvider extends EventEmitter {
 
   disconnect(): void {
     console.log(
-      "[RealtimeSTT] Disconnecting and stopping all reconnection attempts..."
+      "[RealtimeSTT] Explicit disconnect requested - stopping all connections and reconnection attempts..."
     );
 
     // Set disconnected state FIRST to prevent any further actions
@@ -347,33 +353,39 @@ export class RealtimeSTTProvider extends EventEmitter {
     // Stop KeepAlive messages immediately with state flags set
     this.stopKeepAlive();
 
-    // Clear reconnection timer
+    // Clear reconnection timer immediately and set to marker value
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
     }
-
-    // Reset reconnection attempts to prevent further reconnections
+    // Set timer to a marker value to prevent reconnection attempts
+    this.reconnectTimer = setTimeout(() => {}, 0); // This will prevent reconnection attempts
+    
+    // Set reconnection attempts to max to prevent further reconnections
     this.reconnectAttempts = this.maxReconnectAttempts;
 
     // Close connection with proper cleanup
     if (this.connection) {
       try {
+        console.log("[RealtimeSTT] Removing event listeners and closing WebSocket connection");
         // Remove all event listeners to prevent any callbacks
         this.connection.removeAllListeners();
         this.connection.requestClose();
       } catch (error) {
-        console.warn("[RealtimeSTT] Error during disconnect:", error);
+        console.warn("[RealtimeSTT] Error during connection cleanup:", error);
       }
       this.connection = null;
     }
 
-    // Add a small delay to ensure all pending operations complete
+    // Clear the timer marker after a brief delay
     setTimeout(() => {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
       console.log(
-        "[RealtimeSTT] Disconnection complete, reconnections disabled"
+        "[RealtimeSTT] Disconnection complete - all connections closed and reconnections permanently disabled"
       );
-    }, 100);
+    }, 200);
   }
 
   isReady(): boolean {

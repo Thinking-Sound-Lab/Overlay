@@ -7,6 +7,7 @@ import { useAppContext } from "../contexts/AppContext";
 import { analytics, auth, db } from "../lib/api_client";
 import { Button } from "./ui/button";
 import { UserRecord } from "../../../shared/types/database";
+import { shouldTrackAnalytics } from "../../../shared/utils/environment";
 
 type OnboardingStep = "auth" | "language" | "permissions" | "guide";
 
@@ -81,10 +82,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
     try {
       // Track successful authentication
-      await analytics.identify(authenticatedUser.id, {
-        email: authenticatedUser.email,
-      });
-      await analytics.track("user_authenticated_via_magic_link");
+      if (shouldTrackAnalytics()) {
+        await analytics.identify(authenticatedUser.id, {
+          email: authenticatedUser.email,
+        });
+        await analytics.track("user_authenticated_via_magic_link");
+      }
 
       // User data and navigation will be handled by DataLoaderService
     } catch (error) {
@@ -110,10 +113,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       
       try {
         // Track successful sign up
-        await analytics.identify(signUpData.user.id, {
-          email: signUpData.user.email,
-        });
-        await analytics.track("user_signed_up_via_magic_link");
+        if (shouldTrackAnalytics()) {
+          await analytics.identify(signUpData.user.id, {
+            email: signUpData.user.email,
+          });
+          await analytics.track("user_signed_up_via_magic_link");
+        }
       } catch (error) {
         console.error("OnboardingFlow: Error tracking sign up:", error);
       }
@@ -143,9 +148,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       }
       
       // Track language selection
-      await analytics.track("language_selected", {
-        language_code: languageCode
-      });
+      if (shouldTrackAnalytics()) {
+        await analytics.track("language_selected", {
+          language_code: languageCode
+        });
+      }
       
       // Navigate to permissions
       setCurrentStep("permissions");
@@ -161,7 +168,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     setCurrentStep("guide");
 
     try {
-      await analytics.track("permissions_granted");
+      if (shouldTrackAnalytics()) {
+        await analytics.track("permissions_granted");
+      }
     } catch (error) {
       console.error(
         "OnboardingFlow: Error tracking permissions granted:",
@@ -187,7 +196,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       await completeOnboarding();
 
       // Track completion
-      await analytics.track("onboarding_completed");
+      if (shouldTrackAnalytics()) {
+        await analytics.track("onboarding_completed");
+      }
 
       // Notify main process
       const currentUser = state.user || user;

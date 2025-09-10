@@ -34,6 +34,7 @@ import { AuthUtils } from "./utils/auth";
 import { config } from "../../config/environment";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
+import { DictionaryService } from "./services/dictionary_service";
 import {
   SUPPORTED_LANGUAGES,
   getLanguageDisplayName,
@@ -326,11 +327,14 @@ const handleAuthenticationFailure = (
     error || "No error provided"
   );
 
-  // Clean up STT service to stop any active connections and logging
+  // CRITICAL: Completely disable STT service for unauthenticated users to prevent realtime mode from continuing
   if (sttService) {
-    console.log("[Main] Cleaning up STT service during logout...");
-    sttService.closeSession();
-    sttService.resetRuntimeData();
+    console.log("[Main] Disabling STT service during logout - stopping all connections and realtime mode...");
+    
+    // Disable STT service completely for unauthenticated user
+    sttService.disableForUnauthenticatedUser();
+    
+    console.log("[Main] STT service disabled completely - realtime mode will not operate until user re-authenticates");
   }
 
   // Close authenticated-only windows
@@ -1001,7 +1005,8 @@ app.whenReady().then(async () => {
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
 
-    // Initialize STT service with analytics support
+    // Initialize STT service with analytics and dictionary support
+    const dictionaryService = DictionaryService.getInstance(externalAPIManager.supabase, externalAPIManager.analytics);
     sttService = new STTService(
       dataLoaderService,
       async (
@@ -1128,10 +1133,11 @@ app.whenReady().then(async () => {
           console.log(
             "[Main] User not authenticated, transcript will not be saved to database"
           );
-        }
+        };
       },
       externalAPIManager.analytics,
-      windowManager
+      windowManager,
+      dictionaryService
     );
 
     // Register auth state callback with hybrid approach for renderer synchronization
