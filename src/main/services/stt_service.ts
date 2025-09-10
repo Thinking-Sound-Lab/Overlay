@@ -13,6 +13,7 @@ import { DictionaryService } from "./dictionary_service";
 import { WindowManager } from "../windows/window-manager";
 import { InformationMessage } from "../windows/types";
 import { Settings, SpeechMetrics, TranslationResult } from "../../shared/types";
+import { hasProAccess, canUseWords } from "../../shared/utils/subscription-permissions";
 
 class STTService {
   private sttSession: STTClient;
@@ -67,13 +68,20 @@ class STTService {
 
   /**
    * Check if realtime mode is enabled in user settings
-   * CRITICAL: Only return true if user is authenticated AND has explicitly enabled realtime mode
+   * CRITICAL: Only return true if user is authenticated AND has explicitly enabled realtime mode AND has Pro access
    */
   private isRealtimeModeEnabled(): boolean {
     // First check if user is authenticated
     const cacheInfo = this.dataLoaderService.getCacheInfo();
     if (!cacheInfo.hasUser || !cacheInfo.userId) {
       console.log("[STT] No authenticated user - realtime mode disabled");
+      return false;
+    }
+
+    // Check Pro access for realtime mode
+    const userData = this.dataLoaderService.getCurrentUser();
+    if (!hasProAccess(userData, "realtime_mode")) {
+      console.log("[STT] User does not have Pro access for realtime mode");
       return false;
     }
 
@@ -85,7 +93,7 @@ class STTService {
     }
 
     const enabled: boolean = settings.enableRealtimeMode || false;
-    console.log(`[STT] User authenticated (${cacheInfo.userId}), realtime mode enabled in settings: ${enabled}`);
+    console.log(`[STT] User authenticated (${cacheInfo.userId}), has Pro access, realtime mode enabled in settings: ${enabled}`);
     return enabled;
   }
 
@@ -306,6 +314,25 @@ class STTService {
     const cacheInfo = this.dataLoaderService.getCacheInfo();
     if (!cacheInfo.hasUser || !cacheInfo.userId) {
       console.warn("[STT] User not authenticated - cannot start dictation");
+      return;
+    }
+
+    // Check word usage limits for free users
+    const userData = this.dataLoaderService.getCurrentUser();
+    const wordUsage = canUseWords(userData, 50); // Estimate 50 words for average transcript
+    if (!wordUsage.allowed) {
+      console.warn("[STT] User has exceeded monthly word limit - cannot start dictation");
+      
+      // Show information window about limit reached
+      if (this.windowManager) {
+        const message: InformationMessage = {
+          type: "word-limit-reached",
+          title: "Monthly Limit Reached",
+          message: `You've used all ${wordUsage.limit} words this month. Upgrade to Pro for unlimited access.`,
+          duration: 5000,
+        };
+        this.windowManager.showInformation(message);
+      }
       return;
     }
     

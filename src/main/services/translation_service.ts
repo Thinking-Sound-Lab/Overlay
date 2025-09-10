@@ -12,6 +12,7 @@ import { ApplicationDetector } from "./application_detector";
 import { DataLoaderService } from "./data_loader_service";
 import { DictionaryService } from "./dictionary_service";
 import { getLanguageDisplayName } from "../../shared/constants/languages";
+import { hasProAccess, canUseWords } from "../../shared/utils/subscription-permissions";
 // robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
@@ -88,22 +89,43 @@ export class TranslationService {
     }
 
     const settings: Settings = this.dataLoaderService.getUserSettings();
+    const userData = this.dataLoaderService.getCurrentUser();
     const sourceLanguage: string = settings.language;
+
+    // Check Pro access for features
+    const canUseAI = hasProAccess(userData, "ai_enhancement");
+    const canTranslate = hasProAccess(userData, "translation");
+    const canUseCustomModes = hasProAccess(userData, "custom_modes");
+    const wordUsage = canUseWords(userData, this.countWords(transcript));
+
+    console.log("[Translation] Pro access check:", {
+      canUseAI,
+      canTranslate,
+      canUseCustomModes,
+      wordUsage: wordUsage.allowed,
+      wordsInTranscript: this.countWords(transcript)
+    });
+
+    // Stop processing if word limit exceeded
+    if (!wordUsage.allowed) {
+      console.warn("[Translation] Word limit exceeded, skipping processing");
+      return;
+    }
 
     console.log("[Translation] Using settings from DataLoaderService:", {
       language: settings.language,
       targetLanguage: settings.targetLanguage,
-      enableTranslation: settings.enableTranslation,
-      useAI: settings.useAI,
+      enableTranslation: settings.enableTranslation && canTranslate,
+      useAI: settings.useAI && canUseAI,
     });
 
     console.log("[Translation] Processing transcript:", transcript);
     console.log("[Translation] Source language:", sourceLanguage);
 
     try {
-      // Get auto-detected mode if enabled
+      // Get auto-detected mode if enabled and user has Pro access
       let selectedMode = settings.selectedMode;
-      if (settings.enableAutoDetection) {
+      if (settings.enableAutoDetection && canUseCustomModes) {
         try {
           const activeApp =
             await this.applicationDetector.getActiveApplication();
@@ -121,9 +143,9 @@ export class TranslationService {
         }
       }
 
-      // Get mode-specific prompt (only when auto-detection is enabled)
+      // Get mode-specific prompt (only when auto-detection is enabled and user has Pro access)
       let modeSpecificPrompt: string | null = null;
-      if (settings.enableAutoDetection) {
+      if (settings.enableAutoDetection && canUseCustomModes) {
         if (selectedMode === "custom") {
           modeSpecificPrompt = settings.customPrompt;
         } else if (selectedMode) {
@@ -153,7 +175,7 @@ export class TranslationService {
       let activePrompt = `You are a transcript post-processor. Process the following text according to these instructions:
 
 ## WHAT TO CHANGE:
-${settings.language !== settings.targetLanguage && settings.enableTranslation ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
+${settings.language !== settings.targetLanguage && settings.enableTranslation && canTranslate ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
 - Fix spelling errors and typos
 - Correct grammar mistakes
 - Add proper punctuation and capitalization
@@ -273,17 +295,30 @@ Text to process: "${transcript}"
       const metrics = calculateSpeechMetrics(finalText, recordingDuration);
       console.log("[Translation] Metrics:", metrics);
 
+      // Step 4.5: Update word usage for non-Pro users
+      const wordCount = this.countWords(finalText);
+      if (userData && userData.subscription_tier === "free" && wordCount > 0) {
+        try {
+          await this.dataLoaderService.updateWordUsage(wordCount);
+          console.log(`[Translation] Updated word usage: +${wordCount} words`);
+        } catch (error) {
+          console.error("[Translation] Failed to update word usage:", error);
+        }
+      }
+
       // Step 5: Insert text and fire callback after insertion completes
       this.insertTextNative(finalText, () => {
         if (onComplete) {
           // Build comprehensive metadata
           const wasTranslated =
             settings.enableTranslation &&
+            canTranslate &&
             settings.targetLanguage &&
             sourceLanguage !== settings.targetLanguage;
 
           console.log("[Translation] Metadata build:", {
             enableTranslation: settings.enableTranslation,
+            canTranslate,
             targetLanguage: settings.targetLanguage,
             sourceLanguage,
             languagesDiffer: sourceLanguage !== settings.targetLanguage,
@@ -305,7 +340,7 @@ Text to process: "${transcript}"
               }
             : { wasTranslated: false, detectedLanguage: sourceLanguage };
 
-          const modeFormattingMeta = settings.enableAutoDetection
+          const modeFormattingMeta = settings.enableAutoDetection && canUseCustomModes
             ? {
                 modeBasedFormattingApplied: !!modeSpecificPrompt,
                 selectedMode: selectedMode,

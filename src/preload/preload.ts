@@ -159,6 +159,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("dictionary:deleteDictionaryEntry", id),
   },
 
+  // Pro features management
+  pro: {
+    startTrial: () => ipcRenderer.invoke("pro:startTrial"),
+    updateSubscription: (tier: "free" | "pro_trial" | "pro") =>
+      ipcRenderer.invoke("pro:updateSubscription", tier),
+    getSubscriptionInfo: () => ipcRenderer.invoke("pro:getSubscriptionInfo"),
+  },
+
   // Hotkey test mode for onboarding
   startHotkeyTest: () => ipcRenderer.invoke("start-hotkey-test"),
   endHotkeyTest: () => ipcRenderer.invoke("end-hotkey-test"),
@@ -391,6 +399,12 @@ declare global {
         addDictionaryEntry: (key: string, value: string) => Promise<any>;
         updateDictionaryEntry: (id: string, key: string, value: string) => Promise<any>;
         deleteDictionaryEntry: (id: string) => Promise<any>;
+      };
+
+      pro: {
+        startTrial: () => Promise<any>;
+        updateSubscription: (tier: "free" | "pro_trial" | "pro") => Promise<any>;
+        getSubscriptionInfo: () => Promise<any>;
       };
 
       // Hotkey test mode for onboarding

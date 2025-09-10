@@ -3,11 +3,14 @@ import { Switch } from "../ui/switch";
 import { Select } from "../ui/select";
 import { SettingsComponentProps, SelectOption } from "./types";
 import { SUPPORTED_LANGUAGES, getLanguageDisplayName } from "../../../../shared/constants/languages";
+import { ProFeatureGate, ProSettingGate } from "../ui/ProFeatureGate";
+import { useProFeatures } from "../../hooks/useProFeatures";
 
 export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({
   settings,
   updateSetting,
 }) => {
+  const { hasFeatureAccess } = useProFeatures();
   const outputModeOptions: SelectOption[] = [
     { value: "clipboard", label: "Copy to Clipboard" },
     { value: "auto-insert", label: "Auto-Insert" },
@@ -40,50 +43,69 @@ export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({
       </div>
 
       {/* AI Enhancement */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-medium text-gray-900">AI Enhancement</h3>
-          <p className="text-gray-600 text-sm mt-1">
-            Improve grammar and clarity using AI
-          </p>
+      <ProSettingGate feature="ai_enhancement" label="AI Enhancement">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-900">AI Enhancement</h3>
+            <p className="text-gray-600 text-sm mt-1">
+              Improve grammar and clarity using AI
+            </p>
+          </div>
+          <Switch
+            checked={settings.useAI && hasFeatureAccess("ai_enhancement")}
+            onCheckedChange={(checked) => {
+              if (hasFeatureAccess("ai_enhancement")) {
+                updateSetting("useAI", checked);
+              }
+            }}
+            disabled={!hasFeatureAccess("ai_enhancement")}
+          />
         </div>
-        <Switch
-          checked={settings.useAI}
-          onCheckedChange={(checked) => updateSetting("useAI", checked)}
-        />
-      </div>
+      </ProSettingGate>
 
       {/* Real-time Transcription */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-medium text-gray-900">Real-time Mode</h3>
-          <p className="text-gray-600 text-sm mt-1">
-            Stream audio for immediate transcription
-          </p>
+      <ProSettingGate feature="realtime_mode" label="Real-time Mode">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-900">Real-time Mode</h3>
+            <p className="text-gray-600 text-sm mt-1">
+              Stream audio for immediate transcription
+            </p>
+          </div>
+          <Switch
+            checked={settings.enableRealtimeMode && hasFeatureAccess("realtime_mode")}
+            onCheckedChange={(checked) => {
+              if (hasFeatureAccess("realtime_mode")) {
+                updateSetting("enableRealtimeMode", checked);
+              }
+            }}
+            disabled={!hasFeatureAccess("realtime_mode")}
+          />
         </div>
-        <Switch
-          checked={settings.enableRealtimeMode}
-          onCheckedChange={(checked) => updateSetting("enableRealtimeMode", checked)}
-        />
-      </div>
+      </ProSettingGate>
 
       {/* Translation */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-medium text-gray-900">Translation</h3>
-          <p className="text-gray-600 text-sm mt-1">
-            Automatically translate speech to target language
-          </p>
+      <ProSettingGate feature="translation" label="Translation">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-900">Translation</h3>
+            <p className="text-gray-600 text-sm mt-1">
+              Automatically translate speech to target language
+            </p>
+          </div>
+          <Switch
+            checked={settings.enableTranslation && hasFeatureAccess("translation")}
+            onCheckedChange={(checked) => {
+              if (hasFeatureAccess("translation")) {
+                updateSetting("enableTranslation", checked);
+              }
+            }}
+            disabled={!hasFeatureAccess("translation")}
+          />
         </div>
-        <Switch
-          checked={settings.enableTranslation}
-          onCheckedChange={(checked) =>
-            updateSetting("enableTranslation", checked)
-          }
-        />
-      </div>
+      </ProSettingGate>
 
-      {settings.enableTranslation && (
+      {settings.enableTranslation && hasFeatureAccess("translation") && (
         <div className="space-y-2 pl-4">
           <h3 className="text-sm font-medium text-gray-700">Target Language</h3>
           <Select

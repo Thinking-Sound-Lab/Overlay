@@ -151,6 +151,8 @@ export class DataLoaderService {
         created_at: profileResult.data.created_at || new Date().toISOString(),
         subscription_tier: profileResult.data.subscription_tier || "free",
         onboarding_completed: profileResult.data.onboarding_completed || false,
+        trial_started_at: profileResult.data.trial_started_at,
+        words_used_this_month: profileResult.data.words_used_this_month || 0,
       };
     } else {
       throw new Error(
@@ -370,6 +372,13 @@ export class DataLoaderService {
   }
 
   /**
+   * Get current user data from cache
+   */
+  getCurrentUser(): UserRecord | null {
+    return this.cacheService.getUser();
+  }
+
+  /**
    * Get transcripts with pagination (for UI pagination)
    * Implements cache-first strategy: check cache first, DB on miss
    * 
@@ -563,6 +572,212 @@ export class DataLoaderService {
       return {
         success: false,
         error: `Failed to complete onboarding: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Update user's monthly word usage
+   * Increments the word count and updates both database and cache
+   */
+  async updateWordUsage(additionalWords: number): Promise<{
+    success: boolean;
+    error?: string;
+    data?: { wordsUsed: number; limit: number };
+  }> {
+    try {
+      console.log(`[DataLoader] Updating word usage: +${additionalWords} words`);
+      
+      const cachedData = this.cacheService.getAllUserData();
+      if (!cachedData || !cachedData.user) {
+        throw new Error("No cached user data available for word usage update");
+      }
+
+      const currentWordsUsed = cachedData.user.words_used_this_month || 0;
+      const newWordsUsed = currentWordsUsed + additionalWords;
+
+      // Update in database first
+      const updateResult = await this.supabaseService.updateUserWordUsage(newWordsUsed);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || "Failed to update word usage in database");
+      }
+
+      // Update cache
+      const updatedUser: UserRecord = {
+        ...cachedData.user,
+        words_used_this_month: newWordsUsed,
+      };
+
+      this.cacheService.setAllUserData({
+        ...cachedData,
+        user: updatedUser,
+      });
+
+      console.log(`[DataLoader] Word usage updated: ${currentWordsUsed} -> ${newWordsUsed}`);
+
+      return {
+        success: true,
+        data: { wordsUsed: newWordsUsed, limit: 2000 } // Free tier limit
+      };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to update word usage:`, error);
+      return {
+        success: false,
+        error: `Failed to update word usage: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Start a pro trial for the user
+   * Updates subscription tier to pro_trial and sets trial start date
+   */
+  async startProTrial(): Promise<{
+    success: boolean;
+    error?: string;
+    data?: UserRecord;
+  }> {
+    try {
+      console.log(`[DataLoader] Starting pro trial`);
+      
+      const cachedData = this.cacheService.getAllUserData();
+      if (!cachedData || !cachedData.user) {
+        throw new Error("No cached user data available for trial start");
+      }
+
+      // Check if user already has pro or is on trial
+      if (cachedData.user.subscription_tier === "pro" || cachedData.user.subscription_tier === "pro_trial") {
+        throw new Error("User already has pro access or is on trial");
+      }
+
+      const trialStartDate = new Date().toISOString();
+
+      // Update in database first
+      const updateResult = await this.supabaseService.updateUserSubscription("pro_trial", trialStartDate);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || "Failed to start trial in database");
+      }
+
+      // Update cache
+      const updatedUser: UserRecord = {
+        ...cachedData.user,
+        subscription_tier: "pro_trial",
+        trial_started_at: trialStartDate,
+      };
+
+      this.cacheService.setAllUserData({
+        ...cachedData,
+        user: updatedUser,
+      });
+
+      console.log(`[DataLoader] Pro trial started successfully`);
+
+      return {
+        success: true,
+        data: updatedUser
+      };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to start pro trial:`, error);
+      return {
+        success: false,
+        error: `Failed to start pro trial: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Update user's subscription tier
+   * Updates both database and cache
+   */
+  async updateSubscriptionTier(tier: "free" | "pro_trial" | "pro"): Promise<{
+    success: boolean;
+    error?: string;
+    data?: UserRecord;
+  }> {
+    try {
+      console.log(`[DataLoader] Updating subscription tier to: ${tier}`);
+      
+      const cachedData = this.cacheService.getAllUserData();
+      if (!cachedData || !cachedData.user) {
+        throw new Error("No cached user data available for subscription update");
+      }
+
+      // Update in database first
+      const updateResult = await this.supabaseService.updateUserSubscription(tier);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || "Failed to update subscription in database");
+      }
+
+      // Update cache
+      const updatedUser: UserRecord = {
+        ...cachedData.user,
+        subscription_tier: tier,
+        // Clear trial data if moving away from trial
+        trial_started_at: tier === "pro_trial" ? cachedData.user.trial_started_at : undefined,
+        // Reset word usage if upgrading to pro
+        words_used_this_month: tier === "pro" ? 0 : cachedData.user.words_used_this_month,
+      };
+
+      this.cacheService.setAllUserData({
+        ...cachedData,
+        user: updatedUser,
+      });
+
+      console.log(`[DataLoader] Subscription tier updated successfully to: ${tier}`);
+
+      return {
+        success: true,
+        data: updatedUser
+      };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to update subscription tier:`, error);
+      return {
+        success: false,
+        error: `Failed to update subscription tier: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Reset monthly word usage (typically called at the start of each month)
+   */
+  async resetMonthlyWordUsage(): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      console.log(`[DataLoader] Resetting monthly word usage`);
+      
+      const cachedData = this.cacheService.getAllUserData();
+      if (!cachedData || !cachedData.user) {
+        throw new Error("No cached user data available for word usage reset");
+      }
+
+      // Update in database first
+      const updateResult = await this.supabaseService.updateUserWordUsage(0);
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || "Failed to reset word usage in database");
+      }
+
+      // Update cache
+      const updatedUser: UserRecord = {
+        ...cachedData.user,
+        words_used_this_month: 0,
+      };
+
+      this.cacheService.setAllUserData({
+        ...cachedData,
+        user: updatedUser,
+      });
+
+      console.log(`[DataLoader] Monthly word usage reset successfully`);
+
+      return { success: true };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to reset monthly word usage:`, error);
+      return {
+        success: false,
+        error: `Failed to reset word usage: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
