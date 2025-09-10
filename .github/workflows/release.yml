@@ -25,14 +25,9 @@ jobs:
           - os: windows-latest
             platform: win32
             artifact_name: overlay-windows
-            artifact_path: |
-              out/make/squirrel.windows/**/*
           - os: macos-latest
             platform: darwin
             artifact_name: overlay-macos
-            artifact_path: |
-              out/make/zip/darwin/**/*
-              out/make/*.dmg
 
     steps:
       - name: Checkout code
@@ -90,15 +85,18 @@ jobs:
       # Upload Windows artifacts to Supabase Storage
       - name: Upload Windows artifacts to Supabase Storage
         if: matrix.platform == 'win32'
-        uses: status-base/upload-file-to-supabase-storage@v1.0.2
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        with:
-          file_path: ${{ matrix.artifact_path }}
-          bucket: build-artifacts
-          content_type: application/octet-stream
-          upsert: true
+        run: |
+          # Find and upload all Windows artifacts
+          echo "Finding Windows artifacts..."
+          find out/make -type f \( -name "*.exe" -o -name "*.msi" \) | while read file; do
+            echo "Uploading: $file"
+            filename=$(basename "$file")
+            curl -X POST "${{ secrets.SUPABASE_URL }}/storage/v1/object/build-artifacts/$filename" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: application/octet-stream" \
+              -H "x-upsert: true" \
+              --data-binary "@$file"
+          done
 
       # macOS Release Build
       - name: Build and publish macOS
@@ -127,15 +125,18 @@ jobs:
       # Upload macOS artifacts to Supabase Storage  
       - name: Upload macOS artifacts to Supabase Storage
         if: matrix.platform == 'darwin'
-        uses: status-base/upload-file-to-supabase-storage@v1.0.2
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        with:
-          file_path: ${{ matrix.artifact_path }}
-          bucket: build-artifacts
-          content_type: application/octet-stream
-          upsert: true
+        run: |
+          # Find and upload all macOS artifacts
+          echo "Finding macOS artifacts..."
+          find out/make -type f \( -name "*.dmg" -o -name "*.zip" \) | while read file; do
+            echo "Uploading: $file"
+            filename=$(basename "$file")
+            curl -X POST "${{ secrets.SUPABASE_URL }}/storage/v1/object/build-artifacts/$filename" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: application/octet-stream" \
+              -H "x-upsert: true" \
+              --data-binary "@$file"
+          done
 
   # Create GitHub Release
   create-release:
