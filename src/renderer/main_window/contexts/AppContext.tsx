@@ -162,63 +162,6 @@ interface AppProviderProps {
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // Simple startup - check for existing session
-  //   useEffect(() => {
-  //     console.log("AppContext: Initializing app...");
-
-  //     const initializeApp = async () => {
-  //       try {
-  //         // Try to get current user from session
-  //         const userResult = await auth.getCurrentUser();
-  //         if (userResult.success && userResult.data?.data?.user) {
-  //           const user = userResult.data.data.user;
-  //           console.log("AppContext: Found existing user session:", user.email);
-
-  //           // Get user profile to check onboarding status
-  //           const profileResult = await auth.getUserProfile();
-  //           if (profileResult.success && profileResult.data?.data) {
-  //             const userProfile = profileResult.data.data;
-  //             const hasCompletedOnboarding = Boolean(
-  //               userProfile.onboarding_completed
-  //             );
-
-  //             // Set all auth-related state
-  //             dispatch({ type: "SET_USER", payload: user });
-  //             dispatch({ type: "SET_USER_PROFILE", payload: userProfile });
-  //             dispatch({ type: "SET_AUTHENTICATED", payload: true });
-  //             dispatch({
-  //               type: "SET_ONBOARDING_COMPLETED",
-  //               payload: hasCompletedOnboarding,
-  //             });
-
-  //             console.log(
-  //               "AppContext: User authenticated, onboarding completed:",
-  //               hasCompletedOnboarding
-  //             );
-
-  //             // Load user data if onboarding is complete
-  //             if (hasCompletedOnboarding) {
-  //               await loadUserData();
-  //             }
-  //           } else {
-  //             console.warn("AppContext: Could not load user profile");
-  //             dispatch({ type: "SET_USER", payload: user });
-  //             dispatch({ type: "SET_AUTHENTICATED", payload: true });
-  //             dispatch({ type: "SET_ONBOARDING_COMPLETED", payload: false });
-  //           }
-  //         } else {
-  //           console.log("AppContext: No existing user session");
-  //         }
-  //       } catch (error) {
-  //         console.log("AppContext: No existing session or error:", error);
-  //       } finally {
-  //         dispatch({ type: "SET_LOADING", payload: false });
-  //       }
-  //     };
-
-  //     initializeApp();
-  //   }, []);
-
   const completeOnboarding = useCallback(async () => {
     try {
       console.log("AppContext: Completing onboarding...");

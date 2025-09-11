@@ -5,9 +5,7 @@ import * as path from "path";
 
 // Load environment variables directly here
 const envFile =
-  process.env.NODE_ENV === "development"
-    ? ".env.development"
-    : ".env.production";
+  process.env.NODE_ENV === "development" ? ".env.development" : "";
 dotenv.config({ path: path.join(process.cwd(), envFile) });
 
 const ForkTsCheckerWebpackPlugin: typeof IForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");

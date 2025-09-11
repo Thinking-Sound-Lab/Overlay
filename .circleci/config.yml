@@ -11,7 +11,7 @@ executors:
   macos:
     macos:
       xcode: 15.3.0
-    resource_class: macos.m1.large.gen1
+    resource_class: macos.m1.medium.gen1
 
   windows:
     machine:
@@ -96,17 +96,6 @@ jobs:
             npx electron-forge --version
             echo "Electron-forge CLI verified"
       - run:
-          name: Create production environment file
-          command: |
-            echo "REACT_APP_SUPABASE_URL=${REACT_APP_SUPABASE_URL}" > .env.production
-            echo "REACT_APP_SUPABASE_ANON_KEY=${REACT_APP_SUPABASE_ANON_KEY}" >> .env.production
-            echo "REACT_APP_POSTHOG_KEY=${REACT_APP_POSTHOG_KEY}" >> .env.production
-            echo "REACT_APP_POSTHOG_HOST=${REACT_APP_POSTHOG_HOST}" >> .env.production
-            echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> .env.production
-            echo "BASETEN_API_KEY=${BASETEN_API_KEY}" >> .env.production
-            echo "DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}" >> .env.production
-            echo "NODE_ENV=production" >> .env.production
-      - run:
           name: Build Windows application
           command: npm run make:win
           no_output_timeout: 20m
@@ -146,17 +135,6 @@ jobs:
           command: |
             npx electron-forge --version
             echo "Electron-forge CLI verified"
-      - run:
-          name: Create production environment file
-          command: |
-            echo "REACT_APP_SUPABASE_URL=${REACT_APP_SUPABASE_URL}" > .env.production
-            echo "REACT_APP_SUPABASE_ANON_KEY=${REACT_APP_SUPABASE_ANON_KEY}" >> .env.production
-            echo "REACT_APP_POSTHOG_KEY=${REACT_APP_POSTHOG_KEY}" >> .env.production
-            echo "REACT_APP_POSTHOG_HOST=${REACT_APP_POSTHOG_HOST}" >> .env.production
-            echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> .env.production
-            echo "BASETEN_API_KEY=${BASETEN_API_KEY}" >> .env.production
-            echo "DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}" >> .env.production
-            echo "NODE_ENV=production" >> .env.production
       - run:
           name: Build macOS application
           command: npm run make:mac
