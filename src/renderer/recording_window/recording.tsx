@@ -417,13 +417,12 @@ export const RecordingWindow: React.FC = () => {
     const handleProcessingComplete = () => {
       setWindowState("compact");
       setIsProcessing(false);
-      setProcessingStage("");
     };
 
 
     const handleProcessingStage = (event: any) => {
       const stage = event.detail;
-      setProcessingStage(typeof stage === "string" ? stage : stage.toString());
+      // Processing stage tracking removed as unused
       setIsProcessing(true);
       setWindowState("processing"); // Ensure window stays expanded
     };
