@@ -166,8 +166,9 @@ npm run test:ci
 ## 🔄 CI/CD Pipeline
 
 ### CircleCI Integration
-- **Pull Requests**: Fast testing and linting workflow (ESLint, unit tests, e2e tests)
-- **Main Branch**: Full pipeline (test + lint → build → release)
+- **Pull Requests**: Quality validation (ESLint v9, unit tests, e2e tests) ~5-10min
+- **Main Branch**: Deployment only (build → release) ~15-20min
+- **Optimization**: No redundant testing on main (already validated in PR)
 - **Automatic Releases**: GitHub releases created on main branch merges
 - **Cross-Platform Builds**: Windows and macOS distributables
 
