@@ -76,4 +76,19 @@ module.exports = {
   
   // Better error reporting
   errorOnDeprecated: true,
+  
+  // Reporters for CI/CD
+  reporters: [
+    'default',
+    ['jest-junit', {
+      outputDirectory: 'reports/junit',
+      outputName: 'junit.xml',
+      addFileAttribute: true, // Required for CircleCI test splitting
+      ancestorSeparator: ' › ',
+      uniqueOutputName: 'false',
+      suiteNameTemplate: '{displayName}: {filepath}',
+      classNameTemplate: '{classname}',
+      titleTemplate: '{title}'
+    }]
+  ],
 };
