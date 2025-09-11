@@ -4,19 +4,24 @@ version: 2.1
 executors:
   node-linux:
     docker:
-      - image: cimg/node:18.20
+      - image: cimg/node:22.15
     resource_class: large
   
-  # macOS executor (disabled due to free tier limitations)
-  # macos:
-  #   macos:
-  #     xcode: 15.3.0
-  #   resource_class: macos.m1.medium.gen1
+  # macOS executor 
+  macos:
+    macos:
+      xcode: 15.3.0
+    resource_class: macos.m1.medium.gen1
   
   windows:
     machine:
       image: windows-server-2022-gui:2024.01.1
     resource_class: windows.large
+  
+  playwright:
+    docker:
+      - image: mcr.microsoft.com/playwright:v1.40.0-jammy
+    resource_class: large
 
 # Commands for reusable steps
 commands:
@@ -25,7 +30,8 @@ commands:
     steps:
       - restore_cache:
           keys:
-            - v2-deps-{{ checksum "package-lock.json" }}
+            - v3-deps-node-22-{{ checksum "package-lock.json" }}
+            - v3-deps-node-22-
             - v2-deps-
       - run:
           name: Install dependencies
@@ -33,12 +39,13 @@ commands:
           environment:
             npm_config_build_from_source: false
       - save_cache:
-          key: v2-deps-{{ checksum "package-lock.json" }}
+          key: v3-deps-node-22-{{ checksum "package-lock.json" }}
           paths:
             - node_modules
             - ~/.cache/electron
             - ~/.cache/electron-builder
             - ~/.npm
+            - ~/.cache/ms-playwright
 
   setup-linux-build-deps:
     description: "Install Linux build dependencies"
@@ -59,24 +66,38 @@ jobs:
       - install-dependencies
       - run:
           name: Lint code
-          command: npx eslint --ext .ts,.tsx .
+          command: npm run lint
       - run:
-          name: Run unit tests
-          command: npm run test
+          name: Create reports directory
+          command: mkdir -p reports/junit
+      - run:
+          name: Run unit tests with coverage
+          command: npm run test:ci
           environment:
             CI: true
+            JEST_JUNIT_OUTPUT_DIR: reports/junit
+      - store_test_results:
+          path: reports/junit
+      - store_artifacts:
+          path: reports
+      - store_artifacts:
+          path: coverage
+  
+  # Separate E2E test job with Playwright image
+  test-e2e:
+    executor: playwright
+    steps:
+      - checkout
+      - install-dependencies
       - run:
           name: Run end-to-end tests
           command: npm run test:e2e
           environment:
             CI: true
-      - run:
-          name: Generate test coverage
-          command: npm run test:coverage
-      - store_test_results:
-          path: coverage
       - store_artifacts:
-          path: coverage
+          path: playwright-report
+      - store_artifacts:
+          path: test-results
 
   # Build job for Windows (main branch only)
   build-windows:
@@ -88,7 +109,7 @@ jobs:
           command: |
             node --version
             npm --version
-            echo "PATH: $PATH"
+            echo "PATH: $env:PATH"
       - install-dependencies
       - run:
           name: Verify electron-forge installation
@@ -97,7 +118,7 @@ jobs:
             echo "Electron-forge CLI verified"
       - run:
           name: Build Windows application
-          command: NODE_ENV=production npx electron-forge make --platform=win32
+          command: npx electron-forge make --platform=win32
           no_output_timeout: 20m
           environment:
             CI: true
@@ -117,47 +138,46 @@ jobs:
           paths:
             - out/make
 
-  # macOS build job (disabled due to free tier limitations)
-  # TODO: Re-enable when macOS resources become available on free plan
-  # build-macos:
-  #   executor: macos
-  #   steps:
-  #     - checkout
-  #     - run:
-  #         name: Setup Node.js environment
-  #         command: |
-  #           node --version
-  #           npm --version
-  #           echo "PATH: $PATH"
-  #           echo "Available disk space:"
-  #           df -h
-  #     - install-dependencies
-  #     - run:
-  #         name: Verify electron-forge installation
-  #         command: |
-  #           npx electron-forge --version
-  #           echo "Electron-forge CLI verified"
-  #     - run:
-  #         name: Build macOS application
-  #         command: NODE_ENV=production npx electron-forge make --platform=darwin
-  #         no_output_timeout: 20m
-  #         environment:
-  #           CI: true
-  #           NODE_ENV: production
-  #           OPENAI_API_KEY: ${OPENAI_API_KEY}
-  #           REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
-  #           REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
-  #           REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
-  #           REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
-  #           DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
-  #           BASETEN_API_KEY: ${BASETEN_API_KEY}
-  #     - store_artifacts:
-  #         path: out/make
-  #         destination: macos-builds
-  #     - persist_to_workspace:
-  #         root: .
-  #         paths:
-  #           - out/make
+  # macOS build job (re-enabled with updated Node.js version)
+  build-macos:
+    executor: macos
+    steps:
+      - checkout
+      - run:
+          name: Setup Node.js environment
+          command: |
+            node --version
+            npm --version
+            echo "PATH: $PATH"
+            echo "Available disk space:"
+            df -h
+      - install-dependencies
+      - run:
+          name: Verify electron-forge installation
+          command: |
+            npx electron-forge --version
+            echo "Electron-forge CLI verified"
+      - run:
+          name: Build macOS application
+          command: NODE_ENV=production npx electron-forge make --platform=darwin
+          no_output_timeout: 20m
+          environment:
+            CI: true
+            NODE_ENV: production
+            OPENAI_API_KEY: ${OPENAI_API_KEY}
+            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
+            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
+            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
+            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
+            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+            BASETEN_API_KEY: ${BASETEN_API_KEY}
+      - store_artifacts:
+          path: out/make
+          destination: macos-builds
+      - persist_to_workspace:
+          root: .
+          paths:
+            - out/make
 
   # Release job - create GitHub release with artifacts
   create-release:
@@ -226,6 +246,7 @@ workflows:
         - not: << pipeline.git.tag >>
     jobs:
       - test
+      - test-e2e
 
   # Main branch workflow - build and release only (quality already validated in PR)
   main-workflow:
@@ -235,19 +256,19 @@ workflows:
         - not: << pipeline.git.tag >>
     jobs:
       - build-windows
-      # - build-macos # Disabled due to free tier limitations
+      - build-macos
       - create-release:
           requires:
             - build-windows
-            # - build-macos
+            - build-macos
 
   # Manual workflow trigger (tags)
   manual-release:
     when: << pipeline.git.tag >>
     jobs:
       - build-windows
-      # - build-macos # Disabled due to free tier limitations
+      - build-macos
       - create-release:
           requires:
             - build-windows
-            # - build-macos
+            - build-macos
