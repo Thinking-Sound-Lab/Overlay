@@ -5,13 +5,16 @@ This document outlines the required database schema for the Overlay application.
 ## Required Tables
 
 ### 1. Users (Managed by Supabase Auth)
+
 The `auth.users` table is automatically created by Supabase Auth and includes:
+
 - `id` (UUID, Primary Key)
 - `email` (Text)
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
 ### 2. User Profiles
+
 ```sql
 CREATE TABLE public.user_profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
@@ -37,6 +40,7 @@ CREATE POLICY "Users can insert own profile" ON public.user_profiles
 ```
 
 ### 3. Transcripts
+
 ```sql
 CREATE TABLE public.transcripts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -75,6 +79,7 @@ CREATE INDEX transcripts_user_id_was_translated_idx ON public.transcripts(user_i
 ```
 
 ### 4. User Settings
+
 ```sql
 CREATE TABLE public.user_settings (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
@@ -97,6 +102,7 @@ CREATE POLICY "Users can insert own settings" ON public.user_settings
 ```
 
 ### 5. Dictionary Entries
+
 ```sql
 CREATE TABLE public.dictionary_entries (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -134,6 +140,7 @@ CREATE UNIQUE INDEX dictionary_entries_user_key_unique_idx ON public.dictionary_
 ## Functions
 
 ### Auto-update timestamps
+
 ```sql
 -- Function to automatically update updated_at timestamps
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
@@ -150,7 +157,7 @@ CREATE TRIGGER handle_updated_at_user_profiles
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_updated_at();
 
--- Apply to user_settings  
+-- Apply to user_settings
 CREATE TRIGGER handle_updated_at_user_settings
   BEFORE UPDATE ON public.user_settings
   FOR EACH ROW
@@ -164,6 +171,7 @@ CREATE TRIGGER handle_updated_at_dictionary_entries
 ```
 
 ### Create user profile on signup
+
 ```sql
 -- Function to automatically create user profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -174,29 +182,29 @@ DECLARE
 BEGIN
   -- Debug logging
   RAISE NOTICE 'Creating profile for user: %, metadata: %', NEW.email, NEW.raw_user_meta_data;
-  
+
   -- Extract fallback name from email
   fallback_name := split_part(NEW.email, '@', 1);
-  
+
   -- Ensure we have a fallback that's not empty
   IF fallback_name IS NULL OR fallback_name = '' THEN
     fallback_name := 'User';
   END IF;
-  
+
   -- Try to extract name from user metadata, fallback to email prefix
   user_name := COALESCE(
     NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
     NULLIF(TRIM(NEW.raw_user_meta_data->>'name'), ''),
     fallback_name
   );
-  
+
   -- Final safety check - ensure we have a non-null, non-empty name
   IF user_name IS NULL OR TRIM(user_name) = '' THEN
     user_name := fallback_name;
   END IF;
-  
+
   RAISE NOTICE 'Using name for profile: "%"', user_name;
-  
+
   -- Insert with error handling
   BEGIN
     INSERT INTO public.user_profiles (id, name, subscription_tier, onboarding_completed)
@@ -209,7 +217,7 @@ BEGIN
       INSERT INTO public.user_profiles (id, name, subscription_tier, onboarding_completed)
       VALUES (NEW.id, split_part(NEW.email, '@', 1), 'free', false);
   END;
-  
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -222,6 +230,7 @@ CREATE TRIGGER on_auth_user_created
 ```
 
 ### Delete user account function
+
 ```sql
 -- Function to delete user account and all associated data
 CREATE OR REPLACE FUNCTION public.delete_user_account()
@@ -231,7 +240,7 @@ DECLARE
 BEGIN
   -- Get the current user's ID
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN json_build_object(
@@ -243,25 +252,25 @@ BEGIN
   -- Delete user data in the correct order
   -- 1. Delete user settings
   DELETE FROM public.user_settings WHERE user_id = current_user_id;
-  
+
   -- 2. Delete dictionary entries
   DELETE FROM public.dictionary_entries WHERE user_id = current_user_id;
-  
+
   -- 3. Delete transcripts
   DELETE FROM public.transcripts WHERE user_id = current_user_id;
-  
+
   -- 4. Delete user profile
   DELETE FROM public.user_profiles WHERE id = current_user_id;
-  
+
   -- 5. Delete auth user (this requires admin privileges)
   -- Note: This will only work if RLS is properly configured
   DELETE FROM auth.users WHERE id = current_user_id;
-  
+
   RETURN json_build_object(
     'success', true,
     'message', 'Account successfully deleted'
   );
-  
+
 EXCEPTION WHEN OTHERS THEN
   RETURN json_build_object(
     'success', false,
@@ -275,27 +284,28 @@ GRANT EXECUTE ON FUNCTION public.delete_user_account() TO authenticated;
 ```
 
 ### Migration for Existing Installations
+
 ```sql
 -- Add name field to existing user_profiles table (if not exists)
-ALTER TABLE public.user_profiles 
+ALTER TABLE public.user_profiles
 ADD COLUMN IF NOT EXISTS name VARCHAR(255);
 
 -- Add onboarding_completed field to existing user_profiles table (if not exists)
-ALTER TABLE public.user_profiles 
+ALTER TABLE public.user_profiles
 ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;
 
 -- Update existing user profiles with names from email
-UPDATE public.user_profiles 
+UPDATE public.user_profiles
 SET name = split_part((SELECT email FROM auth.users WHERE auth.users.id = user_profiles.id), '@', 1)
 WHERE name IS NULL;
 
 -- Set onboarding_completed to TRUE for existing users who have user_settings (indicates they completed onboarding)
-UPDATE public.user_profiles 
+UPDATE public.user_profiles
 SET onboarding_completed = TRUE
 WHERE id IN (SELECT user_id FROM public.user_settings);
 
 -- Make name field required after populating existing records
-ALTER TABLE public.user_profiles 
+ALTER TABLE public.user_profiles
 ALTER COLUMN name SET NOT NULL;
 ```
 
@@ -303,13 +313,14 @@ ALTER COLUMN name SET NOT NULL;
 
 1. Create a new Supabase project at https://supabase.com
 2. Go to the SQL Editor in your Supabase dashboard
-3. Run each SQL block above in order
+3. Run each SQL block above in order (including storage bucket setup)
 4. Copy your project URL and anon key to your `.env.development` file
 5. Update the Supabase configuration in `src/renderer/main_window/lib/supabase.ts`
 
 ## Environment Variables
 
 Create a `.env.development` file with:
+
 ```env
 REACT_APP_SUPABASE_URL=your-project-url
 REACT_APP_SUPABASE_ANON_KEY=your-anon-key
