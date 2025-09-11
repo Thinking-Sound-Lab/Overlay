@@ -231,7 +231,7 @@ Output: "I will be there at 6."
 Text to process: "${transcript}"
 `;
 
-      const response = await openai.chat.completions.create({
+      const response = await openai().chat.completions.create({
         model: this.LANGUAGE_MODEL,
         messages: [
           {
@@ -399,7 +399,7 @@ CRITICAL RULES:
 
 Return ONLY the translation, nothing else.`;
 
-      const response = await openai.chat.completions.create({
+      const response = await openai().chat.completions.create({
         model: this.LANGUAGE_MODEL,
         messages: [
           { role: "user", content: text },
@@ -538,7 +538,7 @@ IMPORTANT: Apply formatting ONLY to statements, NOT to questions. Questions must
         }
       }
 
-      const response = await openai.chat.completions.create({
+      const response = await openai().chat.completions.create({
         model: this.LANGUAGE_MODEL,
         messages: [
           { role: "user", content: text },

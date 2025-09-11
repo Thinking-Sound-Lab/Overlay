@@ -7,18 +7,46 @@ import { analyzeAudioSilence } from "../helpers/audioAnalyzer";
 // import { config } from "../../../config/environment";
 import { STTClient } from "../../shared/types";
 
-export const openai = new OpenAI({
-  apiKey: process.env.BASETEN_API_KEY,
-  timeout: 60000,
-  maxRetries: 3,
-  baseURL: "https://inference.baseten.co/v1",
-});
+// Lazy initialization to prevent crashes during module import
+let _openai: OpenAI | null = null;
+let _defaultOpenAI: OpenAI | null = null;
 
-export const defaultOpenAI = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  timeout: 60000,
-  maxRetries: 3,
-});
+export const getOpenAI = (): OpenAI => {
+  if (!_openai) {
+    const apiKey = process.env.BASETEN_API_KEY;
+    if (!apiKey) {
+      throw new Error("BASETEN_API_KEY environment variable is missing or empty");
+    }
+    _openai = new OpenAI({
+      apiKey,
+      timeout: 60000,
+      maxRetries: 3,
+      baseURL: "https://inference.baseten.co/v1",
+    });
+    console.log("[OpenAI] Baseten OpenAI client initialized");
+  }
+  return _openai;
+};
+
+export const getDefaultOpenAI = (): OpenAI => {
+  if (!_defaultOpenAI) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY environment variable is missing or empty");
+    }
+    _defaultOpenAI = new OpenAI({
+      apiKey,
+      timeout: 60000,
+      maxRetries: 3,
+    });
+    console.log("[OpenAI] Default OpenAI client initialized");
+  }
+  return _defaultOpenAI;
+};
+
+// Backward compatibility exports (deprecated - use getters instead)
+export const openai = getOpenAI;
+export const defaultOpenAI = getDefaultOpenAI;
 
 export type { STTClient };
 
@@ -53,7 +81,7 @@ export async function createWhisperSTT({
       // Transcribe with Whisper
       const result = await transcribeWithWhisper(
         tempAudioPath,
-        defaultOpenAI,
+        getDefaultOpenAI(),
         language
       );
 
