@@ -10,7 +10,6 @@ const envFile =
     : ".env.production";
 dotenv.config({ path: path.join(process.cwd(), envFile) });
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const ForkTsCheckerWebpackPlugin: typeof IForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
 
 export const plugins = [

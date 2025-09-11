@@ -1,5 +1,5 @@
 import { BrowserWindow, screen } from "electron";
-import { WindowSizes, InformationMessage, WindowPositions } from "./types";
+import { WindowSizes, InformationMessage } from "./types";
 import { WindowAnimator } from "../helpers/windowAnimator";
 
 // Webpack entry points

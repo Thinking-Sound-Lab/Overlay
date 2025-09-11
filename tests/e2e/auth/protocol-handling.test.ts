@@ -82,6 +82,7 @@ test.describe('Protocol Handling (Windows Single-Instance Fix)', () => {
       // Simulate protocol URL being processed by existing instance
       // In real scenario, this would come from the second-instance event
       await electronApp.evaluate(async ({ app }, protocolUrl) => {
+        void app; // Acknowledged unused app parameter
         // Simulate the protocol handling that happens in main process
         const url = new URL(protocolUrl);
         return {
@@ -96,6 +97,7 @@ test.describe('Protocol Handling (Windows Single-Instance Fix)', () => {
       
       // Check that the app can handle the protocol URL structure
       const result = await electronApp.evaluate(async ({ app }, protocolUrl) => {
+        void app; // Acknowledged unused app parameter
         try {
           const url = new URL(protocolUrl);
           const hashParams = new URLSearchParams(url.hash.substring(1));
@@ -199,6 +201,7 @@ test.describe('Protocol Handling (Windows Single-Instance Fix)', () => {
 
       for (const url of malformedUrls) {
         const result = await electronApp.evaluate(async ({ app }, testUrl) => {
+          void app; // Acknowledged unused app parameter
           try {
             const urlObj = new URL(testUrl);
             

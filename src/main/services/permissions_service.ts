@@ -1,4 +1,4 @@
-import { systemPreferences, shell } from "electron";
+import { systemPreferences } from "electron";
 
 export interface PermissionStatus {
   granted: boolean;

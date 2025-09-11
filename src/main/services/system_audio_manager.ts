@@ -122,6 +122,7 @@ export class SystemAudioManager {
     try {
       await this.executeCommand(command);
     } catch (error) {
+      void error; // Error acknowledged for fallback handling
       // Fallback: Use simpler mute command
       console.log("[AudioManager] Trying fallback Windows mute method...");
       const fallbackCommand = `powershell -Command "(New-Object -comObject WScript.Shell).SendKeys([char]173)"`;

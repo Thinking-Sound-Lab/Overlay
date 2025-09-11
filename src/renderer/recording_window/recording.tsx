@@ -36,7 +36,7 @@ export const RecordingWindow: React.FC = () => {
     deviceId: { exact: "default" },
   });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStage, setProcessingStage] = useState("");
+  // processingStage state removed as it was unused
   const [hovered, setHovered] = useState(false);
   const [levels, setLevels] = useState<number[]>(totalLevels);
   const audioContextRef = useRef<AudioContext | null>(null);

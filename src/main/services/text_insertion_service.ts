@@ -254,12 +254,8 @@ export class TextInsertionService {
    * Check if cross-platform text insertion is available
    */
   isTextInsertionAvailable(): boolean {
-    try {
-      // Clipboard method is always available with Electron
-      return true;
-    } catch {
-      return false;
-    }
+    // Clipboard method is always available with Electron
+    return true;
   }
 }
 

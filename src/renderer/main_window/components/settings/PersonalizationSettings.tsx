@@ -3,7 +3,7 @@ import { Switch } from "../ui/switch";
 import { Select } from "../ui/select";
 import { SettingsComponentProps, SelectOption } from "./types";
 import { SUPPORTED_LANGUAGES, getLanguageDisplayName } from "../../../../shared/constants/languages";
-import { ProFeatureGate, ProSettingGate } from "../ui/ProFeatureGate";
+import { ProSettingGate } from "../ui/ProFeatureGate";
 import { useProFeatures } from "../../hooks/useProFeatures";
 
 export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({

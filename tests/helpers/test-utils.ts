@@ -120,6 +120,7 @@ export class MockEventTarget extends EventTarget {
     callback: EventListenerOrEventListenerObject | null, 
     options?: boolean | AddEventListenerOptions
   ): void {
+    void options; // Acknowledged unused options parameter
     if (!callback) return;
     
     if (!this.listeners.has(type)) {
@@ -133,6 +134,7 @@ export class MockEventTarget extends EventTarget {
     callback: EventListenerOrEventListenerObject | null, 
     options?: boolean | EventListenerOptions
   ): void {
+    void options; // Acknowledged unused options parameter
     if (!callback) return;
     
     const listeners = this.listeners.get(type);
@@ -228,6 +230,7 @@ export class MockMediaStreamTrack implements MediaStreamTrack {
   }
   
   applyConstraints(constraints?: MediaTrackConstraints): Promise<void> {
+    void constraints; // Acknowledged unused constraints parameter
     return Promise.resolve();
   }
 }

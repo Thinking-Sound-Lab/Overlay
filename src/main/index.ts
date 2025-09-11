@@ -13,7 +13,6 @@ import { autoUpdater } from "electron-updater";
 
 // Handle Squirrel events on Windows (must be early in the main process)
 if (process.platform === "win32") {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const squirrelStartup = require("electron-squirrel-startup");
   if (squirrelStartup) {
     console.log("[Squirrel] Squirrel event detected, quitting...");
@@ -959,7 +958,7 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // This is the first instance, handle second instance attempts
-  app.on("second-instance", (event, commandLine, _workingDirectory) => {
+  app.on("second-instance", (event, commandLine) => {
     console.log("[Main] Second instance detected, focusing existing window");
 
     // Focus main window if it exists
@@ -1278,13 +1277,13 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("window-hover-enter", (_event) => {
+ipcMain.handle("window-hover-enter", () => {
   if (windowManager.getRecordingWindow() && !isRecording) {
     windowManager.expandRecordingWindow();
   }
 });
 
-ipcMain.handle("window-hover-leave", (_event) => {
+ipcMain.handle("window-hover-leave", () => {
   if (
     !windowManager.getRecordingWindow() ||
     windowManager.getRecordingWindow().isDestroyed()
@@ -1327,7 +1326,7 @@ ipcMain.handle("on-authentication-complete", (_event, user) => {
 });
 
 // Auth state refresh handler - reload auth state from database after onboarding completion
-ipcMain.handle("refresh-auth-state", async (_event) => {
+ipcMain.handle("refresh-auth-state", async () => {
   console.log("[Main] Auth state refresh requested");
 
   if (!AuthUtils.isUserAuthenticated()) {
@@ -1523,7 +1522,7 @@ ipcMain.handle("end-hotkey-test", () => {
 });
 
 // Renderer readiness handler for auth state synchronization
-ipcMain.handle("renderer-ready-for-auth", async (_event) => {
+ipcMain.handle("renderer-ready-for-auth", async () => {
   console.log("[Main] Renderer signaled ready for auth events");
   rendererReady = true;
 

@@ -28,6 +28,7 @@ export interface WordUsageInfo {
  * Check if user has access to a specific Pro feature
  */
 export function hasProAccess(user: UserRecord | null, feature: ProFeature): boolean {
+  void feature; // Acknowledged unused feature parameter
   if (!user) return false;
 
   const tier = user.subscription_tier;

@@ -753,7 +753,8 @@ export class SupabaseService {
               } catch (error) {
                 console.warn(
                   "SupabaseService: Invalid date in transcript:",
-                  t.created_at
+                  t.created_at,
+                  error
                 );
                 return null;
               }

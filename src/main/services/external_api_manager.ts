@@ -1,6 +1,5 @@
 import { SupabaseService } from './supabase_service';
 import { AnalyticsService } from './analytics_service';
-import { User } from '@supabase/supabase-js';
 
 export class ExternalAPIManager {
   private supabaseService: SupabaseService;

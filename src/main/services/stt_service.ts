@@ -168,6 +168,7 @@ class STTService {
         this.processStreamingTranscript(delta, isFinal, language);
       },
       onTranscriptComplete: (transcript: string, language: string) => {
+        void language; // Unused parameter required by callback interface
         console.log(
           "[STT] Realtime final transcript from Finalize:",
           transcript
@@ -541,6 +542,7 @@ class STTService {
     isFinal: boolean,
     language: string
   ) {
+    void language; // Unused parameter required by method signature
     console.log(
       "[STT] Processing streaming transcript delta:",
       delta,

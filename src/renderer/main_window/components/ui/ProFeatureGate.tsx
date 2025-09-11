@@ -29,6 +29,7 @@ export const ProFeatureGate: React.FC<ProFeatureGateProps> = ({
   fallbackText
 }) => {
   const { hasFeatureAccess, subscriptionInfo } = useProFeatures();
+  void subscriptionInfo; // Acknowledged unused subscription info
   const featureInfo = PRO_FEATURES[feature];
 
   // If user has access, show the feature normally
@@ -124,6 +125,7 @@ export const ProSettingGate: React.FC<{
   children: React.ReactNode;
   label: string;
 }> = ({ feature, children, label }) => {
+  void label; // Acknowledged unused label parameter
   const { hasFeatureAccess } = useProFeatures();
 
   if (hasFeatureAccess(feature)) {

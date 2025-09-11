@@ -9,7 +9,6 @@ import {
   hasProAccess, 
   getSubscriptionInfo, 
   canUseWords,
-  getEffectiveTier,
   canAccessSetting
 } from "../../../shared/utils/subscription-permissions";
 import { ProFeature } from "../../../shared/constants/pro-features";
