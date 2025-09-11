@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Check, Globe } from "lucide-react";
-import { LanguageOption, SUPPORTED_LANGUAGES } from "../../../shared/constants/languages";
+import { SUPPORTED_LANGUAGES } from "../../../shared/constants/languages";
 
 interface LanguageSelectionPageProps {
   onLanguageSelected: (languageCode: string) => void;

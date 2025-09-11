@@ -1,7 +1,6 @@
 // Global setup for Playwright E2E tests
-import { FullConfig } from '@playwright/test';
 
-async function globalSetup(_config: FullConfig) {
+async function globalSetup() {
   console.log('🚀 Starting global setup for E2E tests...');
   
   // Set up any global test data or configurations

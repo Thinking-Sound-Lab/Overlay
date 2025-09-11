@@ -9,8 +9,8 @@ executors:
   
   macos:
     macos:
-      xcode: 15.3.0
-    resource_class: macos.m1.medium.gen1
+      xcode: 16.0.0
+    resource_class: macos.m2.medium.gen1
   
   windows:
     machine:
@@ -82,14 +82,14 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Node.js
+          name: Setup Node.js environment
           command: |
-            choco install nodejs --version=18.20.0 -y
-            refreshenv
+            node --version
+            npm --version
       - install-dependencies
       - run:
           name: Build Windows application
-          command: npm run make:win
+          command: NODE_ENV=production electron-forge make --platform=win32
           environment:
             CI: true
             NODE_ENV: production
@@ -114,14 +114,14 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Node.js
+          name: Setup Node.js environment
           command: |
-            brew install node@18
-            echo 'export PATH="/opt/homebrew/opt/node@18/bin:$PATH"' >> $BASH_ENV
+            node --version
+            npm --version
       - install-dependencies
       - run:
           name: Build macOS application
-          command: npm run make:mac
+          command: NODE_ENV=production electron-forge make --platform=darwin
           environment:
             CI: true
             NODE_ENV: production

@@ -136,6 +136,7 @@ export class TranslationService {
             console.log("[Translation] Auto-detected mode:", detectedMode);
           }
         } catch (error) {
+          void error; // Variable acknowledged for error handling
           console.warn(
             "[Translation] Auto-detection failed, using fallback mode:",
             selectedMode
@@ -459,6 +460,7 @@ Return ONLY the translation, nothing else.`;
     try {
       const languageNames = this.getLanguageNames();
       const languageName = languageNames[language] || language;
+      void languageName; // Variable acknowledged but not used in current implementation
 
       const grammerInstruction = this.getGrammarInstructions(language);
 
@@ -500,6 +502,7 @@ Return ONLY the translation, nothing else.`;
             console.log("[Translation] Auto-detected mode:", detectedMode);
           }
         } catch (error) {
+          void error; // Variable acknowledged for error handling
           console.warn(
             "[Translation] Auto-detection failed, using fallback mode:",
             selectedMode

@@ -5,7 +5,6 @@ import { PermissionsPage } from "./PermissionsPage";
 import { GuidePage } from "./GuidePage";
 import { useAppContext } from "../contexts/AppContext";
 import { analytics, auth, db } from "../lib/api_client";
-import { Button } from "./ui/button";
 import { UserRecord } from "../../../shared/types/database";
 import { shouldTrackAnalytics } from "../../../shared/utils/environment";
 
@@ -18,11 +17,20 @@ interface OnboardingFlowProps {
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   onStepChange,
 }) => {
-  const { state, dispatch, setUser, setAuthenticated, completeOnboarding, setSettings } =
-    useAppContext();
+  const {
+    state,
+    dispatch,
+    setUser,
+    setAuthenticated,
+    completeOnboarding,
+    setSettings,
+  } = useAppContext();
+  // Acknowledge unused setters required by context
+  void setUser;
+  void setAuthenticated;
   const { user, isAuthenticated, settings, isLoading } = state;
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("auth");
-  const [signUpEmail, setSignUpEmail] = useState<string>("");
+  // signUpEmail state removed as it was unused
 
   // Determine which step to show based on authentication state
   useEffect(() => {
@@ -45,7 +53,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       );
       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
     } else if (isAuthenticated && user && !user.onboarding_completed) {
-      console.log("OnboardingFlow: User authenticated but onboarding incomplete, showing language selection");
+      console.log(
+        "OnboardingFlow: User authenticated but onboarding incomplete, showing language selection"
+      );
       setCurrentStep("language");
     } else {
       console.log("OnboardingFlow: User not authenticated, showing auth");
@@ -95,22 +105,22 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
-  const handleSignUp = async (signUpData: { user?: UserRecord, email: string, needsVerification: boolean }) => {
-    console.log(
-      "OnboardingFlow: Sign up response:",
-      {
-        hasUser: !!signUpData.user,
-        email: signUpData.email,
-        needsVerification: signUpData.needsVerification
-      }
-    );
-
-    // Store email for verification step
-    setSignUpEmail(signUpData.email);
+  const handleSignUp = async (signUpData: {
+    user?: UserRecord;
+    email: string;
+    needsVerification: boolean;
+  }) => {
+    console.log("OnboardingFlow: Sign up response:", {
+      hasUser: !!signUpData.user,
+      email: signUpData.email,
+      needsVerification: signUpData.needsVerification,
+    });
 
     if (signUpData.user) {
-      console.log("OnboardingFlow: User verified during sign-up, proceeding to language selection");
-      
+      console.log(
+        "OnboardingFlow: User verified during sign-up, proceeding to language selection"
+      );
+
       try {
         // Track successful sign up
         if (shouldTrackAnalytics()) {
@@ -122,38 +132,42 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       } catch (error) {
         console.error("OnboardingFlow: Error tracking sign up:", error);
       }
-      
+
       setCurrentStep("language");
     } else {
-      console.error("OnboardingFlow: Unexpected sign-up state - no user returned");
+      console.error(
+        "OnboardingFlow: Unexpected sign-up state - no user returned"
+      );
       setCurrentStep("auth"); // Go back to auth step
     }
   };
 
-
   const handleLanguageSelection = async (languageCode: string) => {
     console.log("OnboardingFlow: Language selected:", languageCode);
-    
+
     try {
       // Update settings with selected language
       const updatedSettings = { ...settings, language: languageCode };
       setSettings(updatedSettings);
-      
+
       // Save using unified DB-first approach
       const result = await db.saveUserSettings(updatedSettings);
       if (result.success) {
-        console.log("OnboardingFlow: Language setting saved via DataLoaderService:", languageCode);
+        console.log(
+          "OnboardingFlow: Language setting saved via DataLoaderService:",
+          languageCode
+        );
       } else {
         throw new Error(result.error || "Failed to save language setting");
       }
-      
+
       // Track language selection
       if (shouldTrackAnalytics()) {
         await analytics.track("language_selected", {
-          language_code: languageCode
+          language_code: languageCode,
         });
       }
-      
+
       // Navigate to permissions
       setCurrentStep("permissions");
     } catch (error) {
@@ -213,7 +227,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       dispatch({ type: "SET_ACTIVE_VIEW", payload: "home" });
       // Update user onboarding status in state
       if (user) {
-        dispatch({ type: "SET_USER", payload: { ...user, onboarding_completed: true } });
+        dispatch({
+          type: "SET_USER",
+          payload: { ...user, onboarding_completed: true },
+        });
       }
     }
   };

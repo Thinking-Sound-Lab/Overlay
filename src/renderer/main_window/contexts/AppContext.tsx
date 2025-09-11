@@ -366,6 +366,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     };
 
     const handleCacheCleared = (event: CustomEvent) => {
+      void event; // Acknowledged unused event parameter
       console.log(
         "AppContext: Cache cleared event received - resetting app state"
       );

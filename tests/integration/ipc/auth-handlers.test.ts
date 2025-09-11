@@ -1,8 +1,6 @@
 // Integration tests for IPC authentication handlers
 import { APIHandlers } from '../../../src/main/ipc/api_handlers';
-import { ExternalAPIManager } from '../../../src/main/services/external_api_manager';
-import { WindowManager } from '../../../src/main/windows/window-manager';
-import { createMockUser, createMockIPCResponse } from '../../helpers/test-utils';
+import { createMockUser } from '../../helpers/test-utils';
 
 // RobotJS has been removed from the project
 

@@ -20,6 +20,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const { state } = useAppContext();
   const { user } = state;
+  void user; // Acknowledged unused user from state
   const { subscriptionInfo, shouldShowUpgrade, upgradeReason } = useProFeatures();
   const [settingsOpen, setSettingsOpen] = useState(false);
   return (

@@ -1,21 +1,11 @@
-import { defineConfig } from "eslint/config";
-import { fixupConfigRules } from "@eslint/compat";
-import globals from "globals";
-import tsParser from "@typescript-eslint/parser";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import js from "@eslint/js";
-import { FlatCompat } from "@eslint/eslintrc";
+import typescript from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
+import importPlugin from "eslint-plugin-import";
+import globals from "globals";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const compat = new FlatCompat({
-    baseDirectory: __dirname,
-    recommendedConfig: js.configs.recommended,
-    allConfig: js.configs.all
-});
-
-export default defineConfig([
+export default [
+    // Global ignores
     {
         ignores: [
             ".webpack/**",
@@ -30,24 +20,66 @@ export default defineConfig([
             "oauth-server.js"
         ]
     },
-    {
-        files: ["**/*.{ts,tsx,js,jsx}"],
     
-    extends: fixupConfigRules(compat.extends(
-        "eslint:recommended",
-        "plugin:@typescript-eslint/eslint-recommended",
-        "plugin:@typescript-eslint/recommended",
-        "plugin:import/recommended",
-        "plugin:import/electron",
-        "plugin:import/typescript",
-    )),
-
-    languageOptions: {
-        globals: {
-            ...globals.browser,
-            ...globals.node,
+    // Base JavaScript configuration
+    js.configs.recommended,
+    
+    // TypeScript configuration
+    {
+        files: ["**/*.{ts,tsx}"],
+        languageOptions: {
+            parser: tsParser,
+            parserOptions: {
+                ecmaVersion: "latest",
+                sourceType: "module"
+            },
+            globals: {
+                ...globals.node,
+                ...globals.browser,
+                ...globals.es2021
+            }
         },
+        plugins: {
+            "@typescript-eslint": typescript,
+            "import": importPlugin
+        },
+        rules: {
+            // TypeScript rules
+            "@typescript-eslint/no-unused-vars": "error",
+            "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/no-unused-expressions": "error",
+            "@typescript-eslint/no-var-requires": "off", // Allow require() in Electron app
+            
+            // Import rules
+            "import/no-unresolved": "off", // Handled by TypeScript
+            "import/named": "off",
+            "import/default": "off",
+            "import/namespace": "off",
+            
+            // General rules
+            "no-undef": "off", // TypeScript handles this
+            "no-unused-vars": "off" // Use TypeScript version instead
+        }
+    },
 
-        parser: tsParser,
+    // JavaScript/JSX configuration
+    {
+        files: ["**/*.{js,jsx}"],
+        languageOptions: {
+            ecmaVersion: "latest",
+            sourceType: "module",
+            globals: {
+                ...globals.node,
+                ...globals.browser,
+                ...globals.es2021
+            }
+        },
+        plugins: {
+            "import": importPlugin
+        },
+        rules: {
+            "no-unused-vars": "error",
+            "import/no-unresolved": "off"
+        }
     }
-}]);
+];

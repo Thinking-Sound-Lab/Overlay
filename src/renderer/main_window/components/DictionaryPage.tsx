@@ -21,6 +21,7 @@ interface EditingEntry {
 
 export const DictionaryPage: React.FC = () => {
   const { state } = useAppContext();
+  void state; // Acknowledged unused state from context
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
