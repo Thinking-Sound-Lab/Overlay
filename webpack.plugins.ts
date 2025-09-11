@@ -4,9 +4,19 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 
 // Load environment variables directly here
-const envFile =
-  process.env.NODE_ENV === "development" ? ".env.development" : "";
-dotenv.config({ path: path.join(process.cwd(), envFile) });
+let envFile = "";
+if (process.env.NODE_ENV === "development") {
+  envFile = ".env.development";
+} else if (process.env.NODE_ENV === "production") {
+  envFile = ".env.production";
+}
+
+console.log(`[Webpack] Loading environment from: ${envFile || "system environment"}`);
+if (envFile) {
+  const envPath = path.join(process.cwd(), envFile);
+  console.log(`[Webpack] Environment file path: ${envPath}`);
+  dotenv.config({ path: envPath });
+}
 
 const ForkTsCheckerWebpackPlugin: typeof IForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
 

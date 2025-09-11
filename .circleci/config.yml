@@ -96,18 +96,32 @@ jobs:
             npx electron-forge --version
             echo "Electron-forge CLI verified"
       - run:
+          name: Create production environment file
+          command: |
+            echo "Creating .env.production file for build..."
+            cat > .env.production << EOF
+            NODE_ENV=production
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            REACT_APP_SUPABASE_URL=$REACT_APP_SUPABASE_URL
+            REACT_APP_SUPABASE_ANON_KEY=$REACT_APP_SUPABASE_ANON_KEY
+            REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY
+            REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST
+            DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
+            BASETEN_API_KEY=$BASETEN_API_KEY
+            EOF
+            echo ".env.production file created successfully"
+      - run:
+          name: Clean previous build artifacts
+          command: |
+            echo "Cleaning previous build artifacts..."
+            rm -rf out/make
+            echo "Previous artifacts cleaned"
+      - run:
           name: Build Windows application
           command: npm run make:win
           no_output_timeout: 20m
           environment:
             CI: true
-            OPENAI_API_KEY: $OPENAI_API_KEY
-            REACT_APP_SUPABASE_URL: $REACT_APP_SUPABASE_URL
-            REACT_APP_SUPABASE_ANON_KEY: $REACT_APP_SUPABASE_ANON_KEY
-            REACT_APP_POSTHOG_KEY: $REACT_APP_POSTHOG_KEY
-            REACT_APP_POSTHOG_HOST: $REACT_APP_POSTHOG_HOST
-            DEEPGRAM_API_KEY: $DEEPGRAM_API_KEY
-            BASETEN_API_KEY: $BASETEN_API_KEY
       - store_artifacts:
           path: out/make
           destination: windows-builds
@@ -136,18 +150,32 @@ jobs:
             npx electron-forge --version
             echo "Electron-forge CLI verified"
       - run:
+          name: Create production environment file
+          command: |
+            echo "Creating .env.production file for build..."
+            cat > .env.production << EOF
+            NODE_ENV=production
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            REACT_APP_SUPABASE_URL=$REACT_APP_SUPABASE_URL
+            REACT_APP_SUPABASE_ANON_KEY=$REACT_APP_SUPABASE_ANON_KEY
+            REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY
+            REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST
+            DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
+            BASETEN_API_KEY=$BASETEN_API_KEY
+            EOF
+            echo ".env.production file created successfully"
+      - run:
+          name: Clean previous build artifacts
+          command: |
+            echo "Cleaning previous build artifacts..."
+            rm -rf out/make
+            echo "Previous artifacts cleaned"
+      - run:
           name: Build macOS application
           command: npm run make:mac
           no_output_timeout: 20m
           environment:
             CI: true
-            OPENAI_API_KEY: $OPENAI_API_KEY
-            REACT_APP_SUPABASE_URL: $REACT_APP_SUPABASE_URL
-            REACT_APP_SUPABASE_ANON_KEY: $REACT_APP_SUPABASE_ANON_KEY
-            REACT_APP_POSTHOG_KEY: $REACT_APP_POSTHOG_KEY
-            REACT_APP_POSTHOG_HOST: $REACT_APP_POSTHOG_HOST
-            DEEPGRAM_API_KEY: $DEEPGRAM_API_KEY
-            BASETEN_API_KEY: $BASETEN_API_KEY
       - store_artifacts:
           path: out/make
           destination: macos-builds
