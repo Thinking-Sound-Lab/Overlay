@@ -4,8 +4,7 @@ import { ExternalAPIManager } from '../../../src/main/services/external_api_mana
 import { WindowManager } from '../../../src/main/windows/window-manager';
 import { createMockUser, createMockIPCResponse } from '../../helpers/test-utils';
 
-// Mock robotjs to prevent Node.js version conflict
-jest.mock('robotjs', () => ({}));
+// RobotJS has been removed from the project
 
 // Mock dependencies
 jest.mock('../../../src/main/services/external_api_manager');

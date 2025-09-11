@@ -1,7 +1,6 @@
-// TextInsertionService.ts - RobotJS primary with clipboard fallback
+// TextInsertionService.ts - Cross-platform text insertion via clipboard
 import { exec } from "child_process";
 import { promisify } from "util";
-import * as robot from "robotjs";
 import { clipboard } from "electron";
 import { DictionaryService } from "./dictionary_service";
 
@@ -20,13 +19,10 @@ export class TextInsertionService {
     this.platform = process.platform;
     this.dictionaryService = dictionaryService;
     console.log(`[TextInsertion] Initialized for platform: ${this.platform}`);
-
-    // Configure robotjs settings
-    robot.setKeyboardDelay(2);
   }
 
   /**
-   * Insert text using robotjs as primary method with clipboard as fallback
+   * Insert text using cross-platform clipboard method
    */
   async insertText(
     text: string,
@@ -68,23 +64,9 @@ export class TextInsertionService {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    // Primary method: RobotJS typing
-    // try {
-    //   console.log("[TextInsertion] Attempting RobotJS method (primary)");
-    //   const robotSuccess = await this.insertTextViaRobot(processedText);
-    //   if (robotSuccess) {
-    //     console.log(
-    //       "[TextInsertion] Text inserted successfully via RobotJS"
-    //     );
-    //     return true;
-    //   }
-    // } catch (error) {
-    //   console.warn("[TextInsertion] RobotJS method failed:", error);
-    // }
-
-    // Fallback method: Clipboard insertion
+    // Primary method: Clipboard insertion
     try {
-      console.log("[TextInsertion] Attempting clipboard method (fallback)");
+      console.log("[TextInsertion] Attempting clipboard method");
       const clipboardSuccess = await this.insertTextViaClipboard(
         processedText,
         preserveClipboard,
@@ -102,26 +84,9 @@ export class TextInsertionService {
     return false;
   }
 
-  /**
-   * RobotJS text insertion method (primary)
-   */
-  private async insertTextViaRobot(text: string): Promise<boolean> {
-    try {
-      console.log("[TextInsertion] Using RobotJS for text insertion");
-
-      // Type the text using robotjs
-      robot.typeString(text);
-
-      console.log("[TextInsertion] RobotJS: Text inserted successfully");
-      return true;
-    } catch (error) {
-      console.error("[TextInsertion] RobotJS insertion failed:", error);
-      return false;
-    }
-  }
 
   /**
-   * Clipboard method for text insertion (fallback)
+   * Clipboard method for text insertion
    */
   private async insertTextViaClipboard(
     text: string,
@@ -260,16 +225,8 @@ export class TextInsertionService {
    */
   async isAvailable(): Promise<boolean> {
     try {
-      // Check if RobotJS is available
-      if (robot && typeof robot.typeString === "function") {
-        console.log("[TextInsertion] RobotJS text insertion available");
-        return true;
-      }
-
-      // Fallback to clipboard method availability
-      console.log(
-        "[TextInsertion] RobotJS not available, clipboard method available as fallback"
-      );
+      // Clipboard method is always available with Electron
+      console.log("[TextInsertion] Clipboard text insertion available");
       return true;
     } catch (error) {
       console.error("[TextInsertion] Availability check failed:", error);
@@ -294,11 +251,12 @@ export class TextInsertionService {
   }
 
   /**
-   * Check if RobotJS is available
+   * Check if cross-platform text insertion is available
    */
-  isRobotAvailable(): boolean {
+  isTextInsertionAvailable(): boolean {
     try {
-      return robot && typeof robot.typeString === "function";
+      // Clipboard method is always available with Electron
+      return true;
     } catch {
       return false;
     }
