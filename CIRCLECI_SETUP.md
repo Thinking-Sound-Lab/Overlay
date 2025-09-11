@@ -53,8 +53,9 @@ Set the following environment variables in your CircleCI project settings:
 
 #### Main Branch Workflow  
 - **Trigger**: Push to main branch
-- **Jobs**: Test → Build (Windows + macOS) → Create GitHub Release
-- **Duration**: ~20-30 minutes
+- **Jobs**: Build (Windows + macOS) → Create GitHub Release
+- **Duration**: ~15-20 minutes (faster, no redundant testing)
+- **Logic**: Quality already validated in PR, go straight to deployment
 - **Artifacts**: 
   - Windows: `.exe` and `.msi` installers
   - macOS: `.dmg` installer

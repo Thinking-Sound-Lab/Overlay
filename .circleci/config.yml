@@ -208,36 +208,26 @@ workflows:
     jobs:
       - test
 
-  # Main branch workflow - build and release
+  # Main branch workflow - build and release only (quality already validated in PR)
   main-workflow:
     when:
       and:
         - equal: [ main, << pipeline.git.branch >> ]
         - not: << pipeline.git.tag >>
     jobs:
-      - test
-      - build-windows:
-          requires:
-            - test
-      - build-macos:
-          requires:
-            - test
+      - build-windows
+      - build-macos
       - create-release:
           requires:
             - build-windows
             - build-macos
 
-  # Manual workflow trigger
+  # Manual workflow trigger (tags)
   manual-release:
     when: << pipeline.git.tag >>
     jobs:
-      - test
-      - build-windows:
-          requires:
-            - test
-      - build-macos:
-          requires:
-            - test
+      - build-windows
+      - build-macos
       - create-release:
           requires:
             - build-windows
