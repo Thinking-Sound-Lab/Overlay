@@ -166,8 +166,8 @@ npm run test:ci
 ## 🔄 CI/CD Pipeline
 
 ### CircleCI Integration
-- **Pull Requests**: Fast testing workflow (lint, unit tests, e2e tests)
-- **Main Branch**: Full pipeline (test → build → release)
+- **Pull Requests**: Fast testing and linting workflow (ESLint, unit tests, e2e tests)
+- **Main Branch**: Full pipeline (test + lint → build → release)
 - **Automatic Releases**: GitHub releases created on main branch merges
 - **Cross-Platform Builds**: Windows and macOS distributables
 

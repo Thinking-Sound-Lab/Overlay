@@ -47,7 +47,7 @@ Set the following environment variables in your CircleCI project settings:
 
 #### Pull Request Workflow
 - **Trigger**: Any PR to any branch
-- **Jobs**: Test only (lint, unit tests, e2e tests)
+- **Jobs**: Test and lint (ESLint, unit tests, e2e tests, coverage)
 - **Duration**: ~5-10 minutes
 - **Artifacts**: Test coverage reports only
 
