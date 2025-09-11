@@ -1,0 +1,244 @@
+version: 2.1
+
+# Executors for different platforms
+executors:
+  node-linux:
+    docker:
+      - image: cimg/node:18.20
+    resource_class: large
+  
+  macos:
+    macos:
+      xcode: 15.3.0
+    resource_class: macos.m1.medium.gen1
+  
+  windows:
+    machine:
+      image: windows-server-2022-gui:2024.01.1
+    resource_class: windows.large
+
+# Commands for reusable steps
+commands:
+  install-dependencies:
+    description: "Install npm dependencies with caching"
+    steps:
+      - restore_cache:
+          keys:
+            - v1-deps-{{ checksum "package-lock.json" }}
+            - v1-deps-
+      - run:
+          name: Install dependencies
+          command: npm ci
+          environment:
+            npm_config_build_from_source: false
+      - save_cache:
+          key: v1-deps-{{ checksum "package-lock.json" }}
+          paths:
+            - node_modules
+            - ~/.cache/electron
+            - ~/.cache/electron-builder
+
+  setup-linux-build-deps:
+    description: "Install Linux build dependencies"
+    steps:
+      - run:
+          name: Install build dependencies
+          command: |
+            sudo apt-get update -y
+            sudo apt-get install -y dpkg fakeroot rpm
+
+# Jobs
+jobs:
+  # Test job for all branches
+  test:
+    executor: node-linux
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Lint code
+          command: npm run lint
+      - run:
+          name: Run unit tests
+          command: npm run test
+          environment:
+            CI: true
+      - run:
+          name: Run end-to-end tests
+          command: npm run test:e2e
+          environment:
+            CI: true
+      - run:
+          name: Generate test coverage
+          command: npm run test:coverage
+      - store_test_results:
+          path: coverage
+      - store_artifacts:
+          path: coverage
+
+  # Build job for Windows (main branch only)
+  build-windows:
+    executor: windows
+    steps:
+      - checkout
+      - run:
+          name: Install Node.js
+          command: |
+            choco install nodejs --version=18.20.0 -y
+            refreshenv
+      - install-dependencies
+      - run:
+          name: Build Windows application
+          command: npm run make:win
+          environment:
+            CI: true
+            NODE_ENV: production
+            OPENAI_API_KEY: ${OPENAI_API_KEY}
+            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
+            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
+            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
+            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
+            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+            BASETEN_API_KEY: ${BASETEN_API_KEY}
+      - store_artifacts:
+          path: out/make
+          destination: windows-builds
+      - persist_to_workspace:
+          root: .
+          paths:
+            - out/make
+
+  # Build job for macOS (main branch only)  
+  build-macos:
+    executor: macos
+    steps:
+      - checkout
+      - run:
+          name: Install Node.js
+          command: |
+            brew install node@18
+            echo 'export PATH="/opt/homebrew/opt/node@18/bin:$PATH"' >> $BASH_ENV
+      - install-dependencies
+      - run:
+          name: Build macOS application
+          command: npm run make:mac
+          environment:
+            CI: true
+            NODE_ENV: production
+            OPENAI_API_KEY: ${OPENAI_API_KEY}
+            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
+            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
+            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
+            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
+            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+            BASETEN_API_KEY: ${BASETEN_API_KEY}
+      - store_artifacts:
+          path: out/make
+          destination: macos-builds
+      - persist_to_workspace:
+          root: .
+          paths:
+            - out/make
+
+  # Release job - create GitHub release with artifacts
+  create-release:
+    executor: node-linux
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install GitHub CLI
+          command: |
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
+      - run:
+          name: Create GitHub Release
+          command: |
+            # Get version from package.json
+            VERSION="v$(node -p "require('./package.json').version")"
+            
+            # Check if release already exists
+            if gh release view "$VERSION" >/dev/null 2>&1; then
+              echo "Release $VERSION already exists, skipping creation"
+              exit 0
+            fi
+            
+            # Create release with artifacts
+            gh release create "$VERSION" \
+              --title "Release $VERSION" \
+              --generate-notes \
+              --notes "## 🚀 Overlay $VERSION
+            
+            **Automatically built from main branch**
+            
+            ### 📦 Downloads
+            
+            - **Windows**: Download the \`.exe\` installer from the assets below
+            - **macOS**: Download the \`.dmg\` file from the assets below
+            
+            ### 🔧 Installation Notes
+            
+            - **Windows**: You may see SmartScreen warnings - click \"More info\" → \"Run anyway\" (unsigned builds)
+            - **macOS**: You may need to allow the app in System Preferences → Privacy & Security (unsigned builds)
+            - **Bug reports**: Please report issues via GitHub Issues
+            
+            ### ✨ Features
+            
+            - AI-powered speech-to-text transcription
+            - Cross-platform text insertion
+            - Dictionary replacements and customization
+            - Multiple window management
+            - Hotkey support (Option+Space on macOS, Ctrl+Windows+Space on Windows)" \
+              out/make/**/*
+          environment:
+            GITHUB_TOKEN: ${GITHUB_TOKEN}
+
+# Workflows
+workflows:
+  # PR workflow - tests only
+  pr-workflow:
+    when:
+      and:
+        - not:
+            equal: [ main, << pipeline.git.branch >> ]
+        - not: << pipeline.git.tag >>
+    jobs:
+      - test
+
+  # Main branch workflow - full pipeline
+  main-workflow:
+    when:
+      and:
+        - equal: [ main, << pipeline.git.branch >> ]
+        - not: << pipeline.git.tag >>
+    jobs:
+      - test
+      - build-windows:
+          requires:
+            - test
+      - build-macos:
+          requires:
+            - test
+      - create-release:
+          requires:
+            - build-windows
+            - build-macos
+
+  # Manual workflow trigger
+  manual-release:
+    when: << pipeline.git.tag >>
+    jobs:
+      - test
+      - build-windows:
+          requires:
+            - test
+      - build-macos:
+          requires:
+            - test
+      - create-release:
+          requires:
+            - build-windows
+            - build-macos
