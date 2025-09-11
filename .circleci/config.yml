@@ -9,8 +9,8 @@ executors:
   
   macos:
     macos:
-      xcode: 16.0.0
-    resource_class: macos.m2.medium.gen1
+      xcode: 15.3.0
+    resource_class: macos.m1.large.gen1
   
   windows:
     machine:
@@ -24,19 +24,20 @@ commands:
     steps:
       - restore_cache:
           keys:
-            - v1-deps-{{ checksum "package-lock.json" }}
-            - v1-deps-
+            - v2-deps-{{ checksum "package-lock.json" }}
+            - v2-deps-
       - run:
           name: Install dependencies
           command: npm ci
           environment:
             npm_config_build_from_source: false
       - save_cache:
-          key: v1-deps-{{ checksum "package-lock.json" }}
+          key: v2-deps-{{ checksum "package-lock.json" }}
           paths:
             - node_modules
             - ~/.cache/electron
             - ~/.cache/electron-builder
+            - ~/.npm
 
   setup-linux-build-deps:
     description: "Install Linux build dependencies"
@@ -86,10 +87,17 @@ jobs:
           command: |
             node --version
             npm --version
+            echo "PATH: $PATH"
       - install-dependencies
       - run:
+          name: Verify electron-forge installation
+          command: |
+            npx electron-forge --version
+            echo "Electron-forge CLI verified"
+      - run:
           name: Build Windows application
-          command: NODE_ENV=production electron-forge make --platform=win32
+          command: NODE_ENV=production npx electron-forge make --platform=win32
+          no_output_timeout: 20m
           environment:
             CI: true
             NODE_ENV: production
@@ -118,10 +126,19 @@ jobs:
           command: |
             node --version
             npm --version
+            echo "PATH: $PATH"
+            echo "Available disk space:"
+            df -h
       - install-dependencies
       - run:
+          name: Verify electron-forge installation
+          command: |
+            npx electron-forge --version
+            echo "Electron-forge CLI verified"
+      - run:
           name: Build macOS application
-          command: NODE_ENV=production electron-forge make --platform=darwin
+          command: NODE_ENV=production npx electron-forge make --platform=darwin
+          no_output_timeout: 20m
           environment:
             CI: true
             NODE_ENV: production
