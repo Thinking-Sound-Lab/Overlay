@@ -34,8 +34,8 @@ commands:
             - v3-deps-node-22-
             - v2-deps-
       - run:
-          name: Install dependencies
-          command: npm ci
+          name: Install dependencies (including devDependencies)
+          command: npm ci --include=dev
           environment:
             npm_config_build_from_source: false
       - save_cache:
@@ -118,11 +118,10 @@ jobs:
             echo "Electron-forge CLI verified"
       - run:
           name: Build Windows application
-          command: npx electron-forge make --platform=win32
+          command: npm run make:win
           no_output_timeout: 20m
           environment:
             CI: true
-            NODE_ENV: production
             OPENAI_API_KEY: ${OPENAI_API_KEY}
             REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
             REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
@@ -159,11 +158,10 @@ jobs:
             echo "Electron-forge CLI verified"
       - run:
           name: Build macOS application
-          command: NODE_ENV=production npx electron-forge make --platform=darwin
+          command: npm run make:mac
           no_output_timeout: 20m
           environment:
             CI: true
-            NODE_ENV: production
             OPENAI_API_KEY: ${OPENAI_API_KEY}
             REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
             REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
