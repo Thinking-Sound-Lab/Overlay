@@ -225,14 +225,20 @@ export const RecordingWindow: React.FC = () => {
         // Get constraints for current selected device from MicrophoneService
         const constraintsResult =
           await window.electronAPI.microphone.getCurrentDeviceConstraints();
-        console.log("🎙️ getCurrentDeviceConstraints result:", constraintsResult);
+        console.log(
+          "🎙️ getCurrentDeviceConstraints result:",
+          constraintsResult
+        );
 
         if (constraintsResult.success && constraintsResult.data) {
           console.log("🎙️ constraintsResult.data:", constraintsResult.data);
           const newConstraints = constraintsResult.data.constraints;
           console.log("🎙️ Loaded constraints:", newConstraints);
           setAudioConstraints(newConstraints);
-          console.log("🎙️ Applied session microphone constraints:", newConstraints);
+          console.log(
+            "🎙️ Applied session microphone constraints:",
+            newConstraints
+          );
         } else {
           console.warn(
             "🎙️ Failed to get current device constraints, using defaults"
@@ -419,9 +425,7 @@ export const RecordingWindow: React.FC = () => {
       setIsProcessing(false);
     };
 
-
-    const handleProcessingStage = (event: any) => {
-      const stage = event.detail;
+    const handleProcessingStage = () => {
       // Processing stage tracking removed as unused
       setIsProcessing(true);
       setWindowState("processing"); // Ensure window stays expanded

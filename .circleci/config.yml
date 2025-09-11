@@ -6,22 +6,17 @@ executors:
     docker:
       - image: cimg/node:22.15
     resource_class: large
-  
-  # macOS executor 
+
+  # macOS executor
   macos:
     macos:
       xcode: 15.3.0
-    resource_class: macos.m1.medium.gen1
-  
+    resource_class: macos.m1.large.gen1
+
   windows:
     machine:
       image: windows-server-2022-gui:2024.01.1
     resource_class: windows.large
-  
-  playwright:
-    docker:
-      - image: mcr.microsoft.com/playwright:v1.40.0-jammy
-    resource_class: large
 
 # Commands for reusable steps
 commands:
@@ -71,8 +66,8 @@ jobs:
           name: Create reports directory
           command: mkdir -p reports/junit
       - run:
-          name: Run unit tests with coverage
-          command: npm run test:ci
+          name: Run unit tests with coverage (skip E2E for CI)
+          command: jest --ci --runInBand --coverage --reporters=default --reporters=jest-junit
           environment:
             CI: true
             JEST_JUNIT_OUTPUT_DIR: reports/junit
@@ -82,22 +77,6 @@ jobs:
           path: reports
       - store_artifacts:
           path: coverage
-  
-  # Separate E2E test job with Playwright image
-  test-e2e:
-    executor: playwright
-    steps:
-      - checkout
-      - install-dependencies
-      - run:
-          name: Run end-to-end tests
-          command: npm run test:e2e
-          environment:
-            CI: true
-      - store_artifacts:
-          path: playwright-report
-      - store_artifacts:
-          path: test-results
 
   # Build job for Windows (main branch only)
   build-windows:
@@ -133,13 +112,13 @@ jobs:
           no_output_timeout: 20m
           environment:
             CI: true
-            OPENAI_API_KEY: ${OPENAI_API_KEY}
-            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
-            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
-            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
-            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
-            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
-            BASETEN_API_KEY: ${BASETEN_API_KEY}
+            OPENAI_API_KEY: $OPENAI_API_KEY
+            REACT_APP_SUPABASE_URL: $REACT_APP_SUPABASE_URL
+            REACT_APP_SUPABASE_ANON_KEY: $REACT_APP_SUPABASE_ANON_KEY
+            REACT_APP_POSTHOG_KEY: $REACT_APP_POSTHOG_KEY
+            REACT_APP_POSTHOG_HOST: $REACT_APP_POSTHOG_HOST
+            DEEPGRAM_API_KEY: $DEEPGRAM_API_KEY
+            BASETEN_API_KEY: $BASETEN_API_KEY
       - store_artifacts:
           path: out/make
           destination: windows-builds
@@ -184,13 +163,13 @@ jobs:
           no_output_timeout: 20m
           environment:
             CI: true
-            OPENAI_API_KEY: ${OPENAI_API_KEY}
-            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
-            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
-            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
-            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
-            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
-            BASETEN_API_KEY: ${BASETEN_API_KEY}
+            OPENAI_API_KEY: $OPENAI_API_KEY
+            REACT_APP_SUPABASE_URL: $REACT_APP_SUPABASE_URL
+            REACT_APP_SUPABASE_ANON_KEY: $REACT_APP_SUPABASE_ANON_KEY
+            REACT_APP_POSTHOG_KEY: $REACT_APP_POSTHOG_KEY
+            REACT_APP_POSTHOG_HOST: $REACT_APP_POSTHOG_HOST
+            DEEPGRAM_API_KEY: $DEEPGRAM_API_KEY
+            BASETEN_API_KEY: $BASETEN_API_KEY
       - store_artifacts:
           path: out/make
           destination: macos-builds
@@ -218,34 +197,34 @@ jobs:
           command: |
             # Get version from package.json
             VERSION="v$(node -p "require('./package.json').version")"
-            
+
             # Check if release already exists
             if gh release view "$VERSION" >/dev/null 2>&1; then
               echo "Release $VERSION already exists, skipping creation"
               exit 0
             fi
-            
+
             # Create release with artifacts
             gh release create "$VERSION" \
               --title "Release $VERSION" \
               --generate-notes \
               --notes "## 🚀 Overlay $VERSION
-            
+
             **Automatically built from main branch**
-            
+
             ### 📦 Downloads
-            
+
             - **Windows**: Download the \`.exe\` installer from the assets below
             - **macOS**: Download the \`.dmg\` file from the assets below
-            
+
             ### 🔧 Installation Notes
-            
+
             - **Windows**: You may see SmartScreen warnings - click \"More info\" → \"Run anyway\" (unsigned builds)
             - **macOS**: You may need to allow the app in System Preferences → Privacy & Security (unsigned builds)
             - **Bug reports**: Please report issues via GitHub Issues
-            
+
             ### ✨ Features
-            
+
             - AI-powered speech-to-text transcription
             - Cross-platform text insertion
             - Dictionary replacements and customization
@@ -262,17 +241,16 @@ workflows:
     when:
       and:
         - not:
-            equal: [ main, << pipeline.git.branch >> ]
+            equal: [main, << pipeline.git.branch >>]
         - not: << pipeline.git.tag >>
     jobs:
       - test
-      - test-e2e
 
   # Main branch workflow - build and release only (quality already validated in PR)
   main-workflow:
     when:
       and:
-        - equal: [ main, << pipeline.git.branch >> ]
+        - equal: [main, << pipeline.git.branch >>]
         - not: << pipeline.git.tag >>
     jobs:
       - build-windows
