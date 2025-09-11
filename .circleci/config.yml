@@ -7,10 +7,11 @@ executors:
       - image: cimg/node:18.20
     resource_class: large
   
-  macos:
-    macos:
-      xcode: 15.3.0
-    resource_class: macos.m1.large.gen1
+  # macOS executor (disabled due to free tier limitations)
+  # macos:
+  #   macos:
+  #     xcode: 15.3.0
+  #   resource_class: macos.m1.medium.gen1
   
   windows:
     machine:
@@ -116,46 +117,47 @@ jobs:
           paths:
             - out/make
 
-  # Build job for macOS (main branch only)  
-  build-macos:
-    executor: macos
-    steps:
-      - checkout
-      - run:
-          name: Setup Node.js environment
-          command: |
-            node --version
-            npm --version
-            echo "PATH: $PATH"
-            echo "Available disk space:"
-            df -h
-      - install-dependencies
-      - run:
-          name: Verify electron-forge installation
-          command: |
-            npx electron-forge --version
-            echo "Electron-forge CLI verified"
-      - run:
-          name: Build macOS application
-          command: NODE_ENV=production npx electron-forge make --platform=darwin
-          no_output_timeout: 20m
-          environment:
-            CI: true
-            NODE_ENV: production
-            OPENAI_API_KEY: ${OPENAI_API_KEY}
-            REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
-            REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
-            REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
-            REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
-            DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
-            BASETEN_API_KEY: ${BASETEN_API_KEY}
-      - store_artifacts:
-          path: out/make
-          destination: macos-builds
-      - persist_to_workspace:
-          root: .
-          paths:
-            - out/make
+  # macOS build job (disabled due to free tier limitations)
+  # TODO: Re-enable when macOS resources become available on free plan
+  # build-macos:
+  #   executor: macos
+  #   steps:
+  #     - checkout
+  #     - run:
+  #         name: Setup Node.js environment
+  #         command: |
+  #           node --version
+  #           npm --version
+  #           echo "PATH: $PATH"
+  #           echo "Available disk space:"
+  #           df -h
+  #     - install-dependencies
+  #     - run:
+  #         name: Verify electron-forge installation
+  #         command: |
+  #           npx electron-forge --version
+  #           echo "Electron-forge CLI verified"
+  #     - run:
+  #         name: Build macOS application
+  #         command: NODE_ENV=production npx electron-forge make --platform=darwin
+  #         no_output_timeout: 20m
+  #         environment:
+  #           CI: true
+  #           NODE_ENV: production
+  #           OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #           REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL}
+  #           REACT_APP_SUPABASE_ANON_KEY: ${REACT_APP_SUPABASE_ANON_KEY}
+  #           REACT_APP_POSTHOG_KEY: ${REACT_APP_POSTHOG_KEY}
+  #           REACT_APP_POSTHOG_HOST: ${REACT_APP_POSTHOG_HOST}
+  #           DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+  #           BASETEN_API_KEY: ${BASETEN_API_KEY}
+  #     - store_artifacts:
+  #         path: out/make
+  #         destination: macos-builds
+  #     - persist_to_workspace:
+  #         root: .
+  #         paths:
+  #           - out/make
 
   # Release job - create GitHub release with artifacts
   create-release:
@@ -233,19 +235,19 @@ workflows:
         - not: << pipeline.git.tag >>
     jobs:
       - build-windows
-      - build-macos
+      # - build-macos # Disabled due to free tier limitations
       - create-release:
           requires:
             - build-windows
-            - build-macos
+            # - build-macos
 
   # Manual workflow trigger (tags)
   manual-release:
     when: << pipeline.git.tag >>
     jobs:
       - build-windows
-      - build-macos
+      # - build-macos # Disabled due to free tier limitations
       - create-release:
           requires:
             - build-windows
-            - build-macos
+            # - build-macos
