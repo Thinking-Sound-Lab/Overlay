@@ -20,17 +20,40 @@ export interface Settings {
   targetLanguage: string;
   
   // Modes section
-  selectedMode: string;
+  selectedApplicationMode: string;
   customPrompt: string;
   enableAutoDetection: boolean;
   
-  // Per-mode prompts (remembers user customizations for each mode)
-  notesPrompt: string;
+  // Application-specific prompts (remembers user customizations for each app)
+  slackPrompt: string;
+  discordPrompt: string;
+  whatsappPrompt: string;
+  telegramPrompt: string;
+  teamsPrompt: string;
   messagesPrompt: string;
-  emailsPrompt: string;
-  codeCommentsPrompt: string;
-  meetingNotesPrompt: string;
-  creativeWritingPrompt: string;
+  notionPrompt: string;
+  obsidianPrompt: string;
+  logseqPrompt: string;
+  roamPrompt: string;
+  notesPrompt: string;
+  evernotePrompt: string;
+  bearPrompt: string;
+  gmailPrompt: string;
+  outlookPrompt: string;
+  mailPrompt: string;
+  vscodePrompt: string;
+  xcodePrompt: string;
+  webstormPrompt: string;
+  sublimePrompt: string;
+  wordPrompt: string;
+  pagesPrompt: string;
+  docsPrompt: string;
+  browserGithubPrompt: string;
+  figmaPrompt: string;
+  browserStackoverflowPrompt: string;
+  browserTwitterPrompt: string;
+  browserLinkedinPrompt: string;
+  
   
   // Data and Privacy section
   privacyMode: boolean;

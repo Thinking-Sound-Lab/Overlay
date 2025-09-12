@@ -24,7 +24,7 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   return window.btoa(binary);
 };
 
-const totalLevels = Array(12).fill(0);
+const totalLevels = Array(8).fill(0);
 
 export const RecordingWindow: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -186,11 +186,11 @@ export const RecordingWindow: React.FC = () => {
 
         // Enhanced frequency band separation for more realistic wave patterns
         const binCount = dataArray.length;
-        const bandsPerBar = Math.floor(binCount / 12);
+        const bandsPerBar = Math.floor(binCount / 8);
         const frequencyBands: number[] = [];
 
         // Calculate average frequency for each band
-        for (let band = 0; band < 12; band++) {
+        for (let band = 0; band < 8; band++) {
           const startBin = band * bandsPerBar;
           const endBin = Math.min(startBin + bandsPerBar, binCount);
           let bandSum = 0;
@@ -230,10 +230,8 @@ export const RecordingWindow: React.FC = () => {
         setLevels((prevLevels) => {
           const baseHeight = 3;
           const maxHeight = 28;
-          // Wave-like coefficients creating a natural audio waveform pattern (12 bars)
-          const multipliers = [
-            0.5, 0.7, 0.9, 1.2, 1.4, 1.5, 1.5, 1.4, 1.2, 0.9, 0.7, 0.5,
-          ];
+          // Wave-like coefficients creating a natural audio waveform pattern (8 bars)
+          const multipliers = [0.6, 0.8, 1.1, 1.4, 1.4, 1.1, 0.8, 0.6];
 
           const newLevels = multipliers.map((multiplier, index) => {
             // Use frequency band data for more accurate representation

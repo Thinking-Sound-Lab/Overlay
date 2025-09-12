@@ -15,7 +15,6 @@ export { PrivacySettings } from './PrivacySettings';
 export type {
   SettingsComponentProps,
   SelectOption,
-  ContextModesDraft,
   ModesSettingsProps,
   AccountSettingsProps,
   SettingsSection,

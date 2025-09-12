@@ -35,7 +35,7 @@ export const PRO_FEATURES: Record<ProFeature, FeatureDefinition> = {
   custom_modes: {
     name: "Custom Modes",
     description: "Create custom prompts and auto-detection modes",
-    settingKey: "selectedMode" // When selectedMode is "custom" or enableAutoDetection is true
+    settingKey: "selectedApplicationMode" // When selectedApplicationMode is "custom" or enableAutoDetection is true
   },
   unlimited_words: {
     name: "Unlimited Words",

@@ -165,6 +165,7 @@ export class DataLoaderService {
     const settingsResult = await this.supabaseService.getUserSettings();
     if (settingsResult.data && !settingsResult.error) {
       settings = { ...DEFAULT_SETTINGS, ...settingsResult.data };
+      
     } else {
       console.warn(
         `[DataLoader] Failed to load settings, using defaults:`,

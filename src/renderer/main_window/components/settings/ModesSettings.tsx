@@ -2,80 +2,116 @@ import React from "react";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { Select } from "../ui/select";
-import { ModesSettingsProps, SelectOption, ContextModesDraft } from "./types";
 import {
-  getDefaultPromptForMode,
-  getCurrentPromptForMode,
-  getPromptFieldForMode,
-  initializeContextModesDraft,
-  hasUnsavedContextChanges,
+  ModesSettingsProps,
+  SelectOption,
+  ApplicationModesDraft,
+} from "./types";
+import {
+  getDefaultPromptForApplication,
+  getCurrentPromptForApplication,
+  getPromptFieldForApplication,
+  initializeApplicationModesDraft,
+  hasUnsavedApplicationChanges,
 } from "./utils";
+import {
+  getAllApplicationPrompts,
+  getApplicationPrompt,
+} from "../../../../shared/config/application_prompts";
 
 export const ModesSettings: React.FC<ModesSettingsProps> = ({
   settings,
   updateSetting,
   setError,
 }) => {
-  // Context Modes local state - includes per-mode prompts
-  const [contextModesDraft, setContextModesDraft] =
-    React.useState<ContextModesDraft>(() =>
-      initializeContextModesDraft(settings)
+  // Application Modes local state - includes per-application prompts
+  const [applicationModesDraft, setApplicationModesDraft] =
+    React.useState<ApplicationModesDraft>(() =>
+      initializeApplicationModesDraft(settings)
     );
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
 
-  // Sync context modes draft when settings change
+  // Sync application modes draft when settings change
   React.useEffect(() => {
-    setContextModesDraft(initializeContextModesDraft(settings));
+    setApplicationModesDraft(initializeApplicationModesDraft(settings));
     // Only reset unsaved changes flag when prompt content changes (not auto-saved settings)
     setHasUnsavedChanges(false);
   }, [
-    settings.selectedMode,
+    settings.selectedApplicationMode,
     settings.customPrompt,
-    settings.notesPrompt,
+    // Application-specific prompts
+    settings.slackPrompt,
+    settings.discordPrompt,
+    settings.whatsappPrompt,
+    settings.telegramPrompt,
+    settings.teamsPrompt,
     settings.messagesPrompt,
-    settings.emailsPrompt,
-    settings.codeCommentsPrompt,
-    settings.meetingNotesPrompt,
-    settings.creativeWritingPrompt,
+    settings.notionPrompt,
+    settings.obsidianPrompt,
+    settings.logseqPrompt,
+    settings.roamPrompt,
+    settings.notesPrompt,
+    settings.evernotePrompt,
+    settings.bearPrompt,
+    settings.gmailPrompt,
+    settings.outlookPrompt,
+    settings.mailPrompt,
+    settings.vscodePrompt,
+    settings.xcodePrompt,
+    settings.webstormPrompt,
+    settings.sublimePrompt,
+    settings.wordPrompt,
+    settings.pagesPrompt,
+    settings.docsPrompt,
+    settings.browserGithubPrompt,
+    settings.browserStackoverflowPrompt,
+    settings.browserTwitterPrompt,
+    settings.browserLinkedinPrompt,
   ]);
 
-  // Update context modes draft and track changes
+  // Update application modes draft and track changes
   const updateDraft = async (key: string, value: any) => {
-    const newDraft = { ...contextModesDraft, [key]: value };
+    const newDraft = { ...applicationModesDraft, [key]: value };
 
-    // Handle turning ON auto-detection - populate textarea with selected mode's prompt
+    // Handle turning ON auto-detection - populate textarea with selected application's prompt
     if (
       key === "enableAutoDetection" &&
       value === true &&
-      !contextModesDraft.enableAutoDetection
+      !applicationModesDraft.enableAutoDetection
     ) {
-      const selectedPrompt = getCurrentPromptForMode(
-        newDraft.selectedMode,
+      const selectedPrompt = getCurrentPromptForApplication(
+        newDraft.selectedApplicationMode,
         newDraft
       );
       newDraft.customPrompt = selectedPrompt;
     }
 
-    // Handle mode switching with smart memory
-    if (key === "selectedMode" && value !== contextModesDraft.selectedMode) {
-      // Save current prompt to the previous mode's field before switching
-      const currentMode = contextModesDraft.selectedMode;
-      const currentPromptInTextarea = contextModesDraft.customPrompt;
+    // Handle application switching with smart memory
+    if (
+      key === "selectedApplicationMode" &&
+      value !== applicationModesDraft.selectedApplicationMode
+    ) {
+      // Save current prompt to the previous application's field before switching
+      const currentApp = applicationModesDraft.selectedApplicationMode;
+      const currentPromptInTextarea = applicationModesDraft.customPrompt;
 
-      if (currentMode && currentMode !== "custom") {
-        const currentModeField = getPromptFieldForMode(
-          currentMode
-        ) as keyof typeof contextModesDraft;
-        (newDraft as any)[currentModeField] = currentPromptInTextarea;
+      if (currentApp && currentApp !== "custom") {
+        const currentAppField = getPromptFieldForApplication(
+          currentApp
+        ) as keyof typeof applicationModesDraft;
+        (newDraft as any)[currentAppField] = currentPromptInTextarea;
       }
 
-      // Load the prompt for the new mode (user's customization or default)
-      const newPrompt = getCurrentPromptForMode(value, newDraft);
+      // Update application mode
+      newDraft.selectedApplicationMode = value;
+
+      // Load the prompt for the new application (user's customization or default)
+      const newPrompt = getCurrentPromptForApplication(value, newDraft);
       newDraft.customPrompt = newPrompt;
     }
 
-    setContextModesDraft(newDraft);
+    setApplicationModesDraft(newDraft);
 
     // Auto-save certain settings immediately (no save button needed)
     const autoSaveSettings = ["enableAutoDetection"];
@@ -91,26 +127,26 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
     }
 
     // Only check for unsaved changes on prompt content changes
-    const hasPromptChanges = hasUnsavedContextChanges(newDraft, settings);
+    const hasPromptChanges = hasUnsavedApplicationChanges(newDraft, settings);
     setHasUnsavedChanges(hasPromptChanges);
   };
 
-  // Save context modes changes to database - optimized to reduce backend calls
-  const saveContextModes = async () => {
+  // Save application modes changes to database - optimized to reduce backend calls
+  const saveApplicationModes = async () => {
     setIsSaving(true);
 
     try {
-      // Save current prompt to the active mode's field before comparing changes
-      const currentMode = contextModesDraft.selectedMode;
-      const currentPrompt = contextModesDraft.customPrompt;
+      // Save current prompt to the active application's field before comparing changes
+      const currentApp = applicationModesDraft.selectedApplicationMode;
+      const currentPrompt = applicationModesDraft.customPrompt;
 
       // Update the draft to include current prompt in the appropriate field
-      const finalDraft = { ...contextModesDraft };
-      if (currentMode && currentMode !== "custom") {
-        const modeField = getPromptFieldForMode(
-          currentMode
-        ) as keyof ContextModesDraft;
-        (finalDraft as any)[modeField] = currentPrompt;
+      const finalDraft = { ...applicationModesDraft };
+      if (currentApp && currentApp !== "custom") {
+        const appField = getPromptFieldForApplication(
+          currentApp
+        ) as keyof ApplicationModesDraft;
+        (finalDraft as any)[appField] = currentPrompt;
       }
 
       // Only save settings that have actually changed to reduce backend calls
@@ -118,10 +154,12 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
         [];
 
       // Check each setting for changes
-      if (finalDraft.selectedMode !== settings.selectedMode) {
+      if (
+        finalDraft.selectedApplicationMode !== settings.selectedApplicationMode
+      ) {
         changedSettings.push({
-          key: "selectedMode",
-          value: finalDraft.selectedMode,
+          key: "selectedApplicationMode",
+          value: finalDraft.selectedApplicationMode,
         });
       }
       if (finalDraft.customPrompt !== settings.customPrompt) {
@@ -130,63 +168,91 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
           value: finalDraft.customPrompt,
         });
       }
-      if (
-        finalDraft.notesPrompt !==
-        (settings.notesPrompt || getDefaultPromptForMode("notes"))
-      ) {
-        changedSettings.push({
-          key: "notesPrompt",
-          value: finalDraft.notesPrompt,
-        });
+
+      // Application-specific prompts
+      const appPromptChecks = [
+        { draft: "slackPrompt", settings: "slackPrompt", app: "slack" },
+        { draft: "discordPrompt", settings: "discordPrompt", app: "discord" },
+        {
+          draft: "whatsappPrompt",
+          settings: "whatsappPrompt",
+          app: "whatsapp",
+        },
+        {
+          draft: "telegramPrompt",
+          settings: "telegramPrompt",
+          app: "telegram",
+        },
+        { draft: "teamsPrompt", settings: "teamsPrompt", app: "teams" },
+        {
+          draft: "messagesPrompt",
+          settings: "messagesPrompt",
+          app: "messages",
+        },
+        { draft: "notionPrompt", settings: "notionPrompt", app: "notion" },
+        {
+          draft: "obsidianPrompt",
+          settings: "obsidianPrompt",
+          app: "obsidian",
+        },
+        { draft: "logseqPrompt", settings: "logseqPrompt", app: "logseq" },
+        { draft: "roamPrompt", settings: "roamPrompt", app: "roam" },
+        { draft: "notesPrompt", settings: "notesPrompt", app: "notes" },
+        {
+          draft: "evernotePrompt",
+          settings: "evernotePrompt",
+          app: "evernote",
+        },
+        { draft: "bearPrompt", settings: "bearPrompt", app: "bear" },
+        { draft: "gmailPrompt", settings: "gmailPrompt", app: "gmail" },
+        { draft: "outlookPrompt", settings: "outlookPrompt", app: "outlook" },
+        { draft: "mailPrompt", settings: "mailPrompt", app: "mail" },
+        { draft: "vscodePrompt", settings: "vscodePrompt", app: "vscode" },
+        { draft: "xcodePrompt", settings: "xcodePrompt", app: "xcode" },
+        {
+          draft: "webstormPrompt",
+          settings: "webstormPrompt",
+          app: "webstorm",
+        },
+        { draft: "sublimePrompt", settings: "sublimePrompt", app: "sublime" },
+        { draft: "wordPrompt", settings: "wordPrompt", app: "word" },
+        { draft: "pagesPrompt", settings: "pagesPrompt", app: "pages" },
+        { draft: "docsPrompt", settings: "docsPrompt", app: "docs" },
+        {
+          draft: "browserGithubPrompt",
+          settings: "browserGithubPrompt",
+          app: "browser-github",
+        },
+        {
+          draft: "browserStackoverflowPrompt",
+          settings: "browserStackoverflowPrompt",
+          app: "browser-stackoverflow",
+        },
+        {
+          draft: "browserTwitterPrompt",
+          settings: "browserTwitterPrompt",
+          app: "browser-twitter",
+        },
+        {
+          draft: "browserLinkedinPrompt",
+          settings: "browserLinkedinPrompt",
+          app: "browser-linkedin",
+        },
+      ];
+
+      for (const check of appPromptChecks) {
+        const draftValue = (finalDraft as any)[check.draft];
+        const settingsValue =
+          (settings as any)[check.settings] ||
+          getDefaultPromptForApplication(check.app);
+        if (draftValue !== settingsValue) {
+          changedSettings.push({
+            key: check.settings as keyof typeof settings,
+            value: draftValue,
+          });
+        }
       }
-      if (
-        finalDraft.messagesPrompt !==
-        (settings.messagesPrompt || getDefaultPromptForMode("messages"))
-      ) {
-        changedSettings.push({
-          key: "messagesPrompt",
-          value: finalDraft.messagesPrompt,
-        });
-      }
-      if (
-        finalDraft.emailsPrompt !==
-        (settings.emailsPrompt || getDefaultPromptForMode("email"))
-      ) {
-        changedSettings.push({
-          key: "emailsPrompt",
-          value: finalDraft.emailsPrompt,
-        });
-      }
-      if (
-        finalDraft.codeCommentsPrompt !==
-        (settings.codeCommentsPrompt ||
-          getDefaultPromptForMode("code_comments"))
-      ) {
-        changedSettings.push({
-          key: "codeCommentsPrompt",
-          value: finalDraft.codeCommentsPrompt,
-        });
-      }
-      if (
-        finalDraft.meetingNotesPrompt !==
-        (settings.meetingNotesPrompt ||
-          getDefaultPromptForMode("meeting_notes"))
-      ) {
-        changedSettings.push({
-          key: "meetingNotesPrompt",
-          value: finalDraft.meetingNotesPrompt,
-        });
-      }
-      if (
-        finalDraft.creativeWritingPrompt !==
-        (settings.creativeWritingPrompt ||
-          getDefaultPromptForMode("creative_writing"))
-      ) {
-        changedSettings.push({
-          key: "creativeWritingPrompt",
-          value: finalDraft.creativeWritingPrompt,
-        });
-      }
+
 
       // Save only the changed settings
       for (const { key, value } of changedSettings) {
@@ -195,30 +261,65 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
 
       setHasUnsavedChanges(false);
     } catch (error) {
-      console.error("Failed to save context modes:", error);
-      setError("Failed to save context modes settings");
+      console.error("Failed to save application modes:", error);
+      setError("Failed to save application modes settings");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const modeOptions: SelectOption[] = [
-    { value: "notes", label: "Notes" },
-    { value: "messages", label: "Messages" },
-    { value: "email", label: "Email" },
-    { value: "code_comments", label: "Code Comments" },
-    { value: "meeting_notes", label: "Meeting Notes" },
-    { value: "creative_writing", label: "Creative Writing" },
-    { value: "custom", label: "Custom" },
-  ];
+  // Application mode options organized by category (without separators to avoid selection issues)
+  const applicationOptions: SelectOption[] = React.useMemo(() => {
+    const apps = getAllApplicationPrompts();
+    const options: SelectOption[] = [];
+
+    // Group applications by category
+    const categories = {
+      messaging: apps.filter((app) => app.category === "messaging"),
+      notes: apps.filter((app) => app.category === "notes"),
+      email: apps.filter((app) => app.category === "email"),
+      code: apps.filter((app) => app.category === "code"),
+      documents: apps.filter((app) => app.category === "documents"),
+      browser: apps.filter((app) => app.category === "browser"),
+      other: apps.filter((app) => app.category === "other"),
+    };
+
+    // Add options by category without separators (to avoid UI selection issues)
+    Object.entries(categories).forEach(([, categoryApps]) => {
+      if (categoryApps.length > 0) {
+        // Sort apps within category by priority
+        categoryApps.sort((a, b) => b.priority - a.priority);
+
+        // Add applications in this category
+        categoryApps.forEach((app) => {
+          options.push({
+            value: app.applicationId,
+            label: `${app.displayName}`, // Clean label without category prefixes
+          });
+        });
+      }
+    });
+
+    // Add custom option at the end
+    options.push({ value: "custom", label: "Custom" });
+
+    // Sort final options alphabetically within their types
+    const customOption = options.pop(); // Remove custom to sort others
+    options.sort((a, b) => a.label.localeCompare(b.label));
+    if (customOption) options.push(customOption); // Add custom back at end
+
+    return options;
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Context Modes</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          Application Modes
+        </h2>
         <p className="text-gray-600 mt-2">
-          Automatically format your transcribed text based on context or choose
-          a specific mode
+          Automatically format your transcribed text based on the specific
+          application you're using
         </p>
       </div>
 
@@ -229,28 +330,39 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
             Auto-detect application context
           </h3>
           <p className="text-gray-600 text-sm mt-1">
-            Automatically select formatting mode based on active application
+            Automatically select formatting based on which application is active
+            (Slack, Notion, Gmail, etc.)
           </p>
         </div>
         <Switch
-          checked={contextModesDraft.enableAutoDetection}
+          checked={applicationModesDraft.enableAutoDetection}
           onCheckedChange={(checked) =>
             updateDraft("enableAutoDetection", checked)
           }
         />
       </div>
 
-      {contextModesDraft.enableAutoDetection && (
+      {applicationModesDraft.enableAutoDetection && (
         <div className="space-y-4">
-          {/* Mode Selection */}
+          {/* Application Selection */}
           <div className="space-y-2">
-            <h3 className="font-medium text-gray-900">Context Mode</h3>
+            <h3 className="font-medium text-gray-900">Application Mode</h3>
             <Select
-              value={contextModesDraft.selectedMode}
-              options={modeOptions}
-              onValueChange={(value) => updateDraft("selectedMode", value)}
+              value={applicationModesDraft.selectedApplicationMode}
+              options={applicationOptions}
+              onValueChange={(value) =>
+                updateDraft("selectedApplicationMode", value)
+              }
               className="w-full max-w-md"
             />
+            {applicationModesDraft.selectedApplicationMode &&
+              applicationModesDraft.selectedApplicationMode !== "custom" && (
+                <p className="text-sm text-gray-600">
+                  {getApplicationPrompt(
+                    applicationModesDraft.selectedApplicationMode
+                  )?.description || "Application-specific formatting"}
+                </p>
+              )}
           </div>
 
           {/* Custom Prompt */}
@@ -261,24 +373,30 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
               </h3>
             </div>
             <textarea
-              value={contextModesDraft.customPrompt}
+              value={applicationModesDraft.customPrompt}
               onChange={(e) => updateDraft("customPrompt", e.target.value)}
               placeholder="Enter formatting instructions for how you want your transcribed text to be processed..."
               className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
             />
-            {contextModesDraft.selectedMode &&
-              contextModesDraft.selectedMode !== "custom" && (
+            {applicationModesDraft.selectedApplicationMode &&
+              applicationModesDraft.selectedApplicationMode !== "custom" && (
                 <button
                   type="button"
                   onClick={() =>
                     updateDraft(
                       "customPrompt",
-                      getDefaultPromptForMode(contextModesDraft.selectedMode)
+                      getDefaultPromptForApplication(
+                        applicationModesDraft.selectedApplicationMode
+                      )
                     )
                   }
                   className="text-xs text-gray-600 hover:text-gray-800 underline"
                 >
-                  Reset to default template for {contextModesDraft.selectedMode}
+                  Reset to default template for{" "}
+                  {getApplicationPrompt(
+                    applicationModesDraft.selectedApplicationMode
+                  )?.displayName ||
+                    applicationModesDraft.selectedApplicationMode}
                 </button>
               )}
           </div>
@@ -286,10 +404,10 @@ export const ModesSettings: React.FC<ModesSettingsProps> = ({
       )}
 
       {/* Save Button - only show when auto-detection is ON and there are changes */}
-      {contextModesDraft.enableAutoDetection && hasUnsavedChanges && (
+      {applicationModesDraft.enableAutoDetection && hasUnsavedChanges && (
         <div className="pt-4 border-t border-gray-200">
           <Button
-            onClick={saveContextModes}
+            onClick={saveApplicationModes}
             disabled={isSaving}
             className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2"
           >

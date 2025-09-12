@@ -208,8 +208,8 @@ export function filterSettingsByAccess(user: UserRecord | null, settings: Record
   
   if (!hasProAccess(user, "custom_modes")) {
     filteredSettings.enableAutoDetection = false;
-    if (filteredSettings.selectedMode === "custom") {
-      filteredSettings.selectedMode = "notes"; // Reset to default
+    if (filteredSettings.selectedApplicationMode === "custom") {
+      filteredSettings.selectedApplicationMode = "default"; // Reset to default
     }
   }
   

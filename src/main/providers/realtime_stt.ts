@@ -225,13 +225,23 @@ export class RealtimeSTTProvider extends EventEmitter {
 
     // Only attempt reconnection if not intentionally closed AND not already at max attempts
     // This prevents reconnection after explicit disconnect() calls
-    if (code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts && this.reconnectTimer === null) {
-      console.log(`[RealtimeSTT] Unintentional connection close (${code}), attempting reconnection`);
+    if (
+      code !== 1000 &&
+      this.reconnectAttempts < this.maxReconnectAttempts &&
+      this.reconnectTimer === null
+    ) {
+      console.log(
+        `[RealtimeSTT] Unintentional connection close (${code}), attempting reconnection`
+      );
       this.attemptReconnection();
     } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log(`[RealtimeSTT] Max reconnection attempts reached (${this.maxReconnectAttempts}), no further attempts`);
+      console.log(
+        `[RealtimeSTT] Max reconnection attempts reached (${this.maxReconnectAttempts}), no further attempts`
+      );
     } else {
-      console.log(`[RealtimeSTT] Connection intentionally closed or already disconnecting, no reconnection attempted`);
+      console.log(
+        `[RealtimeSTT] Connection intentionally closed or already disconnecting, no reconnection attempted`
+      );
     }
   }
 
@@ -286,22 +296,29 @@ export class RealtimeSTTProvider extends EventEmitter {
     }
   }
 
-  private amplifyAudioGain(audioBytes: Uint8Array, gainFactor = 2.0): Uint8Array {
+  private amplifyAudioGain(
+    audioBytes: Uint8Array,
+    gainFactor = 2.0
+  ): Uint8Array {
     // Convert bytes to 16-bit signed integers for audio processing
-    const samples = new Int16Array(audioBytes.buffer, audioBytes.byteOffset, audioBytes.byteLength / 2);
+    const samples = new Int16Array(
+      audioBytes.buffer,
+      audioBytes.byteOffset,
+      audioBytes.byteLength / 2
+    );
     const amplifiedSamples = new Int16Array(samples.length);
 
     for (let i = 0; i < samples.length; i++) {
       // Apply gain with clipping to prevent distortion
       let amplifiedSample = samples[i] * gainFactor;
-      
+
       // Clip to prevent overflow (16-bit signed range: -32768 to 32767)
       if (amplifiedSample > 32767) {
         amplifiedSample = 32767;
       } else if (amplifiedSample < -32768) {
         amplifiedSample = -32768;
       }
-      
+
       amplifiedSamples[i] = Math.round(amplifiedSample);
     }
 
@@ -359,14 +376,16 @@ export class RealtimeSTTProvider extends EventEmitter {
     }
     // Set timer to a marker value to prevent reconnection attempts
     this.reconnectTimer = setTimeout(() => {}, 0); // This will prevent reconnection attempts
-    
+
     // Set reconnection attempts to max to prevent further reconnections
     this.reconnectAttempts = this.maxReconnectAttempts;
 
     // Close connection with proper cleanup
     if (this.connection) {
       try {
-        console.log("[RealtimeSTT] Removing event listeners and closing WebSocket connection");
+        console.log(
+          "[RealtimeSTT] Removing event listeners and closing WebSocket connection"
+        );
         // Remove all event listeners to prevent any callbacks
         this.connection.removeAllListeners();
         this.connection.requestClose();

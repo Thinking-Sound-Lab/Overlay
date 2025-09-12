@@ -3,93 +3,186 @@
  * Contains mode-related constants and helper functions
  */
 
-import { ContextModesDraft } from './types';
+import { ApplicationModesDraft } from './types';
+import { APPLICATION_PROMPTS, getApplicationPrompt } from '../../../../shared/config/application_prompts';
 
-// Default prompts for each mode (synchronized with backend MODE_TEMPLATES)
-export const MODE_DEFAULT_PROMPTS = {
-  notes: "Format as clear, organized notes with proper headings and bullet points where appropriate. Use a casual but structured tone suitable for personal or professional note-taking.",
-  messages: "Format as conversational text, direct and friendly, suitable for messaging apps. Keep it concise and natural.",
-  email: "Format as professional email content with proper structure. Include appropriate greetings and closings when the context suggests it's a complete email.",
-  code_comments: "Format as concise, technical documentation suitable for code comments and technical notes. Use precise language and proper technical terminology.",
-  meeting_notes: "Format as structured meeting notes with clear action items and key decisions highlighted. Use bullet points and clear headings to organize information.",
-  creative_writing: "Format with expressive language, varied sentence structure, and engaging flow suitable for creative content. Enhance the natural rhythm and voice while maintaining clarity.",
-} as const;
+
+// Application-specific default prompts
+export const APPLICATION_DEFAULT_PROMPTS = APPLICATION_PROMPTS.reduce((acc, app) => {
+  acc[app.applicationId] = app.prompt;
+  return acc;
+}, {} as Record<string, string>);
+
 
 /**
- * Get default prompt for a specific mode
+ * Get default prompt for a specific application
  */
-export const getDefaultPromptForMode = (mode: string): string => {
-  return MODE_DEFAULT_PROMPTS[mode as keyof typeof MODE_DEFAULT_PROMPTS] || "";
+export const getDefaultPromptForApplication = (applicationId: string): string => {
+  const appPrompt = getApplicationPrompt(applicationId);
+  return appPrompt ? appPrompt.prompt : APPLICATION_DEFAULT_PROMPTS.default || "";
 };
 
+
 /**
- * Get the current prompt for a mode from the draft state
+ * Get the current prompt for an application from the draft state
  */
-export const getCurrentPromptForMode = (mode: string, contextModesDraft: ContextModesDraft): string => {
-  const modePromptMap = {
-    notes: contextModesDraft.notesPrompt,
-    messages: contextModesDraft.messagesPrompt,
-    email: contextModesDraft.emailsPrompt,
-    code_comments: contextModesDraft.codeCommentsPrompt,
-    meeting_notes: contextModesDraft.meetingNotesPrompt,
-    creative_writing: contextModesDraft.creativeWritingPrompt,
-    custom: contextModesDraft.customPrompt,
+export const getCurrentPromptForApplication = (applicationId: string, draft: ApplicationModesDraft): string => {
+  const appPromptMap = {
+    slack: draft.slackPrompt,
+    discord: draft.discordPrompt,
+    whatsapp: draft.whatsappPrompt,
+    telegram: draft.telegramPrompt,
+    teams: draft.teamsPrompt,
+    messages: draft.messagesPrompt,
+    notion: draft.notionPrompt,
+    obsidian: draft.obsidianPrompt,
+    logseq: draft.logseqPrompt,
+    roam: draft.roamPrompt,
+    notes: draft.notesPrompt,
+    evernote: draft.evernotePrompt,
+    bear: draft.bearPrompt,
+    gmail: draft.gmailPrompt,
+    outlook: draft.outlookPrompt,
+    mail: draft.mailPrompt,
+    vscode: draft.vscodePrompt,
+    xcode: draft.xcodePrompt,
+    webstorm: draft.webstormPrompt,
+    sublime: draft.sublimePrompt,
+    word: draft.wordPrompt,
+    pages: draft.pagesPrompt,
+    docs: draft.docsPrompt,
+    'browser-github': draft.browserGithubPrompt,
+    'browser-stackoverflow': draft.browserStackoverflowPrompt,
+    'browser-twitter': draft.browserTwitterPrompt,
+    'browser-linkedin': draft.browserLinkedinPrompt,
+    custom: draft.customPrompt,
   };
-  return modePromptMap[mode as keyof typeof modePromptMap] || getDefaultPromptForMode(mode);
+  return appPromptMap[applicationId as keyof typeof appPromptMap] || getDefaultPromptForApplication(applicationId);
 };
 
+
 /**
- * Get the prompt field name for a specific mode
+ * Get the prompt field name for a specific application
  */
-export const getPromptFieldForMode = (mode: string): string => {
+export const getPromptFieldForApplication = (applicationId: string): string => {
   const fieldMap = {
+    slack: "slackPrompt",
+    discord: "discordPrompt",
+    whatsapp: "whatsappPrompt",
+    telegram: "telegramPrompt",
+    teams: "teamsPrompt",
+    messages: "messagesPrompt",
+    notion: "notionPrompt",
+    obsidian: "obsidianPrompt",
+    logseq: "logseqPrompt",
+    roam: "roamPrompt",
     notes: "notesPrompt",
-    messages: "messagesPrompt", 
-    email: "emailsPrompt",
-    code_comments: "codeCommentsPrompt",
-    meeting_notes: "meetingNotesPrompt",
-    creative_writing: "creativeWritingPrompt",
+    evernote: "evernotePrompt",
+    bear: "bearPrompt",
+    gmail: "gmailPrompt",
+    outlook: "outlookPrompt",
+    mail: "mailPrompt",
+    vscode: "vscodePrompt",
+    xcode: "xcodePrompt",
+    webstorm: "webstormPrompt",
+    sublime: "sublimePrompt",
+    word: "wordPrompt",
+    pages: "pagesPrompt",
+    docs: "docsPrompt",
+    'browser-github': "browserGithubPrompt",
+    'browser-stackoverflow': "browserStackoverflowPrompt",
+    'browser-twitter': "browserTwitterPrompt",
+    'browser-linkedin': "browserLinkedinPrompt",
     custom: "customPrompt",
   };
-  return fieldMap[mode as keyof typeof fieldMap] || "customPrompt";
+  return fieldMap[applicationId as keyof typeof fieldMap] || "customPrompt";
 };
 
+
 /**
- * Initialize context modes draft with fallbacks to defaults
+ * Initialize application modes draft with application-specific defaults
  */
-export const initializeContextModesDraft = (settings: any): ContextModesDraft => {
+export const initializeApplicationModesDraft = (settings: any): ApplicationModesDraft => {
   const draft = {
     enableAutoDetection: settings.enableAutoDetection,
-    selectedMode: settings.selectedMode,
+    selectedApplicationMode: settings.selectedApplicationMode || "default",
     customPrompt: settings.customPrompt || "",
-    // Per-mode prompts (fallback to defaults if not set)
-    notesPrompt: settings.notesPrompt || getDefaultPromptForMode("notes"),
-    messagesPrompt: settings.messagesPrompt || getDefaultPromptForMode("messages"),
-    emailsPrompt: settings.emailsPrompt || getDefaultPromptForMode("email"),
-    codeCommentsPrompt: settings.codeCommentsPrompt || getDefaultPromptForMode("code_comments"),
-    meetingNotesPrompt: settings.meetingNotesPrompt || getDefaultPromptForMode("meeting_notes"),
-    creativeWritingPrompt: settings.creativeWritingPrompt || getDefaultPromptForMode("creative_writing"),
+    
+    // Application-specific prompts with fallbacks
+    slackPrompt: settings.slackPrompt || getDefaultPromptForApplication("slack"),
+    discordPrompt: settings.discordPrompt || getDefaultPromptForApplication("discord"),
+    whatsappPrompt: settings.whatsappPrompt || getDefaultPromptForApplication("whatsapp"),
+    telegramPrompt: settings.telegramPrompt || getDefaultPromptForApplication("telegram"),
+    teamsPrompt: settings.teamsPrompt || getDefaultPromptForApplication("teams"),
+    messagesPrompt: settings.messagesPrompt || getDefaultPromptForApplication("messages"),
+    notionPrompt: settings.notionPrompt || getDefaultPromptForApplication("notion"),
+    obsidianPrompt: settings.obsidianPrompt || getDefaultPromptForApplication("obsidian"),
+    logseqPrompt: settings.logseqPrompt || getDefaultPromptForApplication("logseq"),
+    roamPrompt: settings.roamPrompt || getDefaultPromptForApplication("roam"),
+    notesPrompt: settings.notesPrompt || getDefaultPromptForApplication("notes"),
+    evernotePrompt: settings.evernotePrompt || getDefaultPromptForApplication("evernote"),
+    bearPrompt: settings.bearPrompt || getDefaultPromptForApplication("bear"),
+    gmailPrompt: settings.gmailPrompt || getDefaultPromptForApplication("gmail"),
+    outlookPrompt: settings.outlookPrompt || getDefaultPromptForApplication("outlook"),
+    mailPrompt: settings.mailPrompt || getDefaultPromptForApplication("mail"),
+    vscodePrompt: settings.vscodePrompt || getDefaultPromptForApplication("vscode"),
+    xcodePrompt: settings.xcodePrompt || getDefaultPromptForApplication("xcode"),
+    webstormPrompt: settings.webstormPrompt || getDefaultPromptForApplication("webstorm"),
+    sublimePrompt: settings.sublimePrompt || getDefaultPromptForApplication("sublime"),
+    wordPrompt: settings.wordPrompt || getDefaultPromptForApplication("word"),
+    pagesPrompt: settings.pagesPrompt || getDefaultPromptForApplication("pages"),
+    docsPrompt: settings.docsPrompt || getDefaultPromptForApplication("docs"),
+    browserGithubPrompt: settings.browserGithubPrompt || getDefaultPromptForApplication("browser-github"),
+    browserStackoverflowPrompt: settings.browserStackoverflowPrompt || getDefaultPromptForApplication("browser-stackoverflow"),
+    browserTwitterPrompt: settings.browserTwitterPrompt || getDefaultPromptForApplication("browser-twitter"),
+    browserLinkedinPrompt: settings.browserLinkedinPrompt || getDefaultPromptForApplication("browser-linkedin"),
   };
 
-  // If customPrompt is empty, load the prompt for the selected mode
-  if (!draft.customPrompt && draft.selectedMode && draft.selectedMode !== "custom") {
-    draft.customPrompt = getCurrentPromptForMode(draft.selectedMode, draft);
+  // If customPrompt is empty, load the prompt for the selected application
+  if (!draft.customPrompt && draft.selectedApplicationMode && draft.selectedApplicationMode !== "custom") {
+    draft.customPrompt = getCurrentPromptForApplication(draft.selectedApplicationMode, draft);
   }
 
   return draft;
 };
 
+
 /**
- * Check if there are unsaved changes in the context modes draft
+ * Check if there are unsaved changes in the application modes draft
  */
-export const hasUnsavedContextChanges = (contextModesDraft: ContextModesDraft, settings: any): boolean => {
+export const hasUnsavedApplicationChanges = (draft: ApplicationModesDraft, settings: any): boolean => {
   return (
-    contextModesDraft.customPrompt !== settings.customPrompt ||
-    contextModesDraft.notesPrompt !== (settings.notesPrompt || getDefaultPromptForMode("notes")) ||
-    contextModesDraft.messagesPrompt !== (settings.messagesPrompt || getDefaultPromptForMode("messages")) ||
-    contextModesDraft.emailsPrompt !== (settings.emailsPrompt || getDefaultPromptForMode("email")) ||
-    contextModesDraft.codeCommentsPrompt !== (settings.codeCommentsPrompt || getDefaultPromptForMode("code_comments")) ||
-    contextModesDraft.meetingNotesPrompt !== (settings.meetingNotesPrompt || getDefaultPromptForMode("meeting_notes")) ||
-    contextModesDraft.creativeWritingPrompt !== (settings.creativeWritingPrompt || getDefaultPromptForMode("creative_writing"))
+    draft.customPrompt !== settings.customPrompt ||
+    draft.selectedApplicationMode !== settings.selectedApplicationMode ||
+    
+    // Application-specific prompt changes
+    draft.slackPrompt !== (settings.slackPrompt || getDefaultPromptForApplication("slack")) ||
+    draft.discordPrompt !== (settings.discordPrompt || getDefaultPromptForApplication("discord")) ||
+    draft.whatsappPrompt !== (settings.whatsappPrompt || getDefaultPromptForApplication("whatsapp")) ||
+    draft.telegramPrompt !== (settings.telegramPrompt || getDefaultPromptForApplication("telegram")) ||
+    draft.teamsPrompt !== (settings.teamsPrompt || getDefaultPromptForApplication("teams")) ||
+    draft.messagesPrompt !== (settings.messagesPrompt || getDefaultPromptForApplication("messages")) ||
+    draft.notionPrompt !== (settings.notionPrompt || getDefaultPromptForApplication("notion")) ||
+    draft.obsidianPrompt !== (settings.obsidianPrompt || getDefaultPromptForApplication("obsidian")) ||
+    draft.logseqPrompt !== (settings.logseqPrompt || getDefaultPromptForApplication("logseq")) ||
+    draft.roamPrompt !== (settings.roamPrompt || getDefaultPromptForApplication("roam")) ||
+    draft.notesPrompt !== (settings.notesPrompt || getDefaultPromptForApplication("notes")) ||
+    draft.evernotePrompt !== (settings.evernotePrompt || getDefaultPromptForApplication("evernote")) ||
+    draft.bearPrompt !== (settings.bearPrompt || getDefaultPromptForApplication("bear")) ||
+    draft.gmailPrompt !== (settings.gmailPrompt || getDefaultPromptForApplication("gmail")) ||
+    draft.outlookPrompt !== (settings.outlookPrompt || getDefaultPromptForApplication("outlook")) ||
+    draft.mailPrompt !== (settings.mailPrompt || getDefaultPromptForApplication("mail")) ||
+    draft.vscodePrompt !== (settings.vscodePrompt || getDefaultPromptForApplication("vscode")) ||
+    draft.xcodePrompt !== (settings.xcodePrompt || getDefaultPromptForApplication("xcode")) ||
+    draft.webstormPrompt !== (settings.webstormPrompt || getDefaultPromptForApplication("webstorm")) ||
+    draft.sublimePrompt !== (settings.sublimePrompt || getDefaultPromptForApplication("sublime")) ||
+    draft.wordPrompt !== (settings.wordPrompt || getDefaultPromptForApplication("word")) ||
+    draft.pagesPrompt !== (settings.pagesPrompt || getDefaultPromptForApplication("pages")) ||
+    draft.docsPrompt !== (settings.docsPrompt || getDefaultPromptForApplication("docs")) ||
+    draft.browserGithubPrompt !== (settings.browserGithubPrompt || getDefaultPromptForApplication("browser-github")) ||
+    draft.browserStackoverflowPrompt !== (settings.browserStackoverflowPrompt || getDefaultPromptForApplication("browser-stackoverflow")) ||
+    draft.browserTwitterPrompt !== (settings.browserTwitterPrompt || getDefaultPromptForApplication("browser-twitter")) ||
+    draft.browserLinkedinPrompt !== (settings.browserLinkedinPrompt || getDefaultPromptForApplication("browser-linkedin"))
+    
   );
 };

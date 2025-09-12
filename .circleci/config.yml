@@ -197,6 +197,10 @@ jobs:
             sudo apt update
             sudo apt install gh -y
       - run:
+          name: Authenticate GitHub CLI
+          command: |
+            echo $GITHUB_TOKEN | gh auth login --with-token
+      - run:
           name: Create GitHub Release
           command: |
             # Get version from package.json
