@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Direct window control methods
   expandRecordingWindow: () => ipcRenderer.invoke("expand-recording-window"),
   compactRecordingWindow: () => ipcRenderer.invoke("compact-recording-window"),
+  
+  // Information window tooltip methods
+  showRecordingTooltip: (type: string, message: string) => 
+    ipcRenderer.invoke("show-recording-tooltip", type, message),
 
   // Authentication handlers
   onAuthenticationComplete: (user: any) =>
@@ -198,6 +202,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.removeListener("update-downloaded", subscription);
     };
   },
+
+  // Recording controls
+  recording: {
+    start: () => ipcRenderer.invoke("recording:start"),
+    stop: () => ipcRenderer.invoke("recording:stop"), 
+    cancel: () => ipcRenderer.invoke("recording:cancel"),
+  },
 });
 
 // Re-dispatch IPC messages as DOM events so the recording window can listen on window
@@ -293,6 +304,9 @@ declare global {
       // Direct window control methods
       expandRecordingWindow: () => Promise<{ success: boolean }>;
       compactRecordingWindow: () => Promise<{ success: boolean }>;
+      
+      // Information window tooltip methods
+      showRecordingTooltip: (type: string, message: string) => Promise<{ success: boolean }>;
 
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
@@ -405,6 +419,13 @@ declare global {
         startTrial: () => Promise<any>;
         updateSubscription: (tier: "free" | "pro_trial" | "pro") => Promise<any>;
         getSubscriptionInfo: () => Promise<any>;
+      };
+
+      // Recording controls
+      recording: {
+        start: () => Promise<{ success: boolean; error?: string }>;
+        stop: () => Promise<{ success: boolean; error?: string }>; 
+        cancel: () => Promise<{ success: boolean; error?: string }>;
       };
 
       // Hotkey test mode for onboarding

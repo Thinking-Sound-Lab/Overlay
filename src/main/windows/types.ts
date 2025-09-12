@@ -4,7 +4,15 @@ export interface WindowSizes {
 }
 
 export interface InformationMessage {
-  type: 'empty-transcript' | 'silent-recording' | 'permission-error' | 'processing-error' | 'word-limit-reached';
+  type:
+    | "empty-transcript"
+    | "silent-recording"
+    | "permission-error"
+    | "processing-error"
+    | "word-limit-reached"
+    | "click-to-record"
+    | "cancel-recording"
+    | "process-recording";
   title: string;
   message: string;
   duration?: number; // Auto-dismiss duration in ms, default 3000
@@ -17,7 +25,7 @@ export interface WindowPositions {
 }
 
 export enum WindowType {
-  MAIN = 'main',
-  RECORDING = 'recording', 
-  INFORMATION = 'information'
+  MAIN = "main",
+  RECORDING = "recording",
+  INFORMATION = "information",
 }

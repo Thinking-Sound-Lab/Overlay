@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { X, Pause } from "lucide-react";
 import startSound from "../../../assets/sounds/start.wav";
 import stopSound from "../../../assets/sounds/stop.wav";
 
@@ -71,6 +72,66 @@ export const RecordingWindow: React.FC = () => {
       }
     } catch (error) {
       console.warn("Could not play sound:", error);
+    }
+  };
+
+  // Click handlers for recording window interactions
+  const handleExpandedClick = async () => {
+    if (!isRecording && !isProcessing) {
+      // Start recording when clicking on expanded window
+      try {
+        await window.electronAPI.recording.start();
+      } catch (error) {
+        console.error("Failed to start recording:", error);
+      }
+    }
+  };
+
+  const handleCancelRecording = async (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.stopPropagation(); // Prevent bubbling to parent
+    if (isRecording) {
+      // Cross button cancels recording without processing
+      try {
+        await window.electronAPI.recording.cancel();
+
+        if (audioProcessorRef.current) {
+          audioProcessorRef.current.disconnect();
+          audioProcessorRef.current = null;
+        }
+        if (audioContextRef.current) {
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+        }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+
+        if (analyserRef.current) {
+          analyserRef.current.disconnect();
+          analyserRef.current = null;
+        }
+
+        setIsRecording(false);
+      } catch (error) {
+        console.error("Failed to cancel recording:", error);
+      }
+    }
+  };
+
+  const handleStopRecording = async (
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.stopPropagation(); // Prevent bubbling to parent
+    if (isRecording) {
+      // Stop recording and start processing
+      try {
+        await window.electronAPI.recording.stop();
+      } catch (error) {
+        console.error("Failed to stop recording:", error);
+      }
     }
   };
 
@@ -169,9 +230,9 @@ export const RecordingWindow: React.FC = () => {
         setLevels((prevLevels) => {
           const baseHeight = 3;
           const maxHeight = 28;
-          // Wave-like coefficients creating a natural audio waveform pattern
+          // Wave-like coefficients creating a natural audio waveform pattern (12 bars)
           const multipliers = [
-            0.5, 0.7, 0.9, 1.2, 1.4, 1.3, 1.5, 1.4, 1.2, 0.9, 0.8, 0.6,
+            0.5, 0.7, 0.9, 1.2, 1.4, 1.5, 1.5, 1.4, 1.2, 0.9, 0.7, 0.5,
           ];
 
           const newLevels = multipliers.map((multiplier, index) => {
@@ -489,41 +550,85 @@ export const RecordingWindow: React.FC = () => {
           ${getBaseContainerClasses()}
           ${getBorderClasses()}
           ${getStateClasses()}
+          ${expanded && !isRecording && !isProcessing ? "cursor-pointer" : ""}
         `}
         onMouseEnter={async () => {
           setHovered(true);
           // Direct window control - expand window immediately
-          await (window.electronAPI as any).expandRecordingWindow();
-          //   (window.electronAPI as any).windowHoverEnter();
+          await window.electronAPI.expandRecordingWindow();
+          // Show tooltip when hovering over expanded window (not recording/processing)
+          if (!isRecording && !isProcessing) {
+            await window.electronAPI.showRecordingTooltip(
+              "click-to-record",
+              "Click to start recording"
+            );
+          }
         }}
         onMouseLeave={async () => {
           setHovered(false);
-          // Direct window control - compact window immediately
-          await (window.electronAPI as any).compactRecordingWindow();
-          //   (window.electronAPI as any).windowHoverLeave();
+          // Only compact if not recording or processing
+          if (!isRecording && !isProcessing) {
+            await window.electronAPI.compactRecordingWindow();
+          }
         }}
+        onClick={handleExpandedClick}
       >
         {expanded && !isRecording && !isProcessing && (
           <div className="flex gap-1 items-center justify-center">
             <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
             <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
             <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
+            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
+            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
           </div>
         )}
         {isRecording && (
-          <div className="flex items-center justify-center gap-[2px] h-full w-full px-3">
-            {levels.map((h, i) => (
-              <span
-                key={i}
-                className="block w-2 min-h-1 bg-white/95 rounded-full transition-all duration-200 ease-out shadow-sm animate-wave-pulse"
-                style={{
-                  height: `${Math.round(h)}px`,
-                  opacity: 0.8 + (h / 28) * 0.2, // Dynamic opacity based on height
-                  animationDelay: `${i * 100}ms`, // Staggered animation delay for wave effect
-                  boxShadow: `0 0 ${Math.round(h / 4)}px rgba(255, 255, 255, ${0.3 + (h / 28) * 0.4})`, // Dynamic glow
-                }}
-              />
-            ))}
+          <div className="flex items-center justify-between h-full w-full px-2">
+            {/* Cancel (X) button on the left */}
+            <div
+              className="flex-shrink-0 cursor-pointer bg-white hover:bg-gray-100 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+              onClick={handleCancelRecording}
+              title="Cancel recording"
+              onMouseEnter={() =>
+                window.electronAPI.showRecordingTooltip(
+                  "cancel-recording",
+                  "Cancel recording"
+                )
+              }
+            >
+              <X size={12} className="text-black" strokeWidth={2} />
+            </div>
+
+            {/* Waveform in the center */}
+            <div className="flex items-center justify-center gap-[3px] flex-1 px-1 min-w-0">
+              {levels.map((h, i) => (
+                <span
+                  key={i}
+                  className="block w-2.5 min-h-1 bg-white/95 rounded-full transition-all duration-200 ease-out shadow-sm animate-wave-pulse"
+                  style={{
+                    height: `${Math.round(h)}px`,
+                    opacity: 0.8 + (h / 28) * 0.2, // Dynamic opacity based on height
+                    animationDelay: `${i * 100}ms`, // Staggered animation delay for wave effect
+                    boxShadow: `0 0 ${Math.round(h / 4)}px rgba(255, 255, 255, ${0.3 + (h / 28) * 0.4})`, // Dynamic glow
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Stop/Pause button on the right */}
+            <div
+              className="flex-shrink-0 cursor-pointer bg-red-500 hover:bg-red-600 rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+              onClick={handleStopRecording}
+              title="Stop recording and process"
+              onMouseEnter={() =>
+                window.electronAPI.showRecordingTooltip(
+                  "process-recording",
+                  "Process recording"
+                )
+              }
+            >
+              <Pause size={12} className="text-white" strokeWidth={2} />
+            </div>
           </div>
         )}
         {isProcessing && (
