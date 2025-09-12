@@ -19,17 +19,42 @@ export interface SettingsComponentProps {
   setError: (error: string) => void;
 }
 
-export interface ContextModesDraft {
+export interface ApplicationModesDraft {
   enableAutoDetection: boolean;
-  selectedMode: string;
+  selectedApplicationMode: string;
   customPrompt: string;
-  notesPrompt: string;
+  
+  // Application-specific prompts
+  slackPrompt: string;
+  discordPrompt: string;
+  whatsappPrompt: string;
+  telegramPrompt: string;
+  teamsPrompt: string;
   messagesPrompt: string;
-  emailsPrompt: string;
-  codeCommentsPrompt: string;
-  meetingNotesPrompt: string;
-  creativeWritingPrompt: string;
+  notionPrompt: string;
+  obsidianPrompt: string;
+  logseqPrompt: string;
+  roamPrompt: string;
+  notesPrompt: string;
+  evernotePrompt: string;
+  bearPrompt: string;
+  gmailPrompt: string;
+  outlookPrompt: string;
+  mailPrompt: string;
+  vscodePrompt: string;
+  xcodePrompt: string;
+  webstormPrompt: string;
+  sublimePrompt: string;
+  wordPrompt: string;
+  pagesPrompt: string;
+  docsPrompt: string;
+  browserGithubPrompt: string;
+  browserStackoverflowPrompt: string;
+  browserTwitterPrompt: string;
+  browserLinkedinPrompt: string;
+  
 }
+
 
 // ModesSettings will manage its own state, so we only need the base props
 export type ModesSettingsProps = SettingsComponentProps;

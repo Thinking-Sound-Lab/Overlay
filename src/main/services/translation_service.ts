@@ -1,7 +1,6 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
 import {
-  TranslationResult,
   ApplicationContextType,
   Settings,
   SpeechMetrics,
@@ -9,36 +8,45 @@ import {
 import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationDetector } from "./application_detector";
+import { ApplicationContextService } from "./application_context_service";
 import { DataLoaderService } from "./data_loader_service";
 import { DictionaryService } from "./dictionary_service";
 import { getLanguageDisplayName } from "../../shared/constants/languages";
-import { hasProAccess, canUseWords } from "../../shared/utils/subscription-permissions";
+import {
+  hasProAccess,
+  canUseWords,
+} from "../../shared/utils/subscription-permissions";
 // robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
   private static instance: TranslationService;
   private applicationDetector: ApplicationDetector;
+  private applicationContextService: ApplicationContextService;
   private dataLoaderService: DataLoaderService | null = null;
   private textInsertionService: TextInsertionService;
 
   // Single language model configuration
   private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
 
-  // Application context to mode mapping for auto-detection
-  private readonly CONTEXT_TO_MODE_MAPPING = {
-    [ApplicationContextType.EMAIL]: "email",
-    [ApplicationContextType.NOTES]: "notes",
-    [ApplicationContextType.MESSAGING]: "messages",
-    [ApplicationContextType.CODE_EDITOR]: "code_comments",
-    [ApplicationContextType.DOCUMENT]: "notes",
-    [ApplicationContextType.PRESENTATION]: "meeting_notes",
-    [ApplicationContextType.BROWSER]: "notes",
-    [ApplicationContextType.TERMINAL]: "code_comments",
-    [ApplicationContextType.UNKNOWN]: "notes", // fallback
+  // Legacy application context to mode mapping for backward compatibility
+  private readonly LEGACY_CONTEXT_TO_MODE_MAPPING = {
+    [ApplicationContextType.EMAIL]: "gmail", // Default to Gmail for email context
+    [ApplicationContextType.NOTES]: "notion", // Default to Notion for notes context
+    [ApplicationContextType.MESSAGING]: "slack", // Default to Slack for messaging context
+    [ApplicationContextType.CODE_EDITOR]: "vscode", // Default to VS Code for code context
+    [ApplicationContextType.DOCUMENT]: "docs", // Default to Google Docs for documents
+    [ApplicationContextType.PRESENTATION]: "keynote", // Default to Keynote for presentations
+    [ApplicationContextType.BROWSER]: "default", // Default for browser
+    [ApplicationContextType.TERMINAL]: "terminal", // Terminal context
+    [ApplicationContextType.UNKNOWN]: "default", // fallback
   };
 
-  constructor(dataLoaderService?: DataLoaderService, dictionaryService?: DictionaryService) {
+  constructor(
+    dataLoaderService?: DataLoaderService,
+    dictionaryService?: DictionaryService
+  ) {
     this.applicationDetector = ApplicationDetector.getInstance();
+    this.applicationContextService = ApplicationContextService.getInstance();
     this.dataLoaderService = dataLoaderService || null;
     this.textInsertionService = new TextInsertionService(dictionaryService);
   }
@@ -48,7 +56,10 @@ export class TranslationService {
     dictionaryService?: DictionaryService
   ): TranslationService {
     if (!TranslationService.instance) {
-      TranslationService.instance = new TranslationService(dataLoaderService, dictionaryService);
+      TranslationService.instance = new TranslationService(
+        dataLoaderService,
+        dictionaryService
+      );
     } else if (
       dataLoaderService &&
       !TranslationService.instance.dataLoaderService
@@ -56,7 +67,8 @@ export class TranslationService {
       TranslationService.instance.dataLoaderService = dataLoaderService;
       // Update TextInsertionService with DictionaryService if provided
       if (dictionaryService) {
-        TranslationService.instance.textInsertionService = new TextInsertionService(dictionaryService);
+        TranslationService.instance.textInsertionService =
+          new TextInsertionService(dictionaryService);
       }
     }
     return TranslationService.instance;
@@ -103,7 +115,7 @@ export class TranslationService {
       canTranslate,
       canUseCustomModes,
       wordUsage: wordUsage.allowed,
-      wordsInTranscript: this.countWords(transcript)
+      wordsInTranscript: this.countWords(transcript),
     });
 
     // Stop processing if word limit exceeded
@@ -123,52 +135,83 @@ export class TranslationService {
     console.log("[Translation] Source language:", sourceLanguage);
 
     try {
-      // Get auto-detected mode if enabled and user has Pro access
-      let selectedMode = settings.selectedMode;
+      // Get auto-detected application mode if enabled and user has Pro access
+      let selectedApplicationMode = settings.selectedApplicationMode || "default";
       if (settings.enableAutoDetection && canUseCustomModes) {
         try {
-          const activeApp =
-            await this.applicationDetector.getActiveApplication();
-          const detectedMode =
-            this.CONTEXT_TO_MODE_MAPPING[activeApp.contextType];
-          if (detectedMode) {
-            selectedMode = detectedMode;
-            console.log("[Translation] Auto-detected mode:", detectedMode);
+          const applicationContext = await this.applicationContextService.getCurrentApplicationContext();
+          if (applicationContext && applicationContext.confidence > 0.3) {
+            selectedApplicationMode = applicationContext.applicationId;
+            console.log("[Translation] Auto-detected application:", {
+              applicationId: applicationContext.applicationId,
+              displayName: applicationContext.displayName,
+              confidence: applicationContext.confidence
+            });
+          } else {
+            console.log("[Translation] Low confidence detection, using fallback application:", selectedApplicationMode);
           }
         } catch (error) {
-          void error; // Variable acknowledged for error handling
           console.warn(
-            "[Translation] Auto-detection failed, using fallback mode:",
-            selectedMode
+            "[Translation] Application auto-detection failed, using fallback:",
+            selectedApplicationMode,
+            error
           );
         }
       }
 
-      // Get mode-specific prompt (only when auto-detection is enabled and user has Pro access)
-      let modeSpecificPrompt: string | null = null;
+      // Get application-specific prompt (only when auto-detection is enabled and user has Pro access)
+      let applicationSpecificPrompt: string | null = null;
       if (settings.enableAutoDetection && canUseCustomModes) {
-        if (selectedMode === "custom") {
-          modeSpecificPrompt = settings.customPrompt;
-        } else if (selectedMode) {
-          const modePromptMap = {
-            notes: settings.notesPrompt,
+        if (selectedApplicationMode === "custom") {
+          applicationSpecificPrompt = settings.customPrompt;
+        } else if (selectedApplicationMode) {
+          const applicationPromptMap = {
+            slack: settings.slackPrompt,
+            discord: settings.discordPrompt,
+            whatsapp: settings.whatsappPrompt,
+            telegram: settings.telegramPrompt,
+            teams: settings.teamsPrompt,
             messages: settings.messagesPrompt,
-            email: settings.emailsPrompt,
-            code_comments: settings.codeCommentsPrompt,
-            meeting_notes: settings.meetingNotesPrompt,
-            creative_writing: settings.creativeWritingPrompt,
+            notion: settings.notionPrompt,
+            obsidian: settings.obsidianPrompt,
+            logseq: settings.logseqPrompt,
+            roam: settings.roamPrompt,
+            notes: settings.notesPrompt,
+            evernote: settings.evernotePrompt,
+            bear: settings.bearPrompt,
+            gmail: settings.gmailPrompt,
+            outlook: settings.outlookPrompt,
+            mail: settings.mailPrompt,
+            vscode: settings.vscodePrompt,
+            xcode: settings.xcodePrompt,
+            webstorm: settings.webstormPrompt,
+            sublime: settings.sublimePrompt,
+            word: settings.wordPrompt,
+            pages: settings.pagesPrompt,
+            docs: settings.docsPrompt,
+            'browser-github': settings.browserGithubPrompt,
+            'browser-stackoverflow': settings.browserStackoverflowPrompt,
+            'browser-twitter': settings.browserTwitterPrompt,
+            'browser-linkedin': settings.browserLinkedinPrompt,
           };
-          const promptForMode =
-            modePromptMap[selectedMode as keyof typeof modePromptMap];
-          console.log("[Translation] Mode-specific prompt:", promptForMode);
+          const promptForApplication =
+            applicationPromptMap[selectedApplicationMode as keyof typeof applicationPromptMap];
+          console.log("[Translation] Application-specific prompt for", selectedApplicationMode, ":", promptForApplication);
 
-          if (promptForMode && promptForMode.trim()) {
-            modeSpecificPrompt = promptForMode;
+          if (promptForApplication && promptForApplication.trim()) {
+            applicationSpecificPrompt = promptForApplication;
+          } else {
+            // Fallback to getting default prompt from application context service
+            const appContext = this.applicationContextService.getApplicationContextById(selectedApplicationMode);
+            if (appContext) {
+              applicationSpecificPrompt = appContext.prompt;
+              console.log("[Translation] Using default prompt for", selectedApplicationMode);
+            }
           }
         }
       } else {
         console.log(
-          "[Translation] Auto-detection disabled, skipping mode-specific formatting"
+          "[Translation] Auto-detection disabled, skipping application-specific formatting"
         );
       }
 
@@ -201,12 +244,12 @@ ${settings.language !== settings.targetLanguage && settings.enableTranslation &&
 ## OUTPUT FORMAT:
 Return ONLY the processed text. No explanations, no additional comments.`;
 
-      // Add mode-specific formatting if available
-      if (modeSpecificPrompt && modeSpecificPrompt.trim()) {
+      // Add application-specific formatting if available
+      if (applicationSpecificPrompt && applicationSpecificPrompt.trim()) {
         activePrompt += `
 
-## CONTEXT-SPECIFIC FORMATTING (${selectedMode?.toUpperCase()} MODE):
-${modeSpecificPrompt}
+## APPLICATION-SPECIFIC FORMATTING (${selectedApplicationMode?.toUpperCase()} MODE):
+${applicationSpecificPrompt}
 
 Note: Apply above formatting ONLY to statements. Questions must remain questions with proper punctuation.`;
       }
@@ -245,7 +288,6 @@ Text to process: "${transcript}"
 
       const finalText = response.choices[0].message.content;
       console.log("[Translation] Raw LLM response:", finalText);
-
 
       // Step 4: Calculate metrics
       const metrics = calculateSpeechMetrics(finalText, recordingDuration);
@@ -296,19 +338,26 @@ Text to process: "${transcript}"
               }
             : { wasTranslated: false, detectedLanguage: sourceLanguage };
 
-          const modeFormattingMeta = settings.enableAutoDetection && canUseCustomModes
-            ? {
-                modeBasedFormattingApplied: !!modeSpecificPrompt,
-                selectedMode: selectedMode,
-                autoDetectionEnabled: settings.enableAutoDetection,
-                customPromptUsed:
-                  selectedMode === "custom" && !!settings.customPrompt?.trim(),
-              }
-            : { modeBasedFormattingApplied: false };
+          const applicationFormattingMeta =
+            settings.enableAutoDetection && canUseCustomModes
+              ? {
+                  applicationBasedFormattingApplied: !!applicationSpecificPrompt,
+                  selectedApplicationMode: selectedApplicationMode,
+                  autoDetectionEnabled: settings.enableAutoDetection,
+                  customPromptUsed:
+                    selectedApplicationMode === "custom" &&
+                    !!settings.customPrompt?.trim(),
+                  // Application-based formatting applied
+                  modeBasedFormattingApplied: !!applicationSpecificPrompt,
+                }
+              : { 
+                  applicationBasedFormattingApplied: false,
+                  modeBasedFormattingApplied: false 
+                };
 
           const combinedMeta = {
             ...translationMeta,
-            ...modeFormattingMeta,
+            ...applicationFormattingMeta,
           };
 
           onComplete(metrics, finalText, combinedMeta);
@@ -318,8 +367,6 @@ Text to process: "${transcript}"
       console.error("[Translation] Error in text processing pipeline:", error);
     }
   }
-
-
 
   private countWords(text: string): number {
     // Handle null, undefined, or empty strings
