@@ -97,10 +97,10 @@ export class WindowManager {
     const windowHeight = 50;
     
     // Position above recording window (8 pixels gap)
-    // Use same positioning logic as recording window for consistency
+    // Use expanded size to ensure no overlap when recording window expands
     const isWindows = process.platform === 'win32';
     const taskbarMargin = isWindows ? 10 : 0;
-    const recordingWindowY = screenHeight - WINDOW_SIZES.compact.height - taskbarMargin;
+    const recordingWindowY = screenHeight - WINDOW_SIZES.expanded.height - taskbarMargin;
     const informationWindowX = Math.round((screenWidth - windowWidth) / 2);
     const informationWindowY = recordingWindowY - windowHeight - 8;
     

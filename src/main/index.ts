@@ -1374,6 +1374,18 @@ ipcMain.handle("compact-recording-window", () => {
   return { success: true };
 });
 
+// Information window tooltip handlers
+ipcMain.handle("show-recording-tooltip", (event, type: string, message: string) => {
+  const tooltipMessage = {
+    type: type as any, // Cast to InformationMessage type
+    title: "",
+    message,
+    duration: 2000, // Shorter duration for tooltips
+  };
+  windowManager.showInformation(tooltipMessage);
+  return { success: true };
+});
+
 // Permission checking handlers
 ipcMain.handle("check-accessibility-permission", async () => {
   const permissionsService = PermissionsService.getInstance();
@@ -1411,6 +1423,56 @@ ipcMain.handle("download-update", () => {
 ipcMain.handle("install-update", () => {
   autoUpdater.quitAndInstall();
   return { success: true };
+});
+
+// Recording control handlers
+ipcMain.handle("recording:start", async () => {
+  try {
+    await startRecording();
+    return { success: true };
+  } catch (error) {
+    console.error("[Main] Recording start failed:", error);
+    return { success: false, error: "Failed to start recording" };
+  }
+});
+
+ipcMain.handle("recording:stop", async () => {
+  try {
+    await stopRecording();
+    return { success: true };
+  } catch (error) {
+    console.error("[Main] Recording stop failed:", error);
+    return { success: false, error: "Failed to stop recording" };
+  }
+});
+
+ipcMain.handle("recording:cancel", async () => {
+  try {
+    // Cancel recording without processing
+    if (!isRecording) return { success: false, error: "Not recording" };
+    
+    isRecording = false;
+    
+    // Clean up recording resources - pass false to prevent transcript processing
+    sttService.stopDictation(false);
+    
+    // Restore system audio
+    if (systemAudioManager) {
+      await systemAudioManager.restoreSystemAudio();
+    }
+    
+    // Reset window state
+    if (windowManager.getRecordingWindow()) {
+      windowManager.compactRecordingWindow();
+      windowManager.sendToRecording("processing-complete");
+    }
+    
+    console.log("[Main] Recording cancelled");
+    return { success: true };
+  } catch (error) {
+    console.error("[Main] Recording cancel failed:", error);
+    return { success: false, error: "Failed to cancel recording" };
+  }
 });
 
 // Window control handlers for custom navigation bar

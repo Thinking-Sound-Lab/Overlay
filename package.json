@@ -1,7 +1,7 @@
 {
   "name": "overlay",
   "productName": "Overlay",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AI-powered dictation app that transcribes speech and inserts text into any application",
   "main": ".webpack/main",
   "scripts": {
@@ -143,6 +143,7 @@
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",

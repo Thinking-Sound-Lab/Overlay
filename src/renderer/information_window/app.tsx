@@ -1,15 +1,5 @@
 import React, { useState, useEffect } from "react";
-
-interface InformationMessage {
-  type:
-    | "empty-transcript"
-    | "silent-recording"
-    | "permission-error"
-    | "processing-error";
-  title: string;
-  message: string;
-  duration?: number;
-}
+import { InformationMessage } from "../../main/windows/types";
 
 export const InformationWindow: React.FC = () => {
   const [message, setMessage] = useState<InformationMessage | null>(null);
@@ -41,9 +31,9 @@ export const InformationWindow: React.FC = () => {
       const interval = 16; // 60fps updates
       const steps = duration / interval;
       const increment = 100 / steps;
-      
+
       const progressTimer = setInterval(() => {
-        setProgress(prev => {
+        setProgress((prev) => {
           const newProgress = prev + increment;
           if (newProgress >= 100) {
             clearInterval(progressTimer);
@@ -68,9 +58,25 @@ export const InformationWindow: React.FC = () => {
         return "Permission error";
       case "processing-error":
         return "Processing error";
+      case "click-to-record":
+        return "Click to start recording";
+      case "cancel-recording":
+        return "Cancel recording";
+      case "process-recording":
+        return "Process recording";
       default:
         return "Error occurred";
     }
+  };
+
+  const shouldShowProgressBar = (type: string) => {
+    // Hide progress bar for tooltip messages
+    const tooltipTypes = [
+      "click-to-record",
+      "cancel-recording",
+      "process-recording",
+    ];
+    return !tooltipTypes.includes(type);
   };
 
   if (!message) return null;
@@ -90,14 +96,16 @@ export const InformationWindow: React.FC = () => {
             {getDisplayText(message.type)}
           </p>
         </div>
-        
-        {/* Progress bar at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800">
-          <div 
-            className="h-full bg-white transition-all duration-75 ease-linear"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+
+        {/* Progress bar at bottom - only show for non-tooltip messages */}
+        {shouldShowProgressBar(message.type) && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800">
+            <div
+              className="h-full bg-white transition-all duration-75 ease-linear"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

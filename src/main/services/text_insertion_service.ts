@@ -6,6 +6,14 @@ import { DictionaryService } from "./dictionary_service";
 
 const execAsync = promisify(exec);
 
+// Import nut.js for Windows automation
+let nutjs: any;
+try {
+  nutjs = require("@nut-tree-fork/nut-js");
+} catch (error) {
+  console.warn("[TextInsertion] nut.js not available:", error);
+}
+
 export interface TextInsertionOptions {
   delay?: number; // Delay before insertion in milliseconds
   preserveClipboard?: boolean; // Whether to preserve existing clipboard content
@@ -130,16 +138,34 @@ export class TextInsertionService {
       // Trigger paste action (platform-specific automation)
       try {
         switch (platform) {
-          case "darwin":
-            await execAsync(
-              'osascript -e "tell application \\"System Events\\" to keystroke \\"v\\" using command down"'
-            );
+          case "darwin": {
+            // Try nut.js first, fallback to AppleScript
+            let macOSSuccess = false;
+            if (nutjs && nutjs.keyboard) {
+              try {
+                await nutjs.keyboard.pressKey(nutjs.Key.LeftCmd, nutjs.Key.V);
+                macOSSuccess = true;
+                console.log("[TextInsertion] macOS: nut.js automation successful");
+              } catch (nutjsError) {
+                console.warn("[TextInsertion] macOS: nut.js failed, falling back to AppleScript:", nutjsError);
+              }
+            }
+            
+            if (!macOSSuccess) {
+              await execAsync(
+                'osascript -e "tell application \\"System Events\\" to keystroke \\"v\\" using command down"'
+              );
+              console.log("[TextInsertion] macOS: AppleScript automation successful");
+            }
             break;
+          }
           case "win32":
-            // Simplified PowerShell SendKeys command (no assembly loading complexity)
-            await execAsync(
-              'powershell -Command "[System.Windows.Forms.SendKeys]::SendWait(\\"^v\\")"'
-            );
+            // Use nut.js for Windows automation instead of PowerShell
+            if (nutjs && nutjs.keyboard) {
+              await nutjs.keyboard.pressKey(nutjs.Key.LeftControl, nutjs.Key.V);
+            } else {
+              throw new Error("nut.js not available for Windows automation");
+            }
             break;
           case "linux":
             await execAsync("xdotool key ctrl+v");
@@ -151,38 +177,19 @@ export class TextInsertionService {
           `[TextInsertion] Paste automation completed successfully on ${platform}`
         );
       } catch (pasteError) {
-        // Enhanced error handling for Windows security restrictions
+        // Enhanced error handling for automation failures
         if (platform === "win32") {
           console.warn(
-            "[TextInsertion] Windows paste automation failed - likely due to security restrictions:",
+            "[TextInsertion] Windows paste automation failed with nut.js:",
             pasteError
           );
           console.log(
             "[TextInsertion] Text is available in clipboard - user can paste manually with Ctrl+V or Shift+Insert"
           );
 
-          // Check for specific Windows security-related errors
-          const errorMessage = pasteError.message || pasteError.toString();
-          if (
-            errorMessage.includes("ExecutionPolicy") ||
-            errorMessage.includes("execution of scripts is disabled")
-          ) {
-            throw new Error(
-              "Windows PowerShell execution policy prevents automated paste. Text copied to clipboard - please paste manually with Ctrl+V."
-            );
-          }
-          if (
-            errorMessage.includes("Access is denied") ||
-            errorMessage.includes("UnauthorizedAccess")
-          ) {
-            throw new Error(
-              "Windows security restrictions prevent automated paste. Text copied to clipboard - please paste manually with Ctrl+V."
-            );
-          }
-
           // General automation failure - clipboard still works
           throw new Error(
-            "Automated paste failed due to Windows security restrictions. Text copied to clipboard - please paste manually with Ctrl+V."
+            "Automated paste failed with nut.js. Text copied to clipboard - please paste manually with Ctrl+V."
           );
         } else {
           // Non-Windows platforms - re-throw original error
@@ -240,9 +247,9 @@ export class TextInsertionService {
   getSetupInstructions(): string {
     switch (this.platform) {
       case "darwin":
-        return "macOS: Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility for optimal text insertion";
+        return "macOS: Uses nut.js automation with AppleScript fallback. Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility for optimal text insertion";
       case "win32":
-        return "Windows: Text will be copied to clipboard automatically. If automated paste fails due to security restrictions, use Ctrl+V or Shift+Insert to paste manually";
+        return "Windows: Text will be copied to clipboard automatically and pasted using nut.js automation. If automated paste fails, use Ctrl+V or Shift+Insert to paste manually";
       case "linux":
         return "Linux: Ensure xclip and xdotool are installed for clipboard method";
       default:
