@@ -37,6 +37,7 @@ class STTService {
   private accumulatedTranscript = "";
   private isProcessingTranscript = false;
   private windowManager: WindowManager | null = null;
+  private finalizeTimeout: NodeJS.Timeout | null = null;
 
   constructor(
     dataLoaderService: DataLoaderService,
@@ -177,51 +178,52 @@ class STTService {
         // Deltas are just accumulated for completeness
         this.processStreamingTranscript(delta, isFinal, language);
       },
-      onTranscriptComplete: (transcript: string, language: string) => {
-        void language; // Unused parameter required by callback interface
-        console.log(
-          "[STT] Realtime final transcript from Finalize:",
-          transcript
-        );
-        // This is the complete transcript from the entire recording session
-        // if (transcript && transcript.trim()) {
-        //   this.accumulatedTranscript = transcript.trim();
-        //   console.log(
-        //     "[STT] Final transcript received:",
-        //     this.accumulatedTranscript.length,
-        //     "chars"
-        //   );
-        //   console.log("[STT] Complete transcript:", this.accumulatedTranscript);
-        // }
-      },
-      onSpeechStarted: () => {
-        console.log("[STT] Realtime speech started");
-        this.isRecording = true;
+      onFinalizeResponse: async (transcript: string, language: string) => {
+        console.log("[STT] Immediate Finalize response received:", transcript);
 
-        // With Finalize approach, speech detection is just for logging
-        // The complete transcript will only come from the Finalize message
-        console.log(
-          "[STT] Speech detected - waiting for Finalize message for complete transcript"
-        );
-
-        if (this.analyticsService && process.env.NODE_ENV === "production") {
-          this.analyticsService.trackRecordingStarted();
+        // Clear the error timeout since we got a response
+        if (this.finalizeTimeout) {
+          clearTimeout(this.finalizeTimeout);
+          this.finalizeTimeout = null;
         }
-      },
-      onSpeechStopped: () => {
-        console.log("[STT] Realtime speech stopped (natural pause)");
-        this.isRecording = false;
 
-        // With Finalize approach, speech stops are just natural pauses
-        // Processing only happens when Finalize message is sent
-        console.log(
-          "[STT] Natural speech pause - transcript will be complete when user stops recording"
-        );
+        // Process transcript immediately when Finalize response is received
+        if (transcript && transcript.trim() && !this.isProcessingTranscript) {
+          console.log(
+            "[STT] Processing transcript immediately from Finalize response:",
+            transcript.length,
+            "chars"
+          );
+          this.isProcessingTranscript = true;
+          this.accumulatedTranscript =
+            this.accumulatedTranscript + transcript.trim();
 
-        if (this.analyticsService && process.env.NODE_ENV === "production") {
-          const recordingDuration =
-            (Date.now() - this.recordingStartTime) / 1000;
-          this.analyticsService.trackRecordingStopped(recordingDuration);
+          try {
+            await this.processTranscript(this.accumulatedTranscript, language);
+            // Clear after successful processing
+            this.accumulatedTranscript = "";
+          } finally {
+            this.isProcessingTranscript = false;
+          }
+        } else if (this.isProcessingTranscript) {
+          console.log(
+            "[STT] Transcript processing already in progress, skipping immediate processing"
+          );
+        } else {
+          console.log("[STT] Empty transcript from Finalize response");
+
+          // Handle empty transcript case
+          if (this.windowManager) {
+            const message: InformationMessage = {
+              type: "empty-transcript",
+              title: "Empty Transcript",
+              message: "No speech was detected in the recording",
+              duration: 3000,
+            };
+            this.windowManager.showInformation(message);
+            this.windowManager.sendToRecording("processing-complete");
+            this.windowManager.compactRecordingWindow();
+          }
         }
       },
       onError: (error: Error) => {
@@ -427,59 +429,27 @@ class STTService {
           this.realtimeProvider.commitAudio();
         }
 
-        setTimeout(async () => {
-          if (
-            this.accumulatedTranscript &&
-            this.accumulatedTranscript.trim().length > 0 &&
-            !this.isProcessingTranscript
-          ) {
-            console.log(
-              "[STT] Processing final transcript from Finalize:",
-              this.accumulatedTranscript.length,
-              "chars"
-            );
-            this.isProcessingTranscript = true;
+        // Set timeout to handle case where onFinalizeResponse never gets called
+        this.finalizeTimeout = setTimeout(() => {
+          console.log("[STT] Finalize timeout - no response from Deepgram");
 
-            try {
-              await this.processTranscript(
-                this.accumulatedTranscript,
-                this.getCurrentLanguage()
-              );
-
-              // Clear after successful processing
-              this.accumulatedTranscript = "";
-            } finally {
-              this.isProcessingTranscript = false;
-            }
-          } else if (this.isProcessingTranscript) {
-            console.log(
-              "[STT] Transcript processing already in progress, skipping"
-            );
-          } else {
-            console.log("[STT] No final transcript received from Finalize");
-
-            // Notify information window about empty transcript
-            if (this.windowManager) {
-              console.log(
-                "[STT] Notifying information window about empty transcript"
-              );
-
-              const message: InformationMessage = {
-                type: "empty-transcript",
-                title: "Empty Transcript",
-                message: "No speech was detected in the recording",
-                duration: 3000,
-              };
-              this.windowManager.showInformation(message);
-            }
-
-            // Send processing-complete to recording window to reset UI
-            if (this.windowManager) {
-              this.windowManager.sendToRecording("processing-complete");
-              this.windowManager.compactRecordingWindow();
-            }
+          // Show "transcript not found" error and reset UI
+          if (this.windowManager) {
+            const message: InformationMessage = {
+              type: "empty-transcript",
+              title: "Transcript Not Found",
+              message: "Unable to process the recording. Please try again.",
+              duration: 3000,
+            };
+            this.windowManager.showInformation(message);
+            this.windowManager.sendToRecording("processing-complete");
+            this.windowManager.compactRecordingWindow();
           }
-        }, 500);
+
+          // Reset state
+          this.isProcessingTranscript = false;
+          this.finalizeTimeout = null;
+        }, 2000); // 2 second timeout for error case
       } else {
         // In regular mode, send accumulated audio to Whisper
         if (this.sttSession) {
@@ -621,6 +591,12 @@ class STTService {
     console.log("[STT] Closing STT session and cleaning up all connections...");
 
     this.isRecording = false;
+
+    // Clear finalize timeout
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
+    }
 
     // Close regular STT session
     if (this.sttSession) {
@@ -788,6 +764,12 @@ class STTService {
     this.isProcessingTranscript = false;
     this.lastRecordingDuration = 0;
     this.recordingStartTime = 0;
+
+    // Clear finalize timeout
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
+    }
 
     // Close any active connections with explicit cleanup
     if (this.realtimeProvider) {

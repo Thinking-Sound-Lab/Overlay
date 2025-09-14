@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { Button } from "./ui/button";
 import {
@@ -37,6 +37,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const { settings } = state;
   const [activeSection, setActiveSection] =
     useState<SettingsSection>("general");
+  const [appVersion, setAppVersion] = useState<string>("1.0.0");
+
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const version = await window.electronAPI.getVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error("Failed to fetch app version:", error);
+        // Keep default version on error
+      }
+    };
+
+    fetchVersion();
+  }, []);
 
   const updateSetting = async (
     key: keyof typeof settings,
@@ -172,7 +187,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
             {/* Version at bottom */}
             <div className="absolute bottom-6 left-6 text-xs text-gray-400">
-              Overlay v1.0.0
+              Overlay v{appVersion}
             </div>
           </div>
 

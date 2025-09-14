@@ -28,6 +28,7 @@ import {
 } from "../shared/types";
 import { WindowManager } from "./windows/window-manager";
 import { ExternalAPIManager } from "./services/external_api_manager";
+import { DisplayManagerService } from "./services/display_manager_service";
 import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
 import { SystemAudioManager } from "./services/system_audio_manager";
@@ -48,6 +49,7 @@ import { PermissionsService } from "./services/permissions_service";
 // declare const INFORMATION_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 let windowManager: WindowManager;
+let displayManagerService: DisplayManagerService;
 let tray: Tray | null = null;
 let isRecording = false;
 let isProcessing = false;
@@ -567,6 +569,31 @@ const buildLanguageSubmenu = (): Electron.MenuItemConstructorOptions[] => {
   }
 };
 
+/**
+ * Optimized UI update function that runs concurrently with database operations
+ */
+const updateUIWithOptimization = async (
+  windowManager: WindowManager,
+  uiTranscript: UITranscriptEntry,
+  dataLoaderService: DataLoaderService
+) => {
+  try {
+    if (
+      windowManager.getMainWindow() &&
+      !windowManager.getMainWindow().isDestroyed()
+    ) {
+      // Send immediate transcript update
+      windowManager.sendToMain("transcript-updated", uiTranscript);
+
+      // Fetch and send updated stats
+      const currentStats = dataLoaderService.getUserStats();
+      windowManager.sendToMain("statistics-updated", currentStats);
+    }
+  } catch (error) {
+    console.error("[Main] Error in UI optimization update:", error);
+  }
+};
+
 const updateTrayMenu = async () => {
   if (!tray) return;
 
@@ -810,7 +837,7 @@ const stopRecording = async () => {
       // Reset processing state - window management moved to handleMetricsUpdate
       isProcessing = false;
     }
-  }, 500);
+  }, 0);
 };
 
 // ----------- App Lifecycle -----------
@@ -998,6 +1025,15 @@ app.whenReady().then(async () => {
     // Initialize window manager first
     windowManager = new WindowManager();
 
+    // Initialize display manager service
+    displayManagerService = DisplayManagerService.getInstance();
+    
+    // Connect display manager service to window manager
+    windowManager.initializeDisplayTracking(displayManagerService);
+
+    // Start display tracking immediately so DisplayManagerService knows current display
+    displayManagerService.startTracking();
+
     // Initialize external API manager and handlers
     externalAPIManager = new ExternalAPIManager();
     apiHandlers = new APIHandlers(externalAPIManager, windowManager);
@@ -1063,75 +1099,84 @@ app.whenReady().then(async () => {
             };
 
             try {
-              // Save transcript using DataLoaderService (DB-first approach)
-              const result =
-                await dataLoaderService.addTranscript(transcriptData);
+              // Create UI transcript for immediate renderer notification
+              const uiTranscript = {
+                id: transcriptData.metadata.localId,
+                text: transcript.trim(),
+                timestamp: new Date(),
+                wordCount: metrics.wordCount,
+                wpm: metrics.wordsPerMinute,
+                originalText: translationMeta?.originalText,
+                sourceLanguage: translationMeta?.sourceLanguage,
+                targetLanguage: translationMeta?.targetLanguage,
+                wasTranslated: translationMeta?.wasTranslated,
+                confidence: translationMeta?.confidence,
+                detectedLanguage: translationMeta?.detectedLanguage,
+                wordCountRatio: translationMeta?.wordCountRatio,
+              };
 
-              if (result.success) {
+              // IMMEDIATE: Send processing-complete to recording window first
+              if (
+                windowManager.getRecordingWindow() &&
+                !windowManager.getRecordingWindow().isDestroyed()
+              ) {
+                windowManager.sendToRecording("processing-complete");
+
+                // Clear processing timeout on success
+                if (processingTimeout) {
+                  clearTimeout(processingTimeout);
+                  processingTimeout = null;
+                }
+
+                // Reset processing state and animate window back to compact
+                isProcessing = false;
+                windowManager.compactRecordingWindow();
+              }
+
+              // PARALLEL: Run database operations and UI updates concurrently
+              const [transcriptSaveResult] = await Promise.allSettled([
+                // Save transcript using DataLoaderService
+                dataLoaderService.addTranscript(transcriptData),
+                // Pre-fetch current stats and update UI (runs in parallel)
+                updateUIWithOptimization(
+                  windowManager,
+                  uiTranscript,
+                  dataLoaderService
+                ),
+              ]);
+
+              // Handle transcript save result
+              if (
+                transcriptSaveResult.status === "fulfilled" &&
+                transcriptSaveResult.value.success
+              ) {
                 console.log("[Main] Transcript saved to database successfully");
-
                 // Debug: Log the full translationMeta structure
                 console.log(
                   "[Main] Full translationMeta received:",
                   JSON.stringify(translationMeta, null, 2)
                 );
-
-                // Create UI transcript for renderer notification
-                const uiTranscript = {
-                  id: transcriptData.metadata.localId,
-                  text: transcript.trim(),
-                  timestamp: new Date(),
-                  wordCount: metrics.wordCount,
-                  wpm: metrics.wordsPerMinute,
-                  originalText: translationMeta?.originalText,
-                  sourceLanguage: translationMeta?.sourceLanguage,
-                  targetLanguage: translationMeta?.targetLanguage,
-                  wasTranslated: translationMeta?.wasTranslated,
-                  confidence: translationMeta?.confidence,
-                  detectedLanguage: translationMeta?.detectedLanguage,
-                  wordCountRatio: translationMeta?.wordCountRatio,
-                };
-
-                if (
-                  windowManager.getMainWindow() &&
-                  !windowManager.getMainWindow().isDestroyed()
-                ) {
-                  // Send activity-updated event for immediate UI transcript display
-                  windowManager.sendToMain("transcript-updated", uiTranscript);
-
-                  // Send statistics-updated event for stats refresh
-                  const currentStats = dataLoaderService.getUserStats();
-                  windowManager.sendToMain("statistics-updated", currentStats);
-                }
-
-                // Send processing-complete event to recording window
-                if (
-                  windowManager.getRecordingWindow() &&
-                  !windowManager.getRecordingWindow().isDestroyed()
-                ) {
-                  windowManager.sendToRecording("processing-complete");
-
-                  // Clear processing timeout on success
-                  if (processingTimeout) {
-                    clearTimeout(processingTimeout);
-                    processingTimeout = null;
-                  }
-
-                  // Reset processing state and animate window back to compact
-                  isProcessing = false;
-                  windowManager.compactRecordingWindow();
-                }
-
-                // Update tray with latest stats
-                updateTrayMenu();
               } else {
-                console.error(
-                  "[Main] Failed to save transcript:",
-                  result.error
-                );
+                const error =
+                  transcriptSaveResult.status === "fulfilled"
+                    ? transcriptSaveResult.value.error
+                    : transcriptSaveResult.reason;
+                console.error("[Main] Failed to save transcript:", error);
               }
+
+              // Update tray with latest stats (runs in background)
+              setImmediate(() => {
+                try {
+                  updateTrayMenu();
+                } catch (error) {
+                  console.error("[Main] Error updating tray menu:", error);
+                }
+              });
             } catch (error) {
-              console.error("[Main] Error saving transcript:", error);
+              console.error(
+                "[Main] Error in optimized post-processing:",
+                error
+              );
             }
           } else {
             console.warn("[Main] Cannot save transcript: no user ID available");
@@ -1242,6 +1287,12 @@ app.on("will-quit", async () => {
   console.log("[Main] App shutting down, cleaning up services...");
 
   globalShortcut.unregisterAll();
+
+  // Stop display tracking and cleanup display manager
+  if (displayManagerService) {
+    console.log("[Main] Cleaning up display manager service");
+    displayManagerService.destroy();
+  }
 
   // Restore system audio before shutdown
   if (systemAudioManager) {
@@ -1375,16 +1426,19 @@ ipcMain.handle("compact-recording-window", () => {
 });
 
 // Information window tooltip handlers
-ipcMain.handle("show-recording-tooltip", (event, type: string, message: string) => {
-  const tooltipMessage = {
-    type: type as any, // Cast to InformationMessage type
-    title: "",
-    message,
-    duration: 2000, // Shorter duration for tooltips
-  };
-  windowManager.showInformation(tooltipMessage);
-  return { success: true };
-});
+ipcMain.handle(
+  "show-recording-tooltip",
+  (event, type: string, message: string) => {
+    const tooltipMessage = {
+      type: type as any, // Cast to InformationMessage type
+      title: "",
+      message,
+      duration: 2000, // Shorter duration for tooltips
+    };
+    windowManager.showInformation(tooltipMessage);
+    return { success: true };
+  }
+);
 
 // Permission checking handlers
 ipcMain.handle("check-accessibility-permission", async () => {
@@ -1407,6 +1461,11 @@ ipcMain.handle("request-accessibility-permission", async () => {
 ipcMain.handle("request-microphone-permission", async () => {
   const permissionsService = PermissionsService.getInstance();
   return await permissionsService.requestMicrophonePermission();
+});
+
+// Version handler
+ipcMain.handle("get-app-version", () => {
+  return app.getVersion();
 });
 
 // Auto-updater IPC handlers
@@ -1450,23 +1509,23 @@ ipcMain.handle("recording:cancel", async () => {
   try {
     // Cancel recording without processing
     if (!isRecording) return { success: false, error: "Not recording" };
-    
+
     isRecording = false;
-    
+
     // Clean up recording resources - pass false to prevent transcript processing
     sttService.stopDictation(false);
-    
+
     // Restore system audio
     if (systemAudioManager) {
       await systemAudioManager.restoreSystemAudio();
     }
-    
+
     // Reset window state
     if (windowManager.getRecordingWindow()) {
       windowManager.compactRecordingWindow();
       windowManager.sendToRecording("processing-complete");
     }
-    
+
     console.log("[Main] Recording cancelled");
     return { success: true };
   } catch (error) {

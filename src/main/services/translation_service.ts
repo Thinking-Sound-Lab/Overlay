@@ -289,82 +289,97 @@ Text to process: "${transcript}"
       const finalText = response.choices[0].message.content;
       console.log("[Translation] Raw LLM response:", finalText);
 
-      // Step 4: Calculate metrics
+      // Calculate metrics and build metadata (can be done in parallel)
       const metrics = calculateSpeechMetrics(finalText, recordingDuration);
       console.log("[Translation] Metrics:", metrics);
 
-      // Step 4.5: Update word usage for non-Pro users
-      const wordCount = this.countWords(finalText);
-      if (userData && userData.subscription_tier === "free" && wordCount > 0) {
-        try {
-          await this.dataLoaderService.updateWordUsage(wordCount);
-          console.log(`[Translation] Updated word usage: +${wordCount} words`);
-        } catch (error) {
-          console.error("[Translation] Failed to update word usage:", error);
-        }
-      }
+      // Build comprehensive metadata immediately
+      const wasTranslated =
+        settings.enableTranslation &&
+        canTranslate &&
+        settings.targetLanguage &&
+        sourceLanguage !== settings.targetLanguage;
 
-      // Step 5: Insert text and fire callback after insertion completes
-      this.insertTextNative(finalText, () => {
-        if (onComplete) {
-          // Build comprehensive metadata
-          const wasTranslated =
-            settings.enableTranslation &&
-            canTranslate &&
-            settings.targetLanguage &&
-            sourceLanguage !== settings.targetLanguage;
+      console.log("[Translation] Metadata build:", {
+        enableTranslation: settings.enableTranslation,
+        canTranslate,
+        targetLanguage: settings.targetLanguage,
+        sourceLanguage,
+        languagesDiffer: sourceLanguage !== settings.targetLanguage,
+        wasTranslated,
+      });
 
-          console.log("[Translation] Metadata build:", {
-            enableTranslation: settings.enableTranslation,
-            canTranslate,
+      const translationMeta = wasTranslated
+        ? {
+            wasTranslated: true,
+            originalText: transcript,
+            sourceLanguage: sourceLanguage,
             targetLanguage: settings.targetLanguage,
-            sourceLanguage,
-            languagesDiffer: sourceLanguage !== settings.targetLanguage,
-            wasTranslated,
-          });
+            confidence: 0.9, // High confidence for unified LLM approach
+            wordCountRatio:
+              this.countWords(transcript) === 0
+                ? 1.0
+                : this.countWords(finalText) / this.countWords(transcript),
+            detectedLanguage: sourceLanguage,
+          }
+        : { wasTranslated: false, detectedLanguage: sourceLanguage };
 
-          const translationMeta = wasTranslated
-            ? {
-                wasTranslated: true,
-                originalText: transcript,
-                sourceLanguage: sourceLanguage,
-                targetLanguage: settings.targetLanguage,
-                confidence: 0.9, // High confidence for unified LLM approach
-                wordCountRatio:
-                  this.countWords(transcript) === 0
-                    ? 1.0
-                    : this.countWords(finalText) / this.countWords(transcript),
-                detectedLanguage: sourceLanguage,
-              }
-            : { wasTranslated: false, detectedLanguage: sourceLanguage };
+      const applicationFormattingMeta =
+        settings.enableAutoDetection && canUseCustomModes
+          ? {
+              applicationBasedFormattingApplied: !!applicationSpecificPrompt,
+              selectedApplicationMode: selectedApplicationMode,
+              autoDetectionEnabled: settings.enableAutoDetection,
+              customPromptUsed:
+                selectedApplicationMode === "custom" &&
+                !!settings.customPrompt?.trim(),
+              // Application-based formatting applied
+              modeBasedFormattingApplied: !!applicationSpecificPrompt,
+            }
+          : { 
+              applicationBasedFormattingApplied: false,
+              modeBasedFormattingApplied: false 
+            };
 
-          const applicationFormattingMeta =
-            settings.enableAutoDetection && canUseCustomModes
-              ? {
-                  applicationBasedFormattingApplied: !!applicationSpecificPrompt,
-                  selectedApplicationMode: selectedApplicationMode,
-                  autoDetectionEnabled: settings.enableAutoDetection,
-                  customPromptUsed:
-                    selectedApplicationMode === "custom" &&
-                    !!settings.customPrompt?.trim(),
-                  // Application-based formatting applied
-                  modeBasedFormattingApplied: !!applicationSpecificPrompt,
-                }
-              : { 
-                  applicationBasedFormattingApplied: false,
-                  modeBasedFormattingApplied: false 
-                };
+      const combinedMeta = {
+        ...translationMeta,
+        ...applicationFormattingMeta,
+      };
 
-          const combinedMeta = {
-            ...translationMeta,
-            ...applicationFormattingMeta,
-          };
-
+      // PRIORITY: Insert text immediately with minimal delay
+      this.insertTextNative(finalText, () => {
+        // Fire callback immediately after text insertion
+        if (onComplete) {
           onComplete(metrics, finalText, combinedMeta);
         }
       });
+
+      // PARALLEL: Run background operations concurrently (don't await)
+      this.runBackgroundOperations(userData, finalText).catch(error => {
+        console.error("[Translation] Background operations failed:", error);
+      });
     } catch (error) {
       console.error("[Translation] Error in text processing pipeline:", error);
+    }
+  }
+
+  /**
+   * Run background operations in parallel (word usage updates, etc.)
+   */
+  private async runBackgroundOperations(
+    userData: any,
+    finalText: string
+  ): Promise<void> {
+    const wordCount = this.countWords(finalText);
+    
+    if (userData && userData.subscription_tier === "free" && wordCount > 0) {
+      try {
+        // This runs in background - no need to block text insertion
+        await this.dataLoaderService.updateWordUsage(wordCount);
+        console.log(`[Translation] Background: Updated word usage: +${wordCount} words`);
+      } catch (error) {
+        console.error("[Translation] Background: Failed to update word usage:", error);
+      }
     }
   }
 
@@ -519,7 +534,7 @@ Text to process: "${transcript}"
 
       // Use TextInsertionService which will use clipboard method for better Unicode support
       const success = await this.textInsertionService.insertText(text, {
-        delay: 100, // Small delay to ensure target application is ready
+        delay: 50, // Reduced delay for faster insertion
         preserveClipboard: true, // Preserve user's clipboard content
       });
 

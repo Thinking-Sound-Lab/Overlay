@@ -2,7 +2,8 @@
 import { BrowserWindow } from "electron";
 
 export class WindowAnimator {
-  private timeoutId: NodeJS.Timeout | null = null;
+  private resizeTimeoutId: NodeJS.Timeout | null = null;
+  private moveTimeoutId: NodeJS.Timeout | null = null;
 
   animateResize(
     window: BrowserWindow,
@@ -57,24 +58,31 @@ export class WindowAnimator {
       }
 
       if (progress < 1) {
-        this.timeoutId = setTimeout(animate, frameInterval);
+        this.resizeTimeoutId = setTimeout(animate, frameInterval);
       } else {
-        this.timeoutId = null;
+        this.resizeTimeoutId = null;
       }
     };
 
     // Cancel any existing animation
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
+    if (this.resizeTimeoutId) {
+      clearTimeout(this.resizeTimeoutId);
     }
 
     animate();
   }
 
-  stop() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
+  // animateMove method removed - using instant positioning for cross-display movement
+  // This avoids Electron's cross-display coordinate system issues
+
+  stop(): void {
+    if (this.resizeTimeoutId) {
+      clearTimeout(this.resizeTimeoutId);
+      this.resizeTimeoutId = null;
+    }
+    if (this.moveTimeoutId) {
+      clearTimeout(this.moveTimeoutId);
+      this.moveTimeoutId = null;
     }
   }
 }

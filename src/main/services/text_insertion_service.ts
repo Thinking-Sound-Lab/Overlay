@@ -160,9 +160,29 @@ export class TextInsertionService {
             break;
           }
           case "win32":
-            // Use nut.js for Windows automation instead of PowerShell
+            // Use nut.js for Windows automation with proper key release
             if (nutjs && nutjs.keyboard) {
-              await nutjs.keyboard.pressKey(nutjs.Key.LeftControl, nutjs.Key.V);
+              try {
+                // Press Ctrl+V
+                await nutjs.keyboard.pressKey(nutjs.Key.LeftControl, nutjs.Key.V);
+                
+                // Small delay to ensure paste operation completes
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                // Explicitly release the keys to prevent them from getting stuck
+                await nutjs.keyboard.releaseKey(nutjs.Key.LeftControl, nutjs.Key.V);
+                
+                console.log("[TextInsertion] Windows: Keys pressed and released successfully");
+              } catch (keyError) {
+                // Ensure keys are released even if paste operation fails
+                try {
+                  await nutjs.keyboard.releaseKey(nutjs.Key.LeftControl, nutjs.Key.V);
+                  console.log("[TextInsertion] Windows: Keys released after error");
+                } catch (releaseError) {
+                  console.warn("[TextInsertion] Windows: Failed to release keys after error:", releaseError);
+                }
+                throw keyError;
+              }
             } else {
               throw new Error("nut.js not available for Windows automation");
             }

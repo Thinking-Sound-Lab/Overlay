@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Platform information
   platform: process.platform,
 
+  // App version
+  getVersion: () => ipcRenderer.invoke("get-app-version"),
+
   // External API methods (Supabase & Analytics)
   // Authentication
   auth: {
@@ -348,6 +351,9 @@ declare global {
 
       // Platform information
       platform: string;
+
+      // App version
+      getVersion: () => Promise<string>;
 
       // External API methods (Supabase & Analytics)
       auth: {

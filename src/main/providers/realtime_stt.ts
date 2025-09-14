@@ -27,9 +27,7 @@ interface DeepgramTranscriptResult {
 
 export interface RealtimeSTTCallback {
   onTranscriptDelta: (delta: string, isFinal: boolean) => void;
-  onTranscriptComplete: (transcript: string, language: string) => void;
-  onSpeechStarted: () => void;
-  onSpeechStopped: () => void;
+  onFinalizeResponse: (transcript: string, language: string) => void; // New callback for immediate Finalize response
   onError: (error: Error) => void;
   onConnectionOpen: () => void;
   onConnectionClose: () => void;
@@ -192,6 +190,8 @@ export class RealtimeSTTProvider extends EventEmitter {
             "[RealtimeSTT] Final transcript from Finalize message:",
             transcript
           );
+          // Immediately trigger the Finalize response callback for instant processing
+          this.callback.onFinalizeResponse(transcript, "auto-detected");
           this.callback.onTranscriptDelta(transcript, true);
         } else if (isFinal) {
           console.log(

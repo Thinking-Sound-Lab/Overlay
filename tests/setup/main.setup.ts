@@ -12,7 +12,7 @@ jest.mock('electron', () => ({
     on: jest.fn(),
     setAsDefaultProtocolClient: jest.fn(),
     requestSingleInstanceLock: jest.fn(() => true),
-    getVersion: jest.fn(() => '1.0.0'),
+    getVersion: jest.fn(() => '1.0.2'),
   },
   ipcMain: {
     handle: jest.fn(),
