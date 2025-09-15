@@ -5,10 +5,10 @@
 
 export type ProFeature = 
   | "ai_enhancement"
-  | "realtime_mode" 
   | "translation"
   | "custom_modes"
-  | "unlimited_words";
+  | "unlimited_words"
+  | "profession_models";
 
 export interface FeatureDefinition {
   name: string;
@@ -21,11 +21,6 @@ export const PRO_FEATURES: Record<ProFeature, FeatureDefinition> = {
     name: "AI Enhancement",
     description: "Improve grammar and clarity using AI",
     settingKey: "useAI"
-  },
-  realtime_mode: {
-    name: "Real-time Mode", 
-    description: "Stream audio for immediate transcription",
-    settingKey: "enableRealtimeMode"
   },
   translation: {
     name: "Translation",
@@ -40,6 +35,11 @@ export const PRO_FEATURES: Record<ProFeature, FeatureDefinition> = {
   unlimited_words: {
     name: "Unlimited Words",
     description: "No monthly word limits on transcriptions"
+  },
+  profession_models: {
+    name: "Profession-Specific Models",
+    description: "Access to specialized transcription models for Healthcare and Finance",
+    settingKey: "profession"
   }
 };
 

@@ -1,0 +1,224 @@
+name: Manual Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # Clean up old artifacts before building new ones
+  cleanup-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Delete old artifacts
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const artifactRetentionDays = 5;
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - artifactRetentionDays);
+
+          // Get all artifacts for this repository
+          const artifacts = await github.rest.actions.listArtifactsForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            per_page: 100
+          });
+
+          // Delete artifacts older than retention period or from previous builds
+          for (const artifact of artifacts.data.artifacts) {
+            const artifactDate = new Date(artifact.created_at);
+
+            // Delete if older than retention period OR if it's a build artifact from previous runs
+            if (artifactDate < cutoffDate ||
+                ['windows-builds', 'macos-builds'].includes(artifact.name)) {
+              console.log(`Deleting artifact: ${artifact.name} (created: ${artifact.created_at})`);
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+              } catch (error) {
+                console.log(`Failed to delete artifact ${artifact.name}: ${error.message}`);
+              }
+            }
+          }
+
+  build-windows:
+    needs: cleanup-artifacts
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci --include=dev
+      env:
+        npm_config_build_from_source: false
+
+    - name: Verify electron-forge installation
+      run: |
+        npx electron-forge --version
+        echo "Electron-forge CLI verified"
+
+    - name: Create production environment file
+      run: |
+        echo "Creating .env.production file for build..."
+        echo "NODE_ENV=production" > .env.production
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env.production
+        echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env.production
+        echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env.production
+        echo "REACT_APP_POSTHOG_KEY=${{ secrets.REACT_APP_POSTHOG_KEY }}" >> .env.production
+        echo "REACT_APP_POSTHOG_HOST=${{ secrets.REACT_APP_POSTHOG_HOST }}" >> .env.production
+        echo "DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}" >> .env.production
+        echo "BASETEN_API_KEY=${{ secrets.BASETEN_API_KEY }}" >> .env.production
+        echo ".env.production file created successfully"
+
+    - name: Clean previous build artifacts
+      run: |
+        echo "Cleaning previous build artifacts..."
+        if (Test-Path "out/make") { Remove-Item -Recurse -Force "out/make" }
+        echo "Previous artifacts cleaned"
+
+    - name: Build Windows application
+      run: npm run make:win
+      env:
+        CI: true
+      timeout-minutes: 30
+
+    - name: Upload Windows builds
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-builds
+        path: out/make/
+        retention-days: 5
+
+  build-macos:
+    needs: cleanup-artifacts
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci --include=dev
+      env:
+        npm_config_build_from_source: false
+
+    - name: Verify electron-forge installation
+      run: |
+        npx electron-forge --version
+        echo "Electron-forge CLI verified"
+
+    - name: Create production environment file
+      run: |
+        echo "Creating .env.production file for build..."
+        cat > .env.production << 'EOF'
+        NODE_ENV=production
+        OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+        REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}
+        REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+        REACT_APP_POSTHOG_KEY=${{ secrets.REACT_APP_POSTHOG_KEY }}
+        REACT_APP_POSTHOG_HOST=${{ secrets.REACT_APP_POSTHOG_HOST }}
+        DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
+        BASETEN_API_KEY=${{ secrets.BASETEN_API_KEY }}
+        EOF
+        echo ".env.production file created successfully"
+
+    - name: Clean previous build artifacts
+      run: |
+        echo "Cleaning previous build artifacts..."
+        rm -rf out/make
+        echo "Previous artifacts cleaned"
+
+    - name: Build macOS application
+      run: npm run make:mac
+      env:
+        CI: true
+      timeout-minutes: 30
+
+    - name: Upload macOS builds
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-builds
+        path: out/make/
+        retention-days: 5
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Windows builds
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-builds
+        path: out/make/
+
+    - name: Download macOS builds
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-builds
+        path: out/make/
+
+    - name: Get tag name
+      id: tag
+      run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        VERSION="${{ steps.tag.outputs.tag }}"
+
+        # Check if release already exists
+        if gh release view "$VERSION" >/dev/null 2>&1; then
+          echo "Release $VERSION already exists, skipping creation"
+          exit 0
+        fi
+
+        # Create release with artifacts
+        gh release create "$VERSION" \
+          --title "Release $VERSION" \
+          --generate-notes \
+          --notes "## 🚀 Overlay $VERSION
+
+        **Manual release triggered by tag**
+
+        ### 📦 Downloads
+
+        - **Windows**: Download the \`.exe\` installer from the assets below
+        - **macOS**: Download the \`.dmg\` file from the assets below
+
+        ### 🔧 Installation Notes
+
+        - **Windows**: You may see SmartScreen warnings - click \"More info\" → \"Run anyway\" (unsigned builds)
+        - **macOS**: You may need to allow the app in System Preferences → Privacy & Security (unsigned builds)
+        - **Bug reports**: Please report issues via GitHub Issues
+
+        ### ✨ Features
+
+        - AI-powered speech-to-text transcription
+        - Cross-platform text insertion
+        - Dictionary replacements and customization
+        - Multiple window management
+        - Hotkey support (Option+Space on macOS, Ctrl+Windows+Space on Windows)" \
+          out/make/**/*

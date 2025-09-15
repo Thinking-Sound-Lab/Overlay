@@ -63,26 +63,6 @@ export const PersonalizationSettings: React.FC<SettingsComponentProps> = ({
         </div>
       </ProSettingGate>
 
-      {/* Real-time Transcription */}
-      <ProSettingGate feature="realtime_mode" label="Real-time Mode">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-medium text-gray-900">Real-time Mode</h3>
-            <p className="text-gray-600 text-sm mt-1">
-              Stream audio for immediate transcription
-            </p>
-          </div>
-          <Switch
-            checked={settings.enableRealtimeMode && hasFeatureAccess("realtime_mode")}
-            onCheckedChange={(checked) => {
-              if (hasFeatureAccess("realtime_mode")) {
-                updateSetting("enableRealtimeMode", checked);
-              }
-            }}
-            disabled={!hasFeatureAccess("realtime_mode")}
-          />
-        </div>
-      </ProSettingGate>
 
       {/* Translation */}
       <ProSettingGate feature="translation" label="Translation">

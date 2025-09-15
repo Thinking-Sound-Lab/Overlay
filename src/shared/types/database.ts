@@ -26,6 +26,7 @@ export interface DatabaseTranscriptEntry {
   word_count: number;
   wpm: number;
   created_at: string;
+  audio_file_path?: string;
   metadata?: Record<string, any>;
 }
 
@@ -42,7 +43,6 @@ export interface UserSettings {
     // Personalization section
     outputMode?: "auto-insert" | "clipboard" | "both";
     useAI?: boolean;
-    enableRealtimeMode?: boolean;
     enableTranslation?: boolean;
     targetLanguage?: string;
 

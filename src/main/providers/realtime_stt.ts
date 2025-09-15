@@ -27,9 +27,7 @@ interface DeepgramTranscriptResult {
 
 export interface RealtimeSTTCallback {
   onTranscriptDelta: (delta: string, isFinal: boolean) => void;
-  onTranscriptComplete: (transcript: string, language: string) => void;
-  onSpeechStarted: () => void;
-  onSpeechStopped: () => void;
+  onFinalizeResponse: (transcript: string, language: string) => void; // New callback for immediate Finalize response
   onError: (error: Error) => void;
   onConnectionOpen: () => void;
   onConnectionClose: () => void;
@@ -66,7 +64,7 @@ export class RealtimeSTTProvider extends EventEmitter {
 
     this.config = {
       ...config,
-      model: config.model || "nova-3",
+      model: config.model,
     };
     this.callback = callback;
 
@@ -92,12 +90,13 @@ export class RealtimeSTTProvider extends EventEmitter {
         interim_results: true,
         punctuate: true,
         smart_format: true,
-        endpointing: 300, // Increased to better handle short sentences
+        endpointing: 100, // Increased to better handle short sentences
         vad_events: true, // Enable voice activity detection events
         utterance_end_ms: 1000, // Reduced for faster processing of short sentences
         encoding: "linear16",
         sample_rate: 16000,
         channels: 1,
+        mip_opt_out: true,
       };
 
       // Create live transcription connection
@@ -179,6 +178,10 @@ export class RealtimeSTTProvider extends EventEmitter {
 
   private handleTranscriptResult(data: DeepgramTranscriptResult): void {
     console.log("[RealtimeSTT] Received transcript result:", data);
+    console.log(
+      "[RealtimeSTT] Data Channel:",
+      data.channel?.alternatives?.length
+    );
 
     if (data.channel?.alternatives?.length > 0) {
       const alternative = data.channel.alternatives[0];
@@ -192,6 +195,8 @@ export class RealtimeSTTProvider extends EventEmitter {
             "[RealtimeSTT] Final transcript from Finalize message:",
             transcript
           );
+          // Immediately trigger the Finalize response callback for instant processing
+          this.callback.onFinalizeResponse(transcript, "auto-detected");
           this.callback.onTranscriptDelta(transcript, true);
         } else if (isFinal) {
           console.log(

@@ -1,29 +1,28 @@
 /**
- * UI Model Types  
+ * UI Model Types
  * Interfaces for UI components and application state
  */
-
 
 export interface Settings {
   // General section
   language: string;
-  
-  // System section  
+  profession: string;
+
+  // System section
   dictateSoundEffects: boolean;
   muteMusicWhileDictating: boolean;
-  
+
   // Personalization section
   outputMode: "auto-insert" | "clipboard" | "both";
   useAI: boolean;
-  enableRealtimeMode: boolean;
   enableTranslation: boolean;
   targetLanguage: string;
-  
+
   // Modes section
   selectedApplicationMode: string;
   customPrompt: string;
   enableAutoDetection: boolean;
-  
+
   // Application-specific prompts (remembers user customizations for each app)
   slackPrompt: string;
   discordPrompt: string;
@@ -53,8 +52,7 @@ export interface Settings {
   browserStackoverflowPrompt: string;
   browserTwitterPrompt: string;
   browserLinkedinPrompt: string;
-  
-  
+
   // Data and Privacy section
   privacyMode: boolean;
 }
@@ -79,6 +77,7 @@ export interface UITranscriptEntry {
   confidence?: number;
   wordCountRatio?: number;
   detectedLanguage?: string;
+  audioFilePath?: string;
 }
 
 export interface Message {

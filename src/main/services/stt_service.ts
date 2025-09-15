@@ -1,6 +1,4 @@
-// STTService.ts - Main Process (Voice Model Only)
-import { createWhisperSTT } from "../providers/openai";
-import { STTClient } from "../providers/openai";
+// STTService.ts - Real-time Speech-to-Text Service (Real-time STT Only)
 import RealtimeSTTProvider, {
   RealtimeConfig,
   RealtimeSTTCallback,
@@ -9,7 +7,6 @@ import TranslationService from "./translation_service";
 import { AnalyticsService } from "./analytics_service";
 import { ApplicationMappingsConfig } from "../config/application_mappings";
 import { DataLoaderService } from "./data_loader_service";
-import { DictionaryService } from "./dictionary_service";
 import { WindowManager } from "../windows/window-manager";
 import { InformationMessage } from "../windows/types";
 import { Settings, SpeechMetrics, TranslationResult } from "../../shared/types";
@@ -17,9 +14,14 @@ import {
   hasProAccess,
   canUseWords,
 } from "../../shared/utils/subscription-permissions";
+import {
+  getDeepgramModelForProfession,
+  requiresProAccess,
+  isLanguageProfessionSupported,
+} from "../../shared/constants/professions";
+import { AudioStorageService } from "./audio_storage_service";
 
 class STTService {
-  private sttSession: STTClient;
   private realtimeProvider: RealtimeSTTProvider | null = null;
   private audioBuffer: string[] = [];
   private isRecording = false;
@@ -33,31 +35,28 @@ class STTService {
   private translationService: TranslationService;
   private analyticsService?: AnalyticsService;
   private dataLoaderService: DataLoaderService;
-  private dictionaryService?: DictionaryService;
   private accumulatedTranscript = "";
   private isProcessingTranscript = false;
   private windowManager: WindowManager | null = null;
+  private finalizeTimeout: NodeJS.Timeout | null = null;
+  private audioStorageService: AudioStorageService | null = null;
 
   constructor(
     dataLoaderService: DataLoaderService,
+    audioStorageService: AudioStorageService,
     onMetricsUpdate?: (
       metrics: SpeechMetrics,
       transcript?: string,
       translationMeta?: TranslationResult
     ) => void,
     analyticsService?: AnalyticsService,
-    windowManager?: WindowManager,
-    dictionaryService?: DictionaryService
+    windowManager?: WindowManager
   ) {
-    this.sttSession = null;
     this.realtimeProvider = null;
     this.dataLoaderService = dataLoaderService;
-    this.dictionaryService = dictionaryService;
+    this.audioStorageService = audioStorageService;
     this.onMetricsUpdate = onMetricsUpdate;
-    this.translationService = TranslationService.getInstance(
-      dataLoaderService,
-      dictionaryService
-    );
+    this.translationService = TranslationService.getInstance(dataLoaderService);
     this.analyticsService = analyticsService;
     this.windowManager = windowManager || null;
   }
@@ -73,36 +72,32 @@ class STTService {
   }
 
   /**
-   * Check if realtime mode is enabled in user settings
-   * CRITICAL: Only return true if user is authenticated AND has explicitly enabled realtime mode AND has Pro access
+   * Get current profession from DataLoaderService settings
+   */
+  private getCurrentProfession(): string {
+    const settings: Settings = this.dataLoaderService.getUserSettings();
+    const profession: string = settings.profession || "general";
+    console.log("[STT] Using current profession from settings:", profession);
+    return profession;
+  }
+
+  /**
+   * Check if user is authenticated (real-time STT is the only supported mode)
+   * Returns true only if user is authenticated
    */
   private isRealtimeModeEnabled(): boolean {
-    // First check if user is authenticated
+    // Check if user is authenticated
     const cacheInfo = this.dataLoaderService.getCacheInfo();
     if (!cacheInfo.hasUser || !cacheInfo.userId) {
-      console.log("[STT] No authenticated user - realtime mode disabled");
+      console.log("[STT] No authenticated user - STT disabled");
       return false;
     }
 
-    // Check Pro access for realtime mode
-    const userData = this.dataLoaderService.getCurrentUser();
-    if (!hasProAccess(userData, "realtime_mode")) {
-      console.log("[STT] User does not have Pro access for realtime mode");
-      return false;
-    }
-
-    // Check if we have valid user settings
-    const settings: Settings = this.dataLoaderService.getUserSettings();
-    if (!settings) {
-      console.log("[STT] No user settings available - realtime mode disabled");
-      return false;
-    }
-
-    const enabled: boolean = settings.enableRealtimeMode || false;
+    // Real-time STT is the only supported mode for all authenticated users
     console.log(
-      `[STT] User authenticated (${cacheInfo.userId}), has Pro access, realtime mode enabled in settings: ${enabled}`
+      `[STT] User authenticated (${cacheInfo.userId}) - real-time STT enabled`
     );
-    return enabled;
+    return true;
   }
 
   async initialize(): Promise<void> {
@@ -118,51 +113,53 @@ class STTService {
       `[STT] Initializing STT service for authenticated user: ${cacheInfo.userId}`
     );
 
-    // Auto-select mode based on user settings
-    if (this.isRealtimeModeEnabled()) {
-      console.log(
-        "[STT] User authenticated and realtime mode enabled - initializing realtime"
-      );
-      await this.initializeRealtime();
-    } else {
-      console.log(
-        "[STT] User authenticated but realtime mode disabled - initializing regular"
-      );
-      await this.initializeRegular();
-    }
-  }
-
-  private async initializeRegular(): Promise<void> {
-    const language: string = this.getCurrentLanguage();
-
-    const handleMessage = (message: any) => {
-      if (message.type === "transcription.completed") {
-        console.log("[STT] Final transcript:", message.transcript);
-        this.processTranscript(message.transcript, message.language);
-      }
-    };
-
-    this.sttSession = await createWhisperSTT({
-      language: language,
-      callback: {
-        onmessage: handleMessage,
-        onerror: (error) => {
-          console.error("[STT] Error:", error);
-          this.isRecording = false; // Reset recording state on error
-        },
-        onclose: () => console.log("[STT] Session closed"),
-      },
-    });
+    // Real-time STT is the only supported mode - initialize real-time provider
+    console.log("[STT] User authenticated - initializing real-time STT");
+    await this.initializeRealtime();
   }
 
   async initializeRealtime(): Promise<void> {
     const language: string = this.getCurrentLanguage();
-    console.log(`[STT] Initializing realtime mode with language: ${language}`);
+    const profession: string = this.getCurrentProfession();
+
+    // Check if user has access to profession-specific models and language compatibility
+    const userData = this.dataLoaderService.getCurrentUser();
+    let selectedModel: string;
+    let effectiveProfession = profession;
+
+    // Check language compatibility first
+    if (!isLanguageProfessionSupported(language, profession)) {
+      console.log(
+        `[STT] Profession ${profession} requires English but language is ${language}, falling back to general`
+      );
+      effectiveProfession = "general";
+    }
+
+    // Get model for effective profession
+    selectedModel = getDeepgramModelForProfession(
+      effectiveProfession,
+      language
+    );
+
+    // Check Pro access for specialized models
+    if (
+      requiresProAccess(effectiveProfession) &&
+      !hasProAccess(userData, "profession_models")
+    ) {
+      console.log(
+        `[STT] User lacks Pro access for profession model ${selectedModel}, falling back to nova-2`
+      );
+      selectedModel = "nova-2";
+    }
+
+    console.log(
+      `[STT] Initializing realtime mode with language: ${language}, profession: ${profession}, model: ${selectedModel}`
+    );
 
     const config: RealtimeConfig = {
       language: language,
       apiKey: process.env.DEEPGRAM_API_KEY || "",
-      model: "nova-2",
+      model: selectedModel,
     };
 
     const realtimeCallback: RealtimeSTTCallback = {
@@ -177,51 +174,52 @@ class STTService {
         // Deltas are just accumulated for completeness
         this.processStreamingTranscript(delta, isFinal, language);
       },
-      onTranscriptComplete: (transcript: string, language: string) => {
-        void language; // Unused parameter required by callback interface
-        console.log(
-          "[STT] Realtime final transcript from Finalize:",
-          transcript
-        );
-        // This is the complete transcript from the entire recording session
-        // if (transcript && transcript.trim()) {
-        //   this.accumulatedTranscript = transcript.trim();
-        //   console.log(
-        //     "[STT] Final transcript received:",
-        //     this.accumulatedTranscript.length,
-        //     "chars"
-        //   );
-        //   console.log("[STT] Complete transcript:", this.accumulatedTranscript);
-        // }
-      },
-      onSpeechStarted: () => {
-        console.log("[STT] Realtime speech started");
-        this.isRecording = true;
+      onFinalizeResponse: async (transcript: string, language: string) => {
+        console.log("[STT] Immediate Finalize response received:", transcript);
 
-        // With Finalize approach, speech detection is just for logging
-        // The complete transcript will only come from the Finalize message
-        console.log(
-          "[STT] Speech detected - waiting for Finalize message for complete transcript"
-        );
-
-        if (this.analyticsService && process.env.NODE_ENV === "production") {
-          this.analyticsService.trackRecordingStarted();
+        // Clear the error timeout since we got a response
+        if (this.finalizeTimeout) {
+          clearTimeout(this.finalizeTimeout);
+          this.finalizeTimeout = null;
         }
-      },
-      onSpeechStopped: () => {
-        console.log("[STT] Realtime speech stopped (natural pause)");
-        this.isRecording = false;
 
-        // With Finalize approach, speech stops are just natural pauses
-        // Processing only happens when Finalize message is sent
-        console.log(
-          "[STT] Natural speech pause - transcript will be complete when user stops recording"
-        );
+        // Process transcript immediately when Finalize response is received
+        if (!this.isProcessingTranscript) {
+          console.log(
+            "[STT] Processing transcript immediately from Finalize response:",
+            transcript.length,
+            "chars"
+          );
+          this.isProcessingTranscript = true;
+          this.accumulatedTranscript =
+            this.accumulatedTranscript + transcript.trim();
 
-        if (this.analyticsService && process.env.NODE_ENV === "production") {
-          const recordingDuration =
-            (Date.now() - this.recordingStartTime) / 1000;
-          this.analyticsService.trackRecordingStopped(recordingDuration);
+          try {
+            await this.processTranscript(this.accumulatedTranscript, language);
+            // Clear after successful processing
+            this.accumulatedTranscript = "";
+          } finally {
+            this.isProcessingTranscript = false;
+          }
+        } else if (this.isProcessingTranscript) {
+          console.log(
+            "[STT] Transcript processing already in progress, skipping immediate processing"
+          );
+        } else {
+          console.log("[STT] Empty transcript from Finalize response");
+
+          // Handle empty transcript case
+          if (this.windowManager) {
+            const message: InformationMessage = {
+              type: "empty-transcript",
+              title: "Empty Transcript",
+              message: "No speech was detected in the recording",
+              duration: 3000,
+            };
+            this.windowManager.showInformation(message);
+            this.windowManager.sendToRecording("processing-complete");
+            this.windowManager.compactRecordingWindow();
+          }
         }
       },
       onError: (error: Error) => {
@@ -257,18 +255,12 @@ class STTService {
     }
 
     const newLanguage: string = this.getCurrentLanguage();
-    const isRealtimeEnabled: boolean = this.isRealtimeModeEnabled();
 
     console.log(
-      `[STT] Reinitializing for authenticated user ${cacheInfo.userId} with language: ${newLanguage}, realtime: ${isRealtimeEnabled}`
+      `[STT] Reinitializing for authenticated user ${cacheInfo.userId} with language: ${newLanguage} (real-time mode)`
     );
 
     // Close existing sessions first
-    if (this.sttSession) {
-      this.sttSession.close();
-      this.sttSession = null;
-    }
-
     if (this.realtimeProvider) {
       console.log(
         "[STT] Cleaning up existing realtime provider and stopping all reconnections"
@@ -290,7 +282,7 @@ class STTService {
     await this.initialize();
 
     console.log(
-      `[STT] Successfully reinitialized with language: ${newLanguage}, mode: ${isRealtimeEnabled ? "realtime" : "regular"}`
+      `[STT] Successfully reinitialized with language: ${newLanguage} (real-time mode)`
     );
   }
 
@@ -305,19 +297,18 @@ class STTService {
 
     if (!this.isRecording) return;
 
-    // Always buffer audio for fallback purposes, even in realtime mode
+    // Buffer audio and send to real-time provider
     this.audioBuffer.push(audioData);
 
-    if (this.isRealtimeModeEnabled() && this.realtimeProvider?.isReady()) {
+    if (this.realtimeProvider?.isReady()) {
       // Send audio chunk immediately to realtime provider
       this.realtimeProvider.sendAudioChunk(audioData);
       console.log(
         `[STT] Streaming audio chunk to realtime for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
       );
     } else {
-      // Buffer for batch processing in regular mode
       console.log(
-        `[STT] Buffering audio chunk for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
+        `[STT] Real-time provider not ready, buffering audio chunk for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
       );
     }
   }
@@ -419,75 +410,57 @@ class STTService {
       // Set recording duration BEFORE processing transcript so metrics calculation is correct
       this.lastRecordingDuration = recordingDuration;
 
-      if (this.isRealtimeModeEnabled()) {
-        // In realtime mode, send Finalize message and wait for response
-        console.log("[STT] Realtime mode - sending Finalize message");
-
-        if (this.realtimeProvider) {
-          this.realtimeProvider.commitAudio();
-        }
-
-        setTimeout(async () => {
-          if (
-            this.accumulatedTranscript &&
-            this.accumulatedTranscript.trim().length > 0 &&
-            !this.isProcessingTranscript
-          ) {
-            console.log(
-              "[STT] Processing final transcript from Finalize:",
-              this.accumulatedTranscript.length,
-              "chars"
-            );
-            this.isProcessingTranscript = true;
-
-            try {
-              await this.processTranscript(
-                this.accumulatedTranscript,
-                this.getCurrentLanguage()
-              );
-
-              // Clear after successful processing
-              this.accumulatedTranscript = "";
-            } finally {
-              this.isProcessingTranscript = false;
-            }
-          } else if (this.isProcessingTranscript) {
-            console.log(
-              "[STT] Transcript processing already in progress, skipping"
-            );
-          } else {
-            console.log("[STT] No final transcript received from Finalize");
-
-            // Notify information window about empty transcript
-            if (this.windowManager) {
-              console.log(
-                "[STT] Notifying information window about empty transcript"
-              );
-
-              const message: InformationMessage = {
-                type: "empty-transcript",
-                title: "Empty Transcript",
-                message: "No speech was detected in the recording",
-                duration: 3000,
-              };
-              this.windowManager.showInformation(message);
-            }
-
-            // Send processing-complete to recording window to reset UI
-            if (this.windowManager) {
-              this.windowManager.sendToRecording("processing-complete");
-              this.windowManager.compactRecordingWindow();
-            }
-          }
-        }, 500);
-      } else {
-        // In regular mode, send accumulated audio to Whisper
-        if (this.sttSession) {
-          await this.sttSession.processAudio(this.audioBuffer);
-        } else {
-          console.error("[STT] No STT session available for processing audio");
-        }
+      // Store audio temporarily in AudioStorageService for later upload
+      if (this.audioStorageService && this.audioBuffer.length > 0) {
+        this.audioStorageService.storeTempAudio(this.audioBuffer);
       }
+
+      // Real-time mode - send Finalize message and wait for response
+      console.log("[STT] Real-time mode - sending Finalize message");
+
+      if (this.realtimeProvider) {
+        this.realtimeProvider.commitAudio();
+      }
+
+      // Set timeout to handle case where onFinalizeResponse never gets called
+      this.finalizeTimeout = setTimeout(async () => {
+        console.log("[STT] Finalize timeout - no response from Deepgram");
+
+        if (
+          this.accumulatedTranscript &&
+          this.accumulatedTranscript.trim().length > 0
+        ) {
+          try {
+            await this.processTranscript(
+              this.accumulatedTranscript,
+              "auto-detected"
+            );
+          } finally {
+            this.isProcessingTranscript = false;
+            this.finalizeTimeout = null;
+            this.isRecording = false;
+          }
+
+          return;
+        }
+
+        // Show "transcript not found" error and reset UI
+        if (this.windowManager) {
+          const message: InformationMessage = {
+            type: "empty-transcript",
+            title: "Transcript Not Found",
+            message: "Unable to process the recording. Please try again.",
+            duration: 3000,
+          };
+          this.windowManager.showInformation(message);
+          this.windowManager.sendToRecording("processing-complete");
+          this.windowManager.compactRecordingWindow();
+        }
+
+        // Reset state
+        this.isProcessingTranscript = false;
+        this.finalizeTimeout = null;
+      }, 2000); // 2 second timeout for error case
     } catch (error) {
       console.error("[STT] Error processing audio:", error);
     }
@@ -515,15 +488,6 @@ class STTService {
       );
       this.audioBuffer = [];
       this.accumulatedTranscript = "";
-
-      // Disconnect realtime provider to stop any pending processing
-      //   if (this.realtimeProvider && this.isRealtimeModeEnabled()) {
-      //     console.log("[STT] Disconnecting realtime provider to prevent transcript processing");
-      //     this.realtimeProvider.disconnect();
-      //   }
-
-      // Send processing-complete to reset UI
-      //   this.windowManager.sendToRecording("processing-complete");
     }
   }
 
@@ -622,15 +586,13 @@ class STTService {
 
     this.isRecording = false;
 
-    // Close regular STT session
-    if (this.sttSession) {
-      try {
-        this.sttSession.close();
-      } catch (error) {
-        console.warn("[STT] Error closing regular STT session:", error);
-      }
-      this.sttSession = null;
+    // Clear finalize timeout
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
     }
+
+    // Real-time STT is the only mode - no regular STT session to close
 
     // Close realtime provider with explicit cleanup
     if (this.realtimeProvider) {
@@ -688,13 +650,10 @@ class STTService {
       console.log("[STT] Processing buffered audio with fallback method");
 
       try {
-        // Initialize regular STT for fallback
-        await this.initializeFallback();
-
-        // Process the buffered audio
-        if (this.sttSession) {
-          await this.sttSession.processAudio(this.audioBuffer);
-        }
+        // No fallback processing available - real-time STT is the only mode
+        console.error(
+          "[STT] Cannot process buffered audio - no fallback method available"
+        );
       } catch (fallbackError) {
         console.error("[STT] Fallback processing also failed:", fallbackError);
       }
@@ -704,32 +663,6 @@ class STTService {
     setTimeout(() => {
       this.attemptRealtimeReconnection();
     }, 5000);
-  }
-
-  private async initializeFallback(): Promise<void> {
-    const language: string = this.getCurrentLanguage();
-    console.log(
-      "[STT] Initializing fallback STT session with language:",
-      language
-    );
-
-    const handleMessage = (message: any) => {
-      if (message.type === "transcription.completed") {
-        console.log("[STT] Fallback transcript:", message.transcript);
-        this.processTranscript(message.transcript, message.language);
-      }
-    };
-
-    this.sttSession = await createWhisperSTT({
-      language: language,
-      callback: {
-        onmessage: handleMessage,
-        onerror: (error) => {
-          console.error("[STT] Fallback error:", error);
-        },
-        onclose: () => console.log("[STT] Fallback session closed"),
-      },
-    });
   }
 
   private async attemptRealtimeReconnection(): Promise<void> {
@@ -742,12 +675,8 @@ class STTService {
       return;
     }
 
-    if (!this.isRealtimeModeEnabled()) {
-      console.log(
-        "[STT] Realtime mode not enabled - aborting reconnection attempt"
-      );
-      return;
-    }
+    // Real-time mode is always enabled for authenticated users
+    // No need to check isRealtimeModeEnabled() since we already checked authentication above
 
     console.log(
       `[STT] Attempting realtime reconnection for authenticated user: ${cacheInfo.userId}`
@@ -765,10 +694,14 @@ class STTService {
       console.log("[STT] Realtime reconnection successful");
     } catch (error) {
       console.error("[STT] Realtime reconnection failed:", error);
-      console.log("[STT] Falling back to regular STT mode permanently");
+      console.log(
+        "[STT] Real-time reconnection failed - no fallback available"
+      );
 
-      // Permanently fall back to regular mode
-      await this.initializeFallback();
+      // No fallback mode available - real-time STT is the only supported mode
+      console.error(
+        "[STT] Cannot fall back to regular STT - real-time mode is required"
+      );
     }
   }
 
@@ -789,6 +722,12 @@ class STTService {
     this.lastRecordingDuration = 0;
     this.recordingStartTime = 0;
 
+    // Clear finalize timeout
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
+    }
+
     // Close any active connections with explicit cleanup
     if (this.realtimeProvider) {
       console.log(
@@ -805,15 +744,7 @@ class STTService {
       this.realtimeProvider = null;
     }
 
-    // Close regular STT session
-    if (this.sttSession) {
-      try {
-        this.sttSession.close();
-      } catch (error) {
-        console.warn("[STT] Error closing STT session during reset:", error);
-      }
-      this.sttSession = null;
-    }
+    // Real-time STT is the only mode - no regular STT session to close
 
     console.log("[STT] Runtime data reset completed - all connections closed");
   }

@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Platform information
   platform: process.platform,
 
+  // App version
+  getVersion: () => ipcRenderer.invoke("get-app-version"),
+
   // External API methods (Supabase & Analytics)
   // Authentication
   auth: {
@@ -105,6 +108,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("db:saveTranscript", transcript),
     getTranscripts: (limit?: number, offset?: number) =>
       ipcRenderer.invoke("db:getTranscripts", limit, offset),
+    downloadAudio: (audioFilePath: string) =>
+      ipcRenderer.invoke("db:downloadAudio", audioFilePath),
     saveUserSettings: (settings: any) =>
       ipcRenderer.invoke("db:saveUserSettings", settings),
     getUserSettings: () => ipcRenderer.invoke("db:getUserSettings"),
@@ -240,6 +245,13 @@ ipcRenderer.on("auth-state-changed", (_, authState) => {
   );
 });
 
+ipcRenderer.on("loading-state-changed", (_, loadingState) => {
+  console.log("Preload: Received loading-state-changed event:", loadingState);
+  window.dispatchEvent(
+    new CustomEvent("loading-state-changed", { detail: loadingState })
+  );
+});
+
 ipcRenderer.on("activity-updated", (_, activity) => {
   console.log("Preload: Received activity-updated event:", activity);
   window.dispatchEvent(
@@ -349,6 +361,9 @@ declare global {
       // Platform information
       platform: string;
 
+      // App version
+      getVersion: () => Promise<string>;
+
       // External API methods (Supabase & Analytics)
       auth: {
         signInWithMagicLink: (email: string) => Promise<any>;
@@ -366,6 +381,7 @@ declare global {
       db: {
         saveTranscript: (transcript: any) => Promise<any>;
         getTranscripts: (limit?: number, offset?: number) => Promise<any>;
+        downloadAudio: (audioFilePath: string) => Promise<any>;
         saveUserSettings: (settings: any) => Promise<any>;
         getUserSettings: () => Promise<any>;
         getUserStats: () => Promise<any>;

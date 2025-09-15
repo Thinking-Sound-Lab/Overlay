@@ -309,6 +309,41 @@ ALTER TABLE public.user_profiles
 ALTER COLUMN name SET NOT NULL;
 ```
 
+### Audio Storage Migration
+
+```sql
+-- Add audio_file_path column to transcripts table for audio download functionality
+ALTER TABLE public.transcripts
+ADD COLUMN IF NOT EXISTS audio_file_path TEXT;
+
+-- Create audio-recordings storage bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('audio-recordings', 'audio-recordings', false);
+
+-- Enable RLS on storage.objects for the audio-recordings bucket
+CREATE POLICY "Users can view own audio files" ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'audio-recordings' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can insert own audio files" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'audio-recordings' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can delete own audio files" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'audio-recordings' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Grant authenticated users access to the bucket
+CREATE POLICY "Authenticated users can access audio bucket" ON storage.buckets
+  FOR SELECT TO authenticated USING (id = 'audio-recordings');
+```
+
 ## Setup Instructions
 
 1. Create a new Supabase project at https://supabase.com

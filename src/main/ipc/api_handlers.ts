@@ -68,6 +68,7 @@ export class APIHandlers {
     // Database handlers
     ipcMain.handle("db:saveTranscript", this.handleSaveTranscript.bind(this));
     ipcMain.handle("db:getTranscripts", this.handleGetTranscripts.bind(this));
+    ipcMain.handle("db:downloadAudio", this.handleDownloadAudio.bind(this));
     ipcMain.handle(
       "db:saveUserSettings",
       this.handleSaveUserSettings.bind(this)
@@ -373,6 +374,26 @@ export class APIHandlers {
 
     try {
       const result = await this.dataLoaderService.getTranscripts(limit, offset);
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleDownloadAudio(
+    event: any,
+    audioFilePath: string
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    if (!audioFilePath) {
+      return this.createResponse(null, new Error("Audio file path is required"));
+    }
+
+    try {
+      const result = await this.dataLoaderService.downloadAudio(audioFilePath);
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -888,6 +909,7 @@ export class APIHandlers {
     ipcMain.removeAllListeners("auth:completeOnboarding");
     ipcMain.removeAllListeners("db:saveTranscript");
     ipcMain.removeAllListeners("db:getTranscripts");
+    ipcMain.removeAllListeners("db:downloadAudio");
     ipcMain.removeAllListeners("db:saveUserSettings");
     ipcMain.removeAllListeners("db:getUserSettings");
     ipcMain.removeAllListeners("db:getUserStats");

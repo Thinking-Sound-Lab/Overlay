@@ -28,17 +28,19 @@ import {
 } from "../shared/types";
 import { WindowManager } from "./windows/window-manager";
 import { ExternalAPIManager } from "./services/external_api_manager";
+import { DisplayManagerService } from "./services/display_manager_service";
 import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
-import { DictionaryService } from "./services/dictionary_service";
 import {
   SUPPORTED_LANGUAGES,
   getLanguageDisplayName,
 } from "../shared/constants/languages";
 import MicrophoneService from "./services/microphone_service";
 import { PermissionsService } from "./services/permissions_service";
+import { AudioStorageService } from "./services/audio_storage_service";
+import { v4 as uuidv4 } from "uuid";
 // Webpack entry points
 // declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 // declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -48,6 +50,7 @@ import { PermissionsService } from "./services/permissions_service";
 // declare const INFORMATION_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 let windowManager: WindowManager;
+let displayManagerService: DisplayManagerService;
 let tray: Tray | null = null;
 let isRecording = false;
 let isProcessing = false;
@@ -65,6 +68,7 @@ let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
 // AuthStateManager replaced by DataLoaderService
 let systemAudioManager: SystemAudioManager | null = null;
+let audioStorageService: AudioStorageService | null = null;
 
 // Auto-updater configuration
 autoUpdater.checkForUpdatesAndNotify =
@@ -178,6 +182,13 @@ const sendAuthStateToRenderer = async (
       statistics: eventData.statistics,
     });
 
+    // Send loading completion along with auth state
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: false,
+      message: "",
+      source
+    });
+
     windowManager.sendToMain("auth-state-changed", eventData);
   } catch (error) {
     console.error(
@@ -221,6 +232,13 @@ const sendUnauthenticatedStateToRenderer = (
       }
     );
 
+    // Send loading completion along with unauthenticated state
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: false,
+      message: "",
+      source
+    });
+
     windowManager.sendToMain("auth-state-changed", eventData);
   } catch (error) {
     console.error(
@@ -249,6 +267,17 @@ const handleAuthenticationSuccess = async (
     `[Main] Handling authentication success for ${user.email} (${source})`
   );
 
+  // Send loading state to renderer to show proper loading screen
+  const mainWindow = windowManager.getMainWindow();
+  if (mainWindow) {
+    console.log(`[Main] Sending loading state to renderer (${source})`);
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: true,
+      message: "Loading user data...",
+      source
+    });
+  }
+
   try {
     // Check if we already have data for this user to avoid unnecessary reloading
     const cachedUserId = dataLoaderService?.getCacheInfo()?.userId;
@@ -256,16 +285,42 @@ const handleAuthenticationSuccess = async (
 
     if (cachedUserId === user.id) {
       console.log(`[Main] Using existing data for user ${user.id} (cache hit)`);
+      // Send progress update
+      if (mainWindow) {
+        windowManager.sendToMain("loading-state-changed", {
+          isLoading: true,
+          message: "Refreshing user data...",
+          source
+        });
+      }
       // Still refresh to ensure we have latest data, but log it as optimization opportunity
       userData = await dataLoaderService?.loadUserData(user.id);
     } else {
       console.log(`[Main] Loading fresh data for new user ${user.id}`);
+      // Send progress update
+      if (mainWindow) {
+        windowManager.sendToMain("loading-state-changed", {
+          isLoading: true,
+          message: "Initializing user data...",
+          source
+        });
+      }
       userData = await dataLoaderService?.initializeUserData(user.id);
     }
 
     if (userData) {
       AuthUtils.setAuthenticationState(true);
       await sendAuthStateToRenderer(userData, source);
+
+      // Identify user for analytics - must happen before any events are tracked
+      if (externalAPIManager?.analytics && userData.user?.id) {
+        console.log(`[Main] Identifying user for analytics: ${userData.user.email} (${source})`);
+        externalAPIManager.analytics.identify(userData.user.id, {
+          email: userData.user.email,
+          onboarding_completed: userData.user.onboarding_completed,
+          source: source
+        });
+      }
 
       // Initialize authenticated services
       if (!windowManager.getRecordingWindow()) {
@@ -351,6 +406,12 @@ const handleAuthenticationFailure = (
   ) {
     console.log("[Main] Closing recording window due to logout");
     windowManager.getRecordingWindow().close();
+  }
+
+  // Track sign-out and clear analytics user context
+  if (externalAPIManager?.analytics) {
+    console.log(`[Main] Tracking user sign-out and clearing analytics context (${source})`);
+    externalAPIManager.analytics.trackUserSignOut();
   }
 
   // Clear all user data
@@ -564,6 +625,31 @@ const buildLanguageSubmenu = (): Electron.MenuItemConstructorOptions[] => {
   } catch (error) {
     console.error("[Tray] Failed to build language submenu:", error);
     return [];
+  }
+};
+
+/**
+ * Optimized UI update function that runs concurrently with database operations
+ */
+const updateUIWithOptimization = async (
+  windowManager: WindowManager,
+  uiTranscript: UITranscriptEntry,
+  dataLoaderService: DataLoaderService
+) => {
+  try {
+    if (
+      windowManager.getMainWindow() &&
+      !windowManager.getMainWindow().isDestroyed()
+    ) {
+      // Send immediate transcript update
+      windowManager.sendToMain("transcript-updated", uiTranscript);
+
+      // Fetch and send updated stats
+      const currentStats = dataLoaderService.getUserStats();
+      windowManager.sendToMain("statistics-updated", currentStats);
+    }
+  } catch (error) {
+    console.error("[Main] Error in UI optimization update:", error);
   }
 };
 
@@ -810,7 +896,7 @@ const stopRecording = async () => {
       // Reset processing state - window management moved to handleMetricsUpdate
       isProcessing = false;
     }
-  }, 500);
+  }, 0);
 };
 
 // ----------- App Lifecycle -----------
@@ -998,12 +1084,22 @@ app.whenReady().then(async () => {
     // Initialize window manager first
     windowManager = new WindowManager();
 
+    // Initialize display manager service
+    displayManagerService = DisplayManagerService.getInstance();
+
+    // Connect display manager service to window manager
+    windowManager.initializeDisplayTracking(displayManagerService);
+
+    // Start display tracking immediately so DisplayManagerService knows current display
+    displayManagerService.startTracking();
+
     // Initialize external API manager and handlers
     externalAPIManager = new ExternalAPIManager();
     apiHandlers = new APIHandlers(externalAPIManager, windowManager);
     dataLoaderService = DataLoaderService.getInstance(
       externalAPIManager.supabase
     );
+    audioStorageService = new AudioStorageService(externalAPIManager.supabase);
 
     // Initialize system audio manager
     systemAudioManager = new SystemAudioManager();
@@ -1014,12 +1110,11 @@ app.whenReady().then(async () => {
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
 
-    // Initialize STT service with analytics and dictionary support
-    const dictionaryService = DictionaryService.getInstance(
-      externalAPIManager.supabase
-    );
+    // Initialize STT service with analytics support
+    // Note: DictionaryService is initialized within TranslationService.getInstance()
     sttService = new STTService(
       dataLoaderService,
+      audioStorageService,
       async (
         metrics: SpeechMetrics,
         transcript?: string,
@@ -1055,30 +1150,40 @@ app.whenReady().then(async () => {
               confidence: translationMeta?.confidence,
               word_count: metrics.wordCount,
               wpm: metrics.wordsPerMinute,
+              audio_file_path: undefined,
               metadata: {
-                localId: Date.now().toString(),
                 detectedLanguage: translationMeta?.detectedLanguage,
                 wordCountRatio: translationMeta?.wordCountRatio,
               },
             };
 
             try {
-              // Save transcript using DataLoaderService (DB-first approach)
-              const result =
+              // IMMEDIATE: Send processing-complete to recording window first
+              if (
+                windowManager.getRecordingWindow() &&
+                !windowManager.getRecordingWindow().isDestroyed()
+              ) {
+                windowManager.sendToRecording("processing-complete");
+
+                // Clear processing timeout on success
+                if (processingTimeout) {
+                  clearTimeout(processingTimeout);
+                  processingTimeout = null;
+                }
+
+                // Reset processing state and animate window back to compact
+                isProcessing = false;
+                windowManager.compactRecordingWindow();
+              }
+
+              // First: Save transcript to database
+              const transcriptSaveResult =
                 await dataLoaderService.addTranscript(transcriptData);
 
-              if (result.success) {
-                console.log("[Main] Transcript saved to database successfully");
-
-                // Debug: Log the full translationMeta structure
-                console.log(
-                  "[Main] Full translationMeta received:",
-                  JSON.stringify(translationMeta, null, 2)
-                );
-
-                // Create UI transcript for renderer notification
+              if (transcriptSaveResult.success && transcriptSaveResult.transcriptId) {
+                // Create UI transcript using database ID as source of truth
                 const uiTranscript = {
-                  id: transcriptData.metadata.localId,
+                  id: transcriptSaveResult.transcriptId,
                   text: transcript.trim(),
                   timestamp: new Date(),
                   wordCount: metrics.wordCount,
@@ -1090,48 +1195,126 @@ app.whenReady().then(async () => {
                   confidence: translationMeta?.confidence,
                   detectedLanguage: translationMeta?.detectedLanguage,
                   wordCountRatio: translationMeta?.wordCountRatio,
+                  audioFilePath: undefined as string | undefined,
                 };
+                console.log("[Main] Transcript saved to database successfully");
 
-                if (
-                  windowManager.getMainWindow() &&
-                  !windowManager.getMainWindow().isDestroyed()
-                ) {
-                  // Send activity-updated event for immediate UI transcript display
-                  windowManager.sendToMain("transcript-updated", uiTranscript);
+                // Send immediate transcript update to UI with database ID
+                updateUIWithOptimization(
+                  windowManager,
+                  uiTranscript,
+                  dataLoaderService
+                );
 
-                  // Send statistics-updated event for stats refresh
-                  const currentStats = dataLoaderService.getUserStats();
-                  windowManager.sendToMain("statistics-updated", currentStats);
+                // Start background audio upload in worker thread to avoid blocking
+                const cacheInfo = dataLoaderService.getCacheInfo();
+                if (cacheInfo.userId && audioStorageService) {
+                  console.log("[Main] Starting background audio upload");
+                  setImmediate(async () => {
+                    try {
+                      // Generate UUID for audio file
+                      const audioTranscriptId = uuidv4();
+
+                      const uploadResult =
+                        await audioStorageService.uploadStoredAudio(
+                          cacheInfo.userId,
+                          audioTranscriptId
+                        );
+
+                      if (uploadResult.success && uploadResult.audioFilePath) {
+                        console.log(
+                          "[Main] Audio upload successful:",
+                          uploadResult.audioFilePath
+                        );
+
+                        // Update database with audio path
+                        const updateResult = await dataLoaderService.updateTranscriptAudioPath(
+                          transcriptSaveResult.transcriptId,
+                          uploadResult.audioFilePath
+                        );
+
+                        if (updateResult.success) {
+                          console.log("[Main] Database updated with audio path successfully");
+
+                          // Update the UI transcript with audio path and send complete data
+                          const updatedUITranscript = {
+                            ...uiTranscript,
+                            audioFilePath: uploadResult.audioFilePath,
+                          };
+
+                          // Send complete transcript update with audio path
+                          updateUIWithOptimization(
+                            windowManager,
+                            updatedUITranscript,
+                            dataLoaderService
+                          );
+
+                          console.log(
+                            "[Main] Sent complete transcript update with audio to UI:",
+                            uiTranscript.id
+                          );
+                        } else {
+                          console.error("[Main] Failed to update database with audio path:", updateResult.error);
+                          // Send transcript update without audio path
+                          updateUIWithOptimization(
+                            windowManager,
+                            uiTranscript,
+                            dataLoaderService
+                          );
+                        }
+                      } else {
+                        console.log(
+                          "[Main] Audio upload failed, sending transcript without audio:",
+                          uploadResult.error
+                        );
+                        // Send transcript update without audio path
+                        updateUIWithOptimization(
+                          windowManager,
+                          uiTranscript,
+                          dataLoaderService
+                        );
+                      }
+                    } catch (error) {
+                      console.error(
+                        "[Main] Background audio upload failed:",
+                        error
+                      );
+                      // Send transcript update without audio path on error
+                      updateUIWithOptimization(
+                        windowManager,
+                        uiTranscript,
+                        dataLoaderService
+                      );
+                    }
+                  });
+                } else {
+                  // No audio service available, send transcript without audio
+                  updateUIWithOptimization(
+                    windowManager,
+                    uiTranscript,
+                    dataLoaderService
+                  );
                 }
-
-                // Send processing-complete event to recording window
-                if (
-                  windowManager.getRecordingWindow() &&
-                  !windowManager.getRecordingWindow().isDestroyed()
-                ) {
-                  windowManager.sendToRecording("processing-complete");
-
-                  // Clear processing timeout on success
-                  if (processingTimeout) {
-                    clearTimeout(processingTimeout);
-                    processingTimeout = null;
-                  }
-
-                  // Reset processing state and animate window back to compact
-                  isProcessing = false;
-                  windowManager.compactRecordingWindow();
-                }
-
-                // Update tray with latest stats
-                updateTrayMenu();
               } else {
                 console.error(
                   "[Main] Failed to save transcript:",
-                  result.error
+                  transcriptSaveResult.error
                 );
               }
+
+              // Update tray with latest stats (runs in background)
+              setImmediate(() => {
+                try {
+                  updateTrayMenu();
+                } catch (error) {
+                  console.error("[Main] Error updating tray menu:", error);
+                }
+              });
             } catch (error) {
-              console.error("[Main] Error saving transcript:", error);
+              console.error(
+                "[Main] Error in optimized post-processing:",
+                error
+              );
             }
           } else {
             console.warn("[Main] Cannot save transcript: no user ID available");
@@ -1147,8 +1330,7 @@ app.whenReady().then(async () => {
         }
       },
       externalAPIManager.analytics,
-      windowManager,
-      dictionaryService
+      windowManager
     );
 
     // Register auth state callback with hybrid approach for renderer synchronization
@@ -1242,6 +1424,12 @@ app.on("will-quit", async () => {
   console.log("[Main] App shutting down, cleaning up services...");
 
   globalShortcut.unregisterAll();
+
+  // Stop display tracking and cleanup display manager
+  if (displayManagerService) {
+    console.log("[Main] Cleaning up display manager service");
+    displayManagerService.destroy();
+  }
 
   // Restore system audio before shutdown
   if (systemAudioManager) {
@@ -1375,16 +1563,19 @@ ipcMain.handle("compact-recording-window", () => {
 });
 
 // Information window tooltip handlers
-ipcMain.handle("show-recording-tooltip", (event, type: string, message: string) => {
-  const tooltipMessage = {
-    type: type as any, // Cast to InformationMessage type
-    title: "",
-    message,
-    duration: 2000, // Shorter duration for tooltips
-  };
-  windowManager.showInformation(tooltipMessage);
-  return { success: true };
-});
+ipcMain.handle(
+  "show-recording-tooltip",
+  (event, type: string, message: string) => {
+    const tooltipMessage = {
+      type: type as any, // Cast to InformationMessage type
+      title: "",
+      message,
+      duration: 2000, // Shorter duration for tooltips
+    };
+    windowManager.showInformation(tooltipMessage);
+    return { success: true };
+  }
+);
 
 // Permission checking handlers
 ipcMain.handle("check-accessibility-permission", async () => {
@@ -1407,6 +1598,11 @@ ipcMain.handle("request-accessibility-permission", async () => {
 ipcMain.handle("request-microphone-permission", async () => {
   const permissionsService = PermissionsService.getInstance();
   return await permissionsService.requestMicrophonePermission();
+});
+
+// Version handler
+ipcMain.handle("get-app-version", () => {
+  return app.getVersion();
 });
 
 // Auto-updater IPC handlers
@@ -1450,23 +1646,23 @@ ipcMain.handle("recording:cancel", async () => {
   try {
     // Cancel recording without processing
     if (!isRecording) return { success: false, error: "Not recording" };
-    
+
     isRecording = false;
-    
+
     // Clean up recording resources - pass false to prevent transcript processing
     sttService.stopDictation(false);
-    
+
     // Restore system audio
     if (systemAudioManager) {
       await systemAudioManager.restoreSystemAudio();
     }
-    
+
     // Reset window state
     if (windowManager.getRecordingWindow()) {
       windowManager.compactRecordingWindow();
       windowManager.sendToRecording("processing-complete");
     }
-    
+
     console.log("[Main] Recording cancelled");
     return { success: true };
   } catch (error) {
