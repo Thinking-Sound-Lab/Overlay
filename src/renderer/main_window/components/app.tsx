@@ -10,7 +10,7 @@ import { AppProvider, useAppContext } from "../contexts/AppContext";
 
 const AppContent: React.FC = () => {
   const { state, setActiveView } = useAppContext();
-  const { isAuthenticated, isLoading, user } = state;
+  const { isAuthenticated, isLoading, loadingMessage, user } = state;
 
   // Track onboarding step for NavigationBar
   const [onboardingStep, setOnboardingStep] = React.useState(1);
@@ -25,8 +25,8 @@ const AppContent: React.FC = () => {
   // Simplified loading screen logic
   const shouldShowLoading = isLoading;
 
-  // Simple loading message
-  const loadingMessage = "Loading...";
+  // Use the dynamic loading message from state, with fallback
+  const displayMessage = loadingMessage || "Loading...";
 
   console.log("AppContent: Rendering with state:", {
     isLoading,
@@ -34,14 +34,14 @@ const AppContent: React.FC = () => {
     isAuthenticated,
     hasCompletedOnboarding: user?.onboarding_completed,
     user: user?.email || null,
-    loadingMessage,
+    loadingMessage: displayMessage,
     timestamp: new Date().toISOString(),
   });
 
   if (shouldShowLoading) {
     console.log(
       "AppContent: Showing loading screen with message:",
-      loadingMessage
+      displayMessage
     );
     return (
       <div className="h-screen bg-gray-50 flex flex-col">
@@ -51,7 +51,7 @@ const AppContent: React.FC = () => {
             <div className="w-64 bg-gray-200 rounded-full h-2 mb-4">
               <div className="bg-gray-500 h-2 rounded-full animate-pulse w-3/4"></div>
             </div>
-            <p className="text-gray-600">{loadingMessage}</p>
+            <p className="text-gray-600">{displayMessage}</p>
           </div>
         </div>
       </div>

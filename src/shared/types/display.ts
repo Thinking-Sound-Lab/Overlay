@@ -1,4 +1,4 @@
-import { Display, Point } from "electron";
+import { Point } from "electron";
 
 export interface DisplayInfo {
   id: number;

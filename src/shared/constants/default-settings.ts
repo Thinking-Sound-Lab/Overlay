@@ -7,6 +7,7 @@
 export const DEFAULT_SETTINGS = {
   // General section
   language: "en",
+  profession: "general",
 
   // System section
   dictateSoundEffects: true,
@@ -15,7 +16,6 @@ export const DEFAULT_SETTINGS = {
   // Personalization section
   outputMode: "both",
   useAI: true,
-  enableRealtimeMode: true,
   enableTranslation: false,
   targetLanguage: "en",
 

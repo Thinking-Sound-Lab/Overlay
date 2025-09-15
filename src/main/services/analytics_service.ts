@@ -4,54 +4,44 @@ export class AnalyticsService {
   private posthog: PostHog | null = null;
   private currentUserId: string | null = null;
   private isInitialized = false;
-  private eventQueue: Array<{
-    event: string;
-    properties?: Record<string, any>;
-  }> = [];
 
   constructor() {
     this.initialize();
   }
 
   private initialize() {
-    try {
-      // Only initialize analytics in production
-      if (process.env.NODE_ENV !== 'production') {
-        console.log("AnalyticsService: Skipping initialization - not in production environment");
-        return;
-      }
+    // Only initialize analytics in production
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        "AnalyticsService: Skipping initialization - not in production environment"
+      );
+      return;
+    }
 
-      // Import centralized config
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      //   const { config } = require("../../../config/environment");
+    console.log("AnalyticsService: Initializing with config:", {
+      hasKey: !!process.env.REACT_APP_POSTHOG_KEY,
+      keyLength: process.env.REACT_APP_POSTHOG_KEY?.length,
+      host: process.env.REACT_APP_POSTHOG_HOST,
+    });
 
-      console.log("AnalyticsService: Initializing with config:", {
-        hasKey: !!process.env.REACT_APP_POSTHOG_KEY,
-        keyLength: process.env.REACT_APP_POSTHOG_KEY?.length,
+    if (
+      process.env.REACT_APP_POSTHOG_KEY &&
+      process.env.REACT_APP_POSTHOG_KEY !== "your-posthog-key"
+    ) {
+      this.posthog = new PostHog(process.env.REACT_APP_POSTHOG_KEY, {
         host: process.env.REACT_APP_POSTHOG_HOST,
+        flushAt: 20, // Batch events for better performance
+        flushInterval: 10000, // Flush every 10 seconds
       });
 
-      if (
-        process.env.REACT_APP_POSTHOG_KEY &&
-        process.env.REACT_APP_POSTHOG_KEY !== "your-posthog-key"
-      ) {
-        this.posthog = new PostHog(process.env.REACT_APP_POSTHOG_KEY, {
-          host: process.env.REACT_APP_POSTHOG_HOST,
-          flushAt: 20, // Batch events for better performance
-          flushInterval: 10000, // Flush every 10 seconds
-        });
-
-        this.isInitialized = true;
-        console.log(
-          "AnalyticsService: Successfully initialized PostHog Node.js client"
-        );
-      } else {
-        console.warn(
-          "AnalyticsService: PostHog key not configured, analytics disabled"
-        );
-      }
-    } catch (error) {
-      console.error("AnalyticsService: Failed to initialize:", error);
+      this.isInitialized = true;
+      console.log(
+        "AnalyticsService: Successfully initialized PostHog Node.js client"
+      );
+    } else {
+      console.warn(
+        "AnalyticsService: PostHog key not configured, analytics disabled"
+      );
     }
   }
 
@@ -73,9 +63,6 @@ export class AnalyticsService {
         },
       });
       console.log("AnalyticsService: User identified:", userId);
-
-      // Flush any queued events now that we have a user ID
-      this.flushQueuedEvents();
     } catch (error) {
       console.error("AnalyticsService: Identify error:", error);
     }
@@ -87,12 +74,11 @@ export class AnalyticsService {
 
     const distinctId = userId || this.currentUserId;
     if (!distinctId) {
-      // Queue the event for later when user is identified
+      // Skip event if no user ID - events should only be tracked after user identification
       console.log(
-        "AnalyticsService: Queuing event until user is identified:",
+        "AnalyticsService: Skipping event (no user identified):",
         event
       );
-      this.eventQueue.push({ event, properties });
       return;
     }
 
@@ -114,22 +100,6 @@ export class AnalyticsService {
     }
   }
 
-  // Flush any events that were queued before user identification
-  private flushQueuedEvents() {
-    if (this.eventQueue.length === 0) return;
-
-    console.log(
-      `AnalyticsService: Flushing ${this.eventQueue.length} queued events`
-    );
-
-    for (const queuedEvent of this.eventQueue) {
-      // Re-call track with the queued event (now that we have a user ID)
-      this.track(queuedEvent.event, queuedEvent.properties);
-    }
-
-    // Clear the queue
-    this.eventQueue = [];
-  }
 
   // Authentication events
   trackUserSignUp(method: "email" | "google" | "github" = "email") {

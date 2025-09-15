@@ -78,6 +78,10 @@ export class SupabaseService {
     this.attemptSessionRestore();
   }
 
+  public getClient(): SupabaseClient {
+    return this.supabase;
+  }
+
   async attemptSessionRestore() {
     try {
       console.log(
@@ -574,6 +578,39 @@ export class SupabaseService {
       };
     } catch (error) {
       console.error("SupabaseService: Get transcripts error:", error);
+      return { data: null as any, error };
+    }
+  }
+
+  async updateTranscriptAudioPath(transcriptId: string, audioFilePath: string) {
+    if (!this.currentUser) {
+      return { data: null, error: new Error("User not authenticated") };
+    }
+
+    try {
+      console.log("SupabaseService: Updating transcript audio path:", {
+        transcriptId,
+        audioFilePath,
+        userId: this.currentUser.id,
+      });
+
+      const { data, error } = await this.supabase
+        .from("transcripts")
+        .update({ audio_file_path: audioFilePath })
+        .eq("id", transcriptId)
+        .eq("user_id", this.currentUser.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("SupabaseService: Update transcript audio path error:", error);
+      } else {
+        console.log("SupabaseService: Transcript audio path updated successfully:", data);
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error("SupabaseService: Update transcript audio path error:", error);
       return { data: null as any, error };
     }
   }

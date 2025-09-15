@@ -1,13 +1,8 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-import {
-  ApplicationContextType,
-  Settings,
-  SpeechMetrics,
-} from "../../shared/types";
+import { Settings, SpeechMetrics } from "../../shared/types";
 import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
-import { ApplicationDetector } from "./application_detector";
 import { ApplicationContextService } from "./application_context_service";
 import { DataLoaderService } from "./data_loader_service";
 import { DictionaryService } from "./dictionary_service";
@@ -20,7 +15,7 @@ import {
 
 export class TranslationService {
   private static instance: TranslationService;
-  private applicationDetector: ApplicationDetector;
+
   private applicationContextService: ApplicationContextService;
   private dataLoaderService: DataLoaderService | null = null;
   private textInsertionService: TextInsertionService;
@@ -28,24 +23,10 @@ export class TranslationService {
   // Single language model configuration
   private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
 
-  // Legacy application context to mode mapping for backward compatibility
-  private readonly LEGACY_CONTEXT_TO_MODE_MAPPING = {
-    [ApplicationContextType.EMAIL]: "gmail", // Default to Gmail for email context
-    [ApplicationContextType.NOTES]: "notion", // Default to Notion for notes context
-    [ApplicationContextType.MESSAGING]: "slack", // Default to Slack for messaging context
-    [ApplicationContextType.CODE_EDITOR]: "vscode", // Default to VS Code for code context
-    [ApplicationContextType.DOCUMENT]: "docs", // Default to Google Docs for documents
-    [ApplicationContextType.PRESENTATION]: "keynote", // Default to Keynote for presentations
-    [ApplicationContextType.BROWSER]: "default", // Default for browser
-    [ApplicationContextType.TERMINAL]: "terminal", // Terminal context
-    [ApplicationContextType.UNKNOWN]: "default", // fallback
-  };
-
   constructor(
     dataLoaderService?: DataLoaderService,
     dictionaryService?: DictionaryService
   ) {
-    this.applicationDetector = ApplicationDetector.getInstance();
     this.applicationContextService = ApplicationContextService.getInstance();
     this.dataLoaderService = dataLoaderService || null;
     this.textInsertionService = new TextInsertionService(dictionaryService);
@@ -136,19 +117,24 @@ export class TranslationService {
 
     try {
       // Get auto-detected application mode if enabled and user has Pro access
-      let selectedApplicationMode = settings.selectedApplicationMode || "default";
+      let selectedApplicationMode =
+        settings.selectedApplicationMode || "default";
       if (settings.enableAutoDetection && canUseCustomModes) {
         try {
-          const applicationContext = await this.applicationContextService.getCurrentApplicationContext();
+          const applicationContext =
+            await this.applicationContextService.getCurrentApplicationContext();
           if (applicationContext && applicationContext.confidence > 0.3) {
             selectedApplicationMode = applicationContext.applicationId;
             console.log("[Translation] Auto-detected application:", {
               applicationId: applicationContext.applicationId,
               displayName: applicationContext.displayName,
-              confidence: applicationContext.confidence
+              confidence: applicationContext.confidence,
             });
           } else {
-            console.log("[Translation] Low confidence detection, using fallback application:", selectedApplicationMode);
+            console.log(
+              "[Translation] Low confidence detection, using fallback application:",
+              selectedApplicationMode
+            );
           }
         } catch (error) {
           console.warn(
@@ -189,23 +175,36 @@ export class TranslationService {
             word: settings.wordPrompt,
             pages: settings.pagesPrompt,
             docs: settings.docsPrompt,
-            'browser-github': settings.browserGithubPrompt,
-            'browser-stackoverflow': settings.browserStackoverflowPrompt,
-            'browser-twitter': settings.browserTwitterPrompt,
-            'browser-linkedin': settings.browserLinkedinPrompt,
+            "browser-github": settings.browserGithubPrompt,
+            "browser-stackoverflow": settings.browserStackoverflowPrompt,
+            "browser-twitter": settings.browserTwitterPrompt,
+            "browser-linkedin": settings.browserLinkedinPrompt,
           };
           const promptForApplication =
-            applicationPromptMap[selectedApplicationMode as keyof typeof applicationPromptMap];
-          console.log("[Translation] Application-specific prompt for", selectedApplicationMode, ":", promptForApplication);
+            applicationPromptMap[
+              selectedApplicationMode as keyof typeof applicationPromptMap
+            ];
+          console.log(
+            "[Translation] Application-specific prompt for",
+            selectedApplicationMode,
+            ":",
+            promptForApplication
+          );
 
           if (promptForApplication && promptForApplication.trim()) {
             applicationSpecificPrompt = promptForApplication;
           } else {
             // Fallback to getting default prompt from application context service
-            const appContext = this.applicationContextService.getApplicationContextById(selectedApplicationMode);
+            const appContext =
+              this.applicationContextService.getApplicationContextById(
+                selectedApplicationMode
+              );
             if (appContext) {
               applicationSpecificPrompt = appContext.prompt;
-              console.log("[Translation] Using default prompt for", selectedApplicationMode);
+              console.log(
+                "[Translation] Using default prompt for",
+                selectedApplicationMode
+              );
             }
           }
         }
@@ -216,7 +215,7 @@ export class TranslationService {
       }
 
       // Build optimized prompt for better LLM performance
-      let activePrompt = `You are a transcript post-processor. Process the following text according to these instructions:
+      let activePrompt = `You are an expert transcript post-processor. Process the following transcript according to these instructions:
 
 ## WHAT TO CHANGE:
 ${settings.language !== settings.targetLanguage && settings.enableTranslation && canTranslate ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
@@ -224,9 +223,9 @@ ${settings.language !== settings.targetLanguage && settings.enableTranslation &&
 - Correct grammar mistakes
 - Add proper punctuation and capitalization
 - Convert emoji words to actual emojis (e.g., "fire emoji" → "🔥", "heart emoji" → "❤️")
-- Convert it to clean and proper text which convey the same meaning
-- Convert or restructure the text to make it more sensible 
-- Change the words in the text from the context of whole sentence which seems illogical
+- Convert it to the target language ${getLanguageDisplayName(settings.targetLanguage)} without changing the original meaning and intent
+- Restructure the text to make it more sensible by changing or removing repeated words or phrases.
+- Understand the context of the transcript and correct the words to make it more sensible.
 
 ## WHAT TO PRESERVE:
 - Original meaning and intent
@@ -336,9 +335,9 @@ Text to process: "${transcript}"
               // Application-based formatting applied
               modeBasedFormattingApplied: !!applicationSpecificPrompt,
             }
-          : { 
+          : {
               applicationBasedFormattingApplied: false,
-              modeBasedFormattingApplied: false 
+              modeBasedFormattingApplied: false,
             };
 
       const combinedMeta = {
@@ -355,7 +354,7 @@ Text to process: "${transcript}"
       });
 
       // PARALLEL: Run background operations concurrently (don't await)
-      this.runBackgroundOperations(userData, finalText).catch(error => {
+      this.runBackgroundOperations(userData, finalText).catch((error) => {
         console.error("[Translation] Background operations failed:", error);
       });
     } catch (error) {
@@ -371,14 +370,19 @@ Text to process: "${transcript}"
     finalText: string
   ): Promise<void> {
     const wordCount = this.countWords(finalText);
-    
+
     if (userData && userData.subscription_tier === "free" && wordCount > 0) {
       try {
         // This runs in background - no need to block text insertion
         await this.dataLoaderService.updateWordUsage(wordCount);
-        console.log(`[Translation] Background: Updated word usage: +${wordCount} words`);
+        console.log(
+          `[Translation] Background: Updated word usage: +${wordCount} words`
+        );
       } catch (error) {
-        console.error("[Translation] Background: Failed to update word usage:", error);
+        console.error(
+          "[Translation] Background: Failed to update word usage:",
+          error
+        );
       }
     }
   }

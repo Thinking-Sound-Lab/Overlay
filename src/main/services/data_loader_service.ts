@@ -251,7 +251,7 @@ export class DataLoaderService {
     dbTranscript: DatabaseTranscriptEntry
   ): UITranscriptEntry {
     return {
-      id: dbTranscript.metadata?.localId || dbTranscript.id,
+      id: dbTranscript.id,
       text: dbTranscript.text,
       timestamp: new Date(dbTranscript.created_at),
       wordCount: dbTranscript.word_count,
@@ -263,6 +263,7 @@ export class DataLoaderService {
       confidence: dbTranscript.confidence,
       detectedLanguage: dbTranscript.metadata?.detectedLanguage,
       wordCountRatio: dbTranscript.metadata?.wordCountRatio,
+      audioFilePath: dbTranscript.audio_file_path,
     };
   }
 
@@ -323,7 +324,7 @@ export class DataLoaderService {
    */
   async addTranscript(
     transcript: Omit<DatabaseTranscriptEntry, "id" | "created_at">
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; transcriptId?: string }> {
     try {
       console.log(`[DataLoader] Adding transcript (DB-first)`);
 
@@ -347,7 +348,7 @@ export class DataLoaderService {
       }
 
       console.log(`[DataLoader] Transcript added successfully`);
-      return { success: true };
+      return { success: true, transcriptId: result.data.id };
     } catch (error) {
       console.error(`[DataLoader] Failed to add transcript:`, error);
       return {
@@ -479,6 +480,89 @@ export class DataLoaderService {
     transcriptCount: number;
   } {
     return this.cacheService.getCacheInfo();
+  }
+
+  /**
+   * Get the SupabaseService instance for other services
+   */
+  getSupabaseService(): SupabaseService {
+    return this.supabaseService;
+  }
+
+  /**
+   * Update transcript audio file path in database and cache
+   */
+  async updateTranscriptAudioPath(transcriptId: string, audioFilePath: string): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      console.log(`[DataLoader] Updating transcript audio path: ${transcriptId} -> ${audioFilePath}`);
+
+      // Update database first (database is source of truth)
+      const { data, error } = await this.supabaseService.updateTranscriptAudioPath(transcriptId, audioFilePath);
+
+      if (error) {
+        console.error("[DataLoader] Failed to update transcript audio path in database:", error);
+        return { success: false, error: error.message };
+      }
+
+      // Update cache after successful database update
+      if (data) {
+        const cachedTranscripts = this.cacheService.getRecentTranscripts();
+        if (cachedTranscripts && cachedTranscripts.length > 0) {
+          const transcriptIndex = cachedTranscripts.findIndex(t => t.id === transcriptId);
+          if (transcriptIndex !== -1) {
+            cachedTranscripts[transcriptIndex].audioFilePath = audioFilePath;
+            this.cacheService.setRecentTranscripts(cachedTranscripts);
+            console.log(`[DataLoader] Updated transcript audio path in cache for: ${transcriptId}`);
+          }
+        }
+      }
+
+      console.log(`[DataLoader] Successfully updated transcript audio path: ${transcriptId}`);
+      return { success: true };
+    } catch (error) {
+      console.error("[DataLoader] Exception updating transcript audio path:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+
+  /**
+   * Download audio file for a transcript
+   */
+  async downloadAudio(audioFilePath: string): Promise<{
+    success: boolean;
+    data?: Buffer;
+    error?: string;
+  }> {
+    try {
+      console.log(`[DataLoader] Downloading audio file: ${audioFilePath}`);
+
+      const { data, error } = await this.supabaseService.getClient()
+        .storage
+        .from("audio-recordings")
+        .download(audioFilePath);
+
+      if (error) {
+        console.error("[DataLoader] Audio download error:", error);
+        return { success: false, error: error.message };
+      }
+
+      const buffer = Buffer.from(await data.arrayBuffer());
+      console.log(`[DataLoader] Audio download successful: ${buffer.length} bytes`);
+      
+      return { success: true, data: buffer };
+    } catch (error) {
+      console.error("[DataLoader] Audio download exception:", error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : "Unknown error" 
+      };
+    }
   }
 
   /**

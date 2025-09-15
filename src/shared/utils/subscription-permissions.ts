@@ -172,7 +172,6 @@ export function canAccessSetting(user: UserRecord | null, settingKey: string): b
   // Map setting keys to Pro features
   const settingToFeatureMap: Record<string, ProFeature> = {
     "useAI": "ai_enhancement",
-    "enableRealtimeMode": "realtime_mode", 
     "enableTranslation": "translation",
     "enableAutoDetection": "custom_modes"
   };
@@ -196,10 +195,6 @@ export function filterSettingsByAccess(user: UserRecord | null, settings: Record
   // Check each Pro feature setting
   if (!hasProAccess(user, "ai_enhancement")) {
     filteredSettings.useAI = false;
-  }
-  
-  if (!hasProAccess(user, "realtime_mode")) {
-    filteredSettings.enableRealtimeMode = false;
   }
   
   if (!hasProAccess(user, "translation")) {

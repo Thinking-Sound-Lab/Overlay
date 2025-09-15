@@ -8,7 +8,7 @@ import {
 } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Pagination } from "./ui/pagination";
-import { Flame, FileText, Star, Mic } from "lucide-react";
+import { Flame, FileText, Star, Mic, Download } from "lucide-react";
 import { useAppContext } from "../contexts/AppContext";
 
 interface TranscriptEntry {
@@ -24,6 +24,7 @@ interface TranscriptEntry {
   confidence?: number;
   wordCountRatio?: number;
   detectedLanguage?: string;
+  audioFilePath?: string;
 }
 
 export const HomePage: React.FC = () => {
@@ -36,6 +37,10 @@ export const HomePage: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isPaginationLoading, setIsPaginationLoading] = useState(false);
   const itemsPerPage = 20; // Fixed at 20 items per page
+
+  // Audio download state
+  const [downloadProgress, setDownloadProgress] = useState<{[key: string]: number}>({});
+  const [downloadingTranscripts, setDownloadingTranscripts] = useState<Set<string>>(new Set());
 
   console.log("HomePage render - state:", {
     transcriptsCount: transcripts.length,
@@ -81,6 +86,74 @@ export const HomePage: React.FC = () => {
   // Handle pagination changes
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+  };
+
+  // Handle audio download
+  const handleDownloadAudio = async (transcript: TranscriptEntry) => {
+    if (!transcript.audioFilePath) {
+      console.warn("No audio file path available for transcript:", transcript.id);
+      return;
+    }
+
+    try {
+      console.log("Starting download for transcript:", transcript.id);
+      
+      // Update downloading state
+      setDownloadingTranscripts(prev => new Set(prev).add(transcript.id));
+      setDownloadProgress(prev => ({ ...prev, [transcript.id]: 0 }));
+      
+      // Call IPC to download audio
+      const response = await window.electronAPI.db.downloadAudio(transcript.audioFilePath);
+      
+      if (response.success && response.data.data) {
+        // Simulate progress for user feedback
+        setDownloadProgress(prev => ({ ...prev, [transcript.id]: 50 }));
+        
+        // Create blob and download
+        const audioBlob = new Blob([response.data.data], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(audioBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transcript_${transcript.id}_${new Date(transcript.timestamp).toISOString().split('T')[0]}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Complete progress
+        setDownloadProgress(prev => ({ ...prev, [transcript.id]: 100 }));
+        
+        // Clean up after a delay
+        setTimeout(() => {
+          setDownloadingTranscripts(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(transcript.id);
+            return newSet;
+          });
+          setDownloadProgress(prev => {
+            const newProgress = { ...prev };
+            delete newProgress[transcript.id];
+            return newProgress;
+          });
+        }, 1500);
+      } else {
+        throw new Error(response.error || 'Download failed');
+      }
+    } catch (error) {
+      console.error("Audio download failed:", error);
+      
+      // Clean up on error
+      setDownloadingTranscripts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(transcript.id);
+        return newSet;
+      });
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[transcript.id];
+        return newProgress;
+      });
+    }
   };
 
   const formatDate = (date: Date | string) => {
@@ -224,6 +297,39 @@ export const HomePage: React.FC = () => {
                         <div className="text-xs font-medium text-gray-900">
                           {formatTime(transcript.timestamp)}
                         </div>
+                        {transcript.audioFilePath && (
+                          <button
+                            onClick={() => handleDownloadAudio(transcript)}
+                            disabled={downloadingTranscripts.has(transcript.id)}
+                            className="relative p-2 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+                            title="Download audio (MP3)"
+                          >
+                            {downloadingTranscripts.has(transcript.id) ? (
+                              <div className="relative">
+                                <Download className="h-4 w-4 text-gray-600" />
+                                <svg 
+                                  className="absolute inset-0 h-4 w-4 animate-spin"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    cx="12"
+                                    cy="12"
+                                    r="8"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeDasharray={`${(downloadProgress[transcript.id] || 0) * 0.5} 50`}
+                                    className="text-blue-500"
+                                    transform="rotate(-90 12 12)"
+                                  />
+                                </svg>
+                              </div>
+                            ) : (
+                              <Download className="h-4 w-4 text-gray-600" />
+                            )}
+                          </button>
+                        )}
                       </div>
 
                       {transcript.wasTranslated && transcript.originalText && (

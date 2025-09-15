@@ -74,8 +74,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           : currentStep === "language"
             ? "Language Selection"
             : currentStep === "permissions"
-              ? "Permissions"
-              : "Quick Guide";
+                ? "Permissions"
+                : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -177,6 +177,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     }
   };
 
+
   const handlePermissions = async () => {
     console.log("OnboardingFlow: Permissions granted, navigating to guide");
     setCurrentStep("guide");
@@ -255,8 +256,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           : currentStep === "language"
             ? "Language Selection"
             : currentStep === "permissions"
-              ? "Permissions"
-              : "Quick Guide";
+                ? "Permissions"
+                : "Quick Guide";
       onStepChange(stepNumber, stepName);
     }
   }, [currentStep, onStepChange]);
@@ -283,6 +284,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         {currentStep === "language" && (
           <LanguageSelectionPage onLanguageSelected={handleLanguageSelection} />
         )}
+
 
         {currentStep === "permissions" && (
           <PermissionsPage onPermissionsGranted={handlePermissions} />

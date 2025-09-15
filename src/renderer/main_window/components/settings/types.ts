@@ -8,6 +8,7 @@ import { UserRecord } from "../../../../shared/types/database";
 export interface SelectOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 export interface SettingsComponentProps {

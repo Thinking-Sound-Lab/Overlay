@@ -33,13 +33,14 @@ import { APIHandlers } from "./ipc/api_handlers";
 import { AuthUtils } from "./utils/auth";
 import { SystemAudioManager } from "./services/system_audio_manager";
 import { DataLoaderService } from "./services/data_loader_service";
-import { DictionaryService } from "./services/dictionary_service";
 import {
   SUPPORTED_LANGUAGES,
   getLanguageDisplayName,
 } from "../shared/constants/languages";
 import MicrophoneService from "./services/microphone_service";
 import { PermissionsService } from "./services/permissions_service";
+import { AudioStorageService } from "./services/audio_storage_service";
+import { v4 as uuidv4 } from "uuid";
 // Webpack entry points
 // declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 // declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -67,6 +68,7 @@ let externalAPIManager: ExternalAPIManager | null = null;
 let apiHandlers: APIHandlers | null = null;
 // AuthStateManager replaced by DataLoaderService
 let systemAudioManager: SystemAudioManager | null = null;
+let audioStorageService: AudioStorageService | null = null;
 
 // Auto-updater configuration
 autoUpdater.checkForUpdatesAndNotify =
@@ -180,6 +182,13 @@ const sendAuthStateToRenderer = async (
       statistics: eventData.statistics,
     });
 
+    // Send loading completion along with auth state
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: false,
+      message: "",
+      source
+    });
+
     windowManager.sendToMain("auth-state-changed", eventData);
   } catch (error) {
     console.error(
@@ -223,6 +232,13 @@ const sendUnauthenticatedStateToRenderer = (
       }
     );
 
+    // Send loading completion along with unauthenticated state
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: false,
+      message: "",
+      source
+    });
+
     windowManager.sendToMain("auth-state-changed", eventData);
   } catch (error) {
     console.error(
@@ -251,6 +267,17 @@ const handleAuthenticationSuccess = async (
     `[Main] Handling authentication success for ${user.email} (${source})`
   );
 
+  // Send loading state to renderer to show proper loading screen
+  const mainWindow = windowManager.getMainWindow();
+  if (mainWindow) {
+    console.log(`[Main] Sending loading state to renderer (${source})`);
+    windowManager.sendToMain("loading-state-changed", {
+      isLoading: true,
+      message: "Loading user data...",
+      source
+    });
+  }
+
   try {
     // Check if we already have data for this user to avoid unnecessary reloading
     const cachedUserId = dataLoaderService?.getCacheInfo()?.userId;
@@ -258,16 +285,42 @@ const handleAuthenticationSuccess = async (
 
     if (cachedUserId === user.id) {
       console.log(`[Main] Using existing data for user ${user.id} (cache hit)`);
+      // Send progress update
+      if (mainWindow) {
+        windowManager.sendToMain("loading-state-changed", {
+          isLoading: true,
+          message: "Refreshing user data...",
+          source
+        });
+      }
       // Still refresh to ensure we have latest data, but log it as optimization opportunity
       userData = await dataLoaderService?.loadUserData(user.id);
     } else {
       console.log(`[Main] Loading fresh data for new user ${user.id}`);
+      // Send progress update
+      if (mainWindow) {
+        windowManager.sendToMain("loading-state-changed", {
+          isLoading: true,
+          message: "Initializing user data...",
+          source
+        });
+      }
       userData = await dataLoaderService?.initializeUserData(user.id);
     }
 
     if (userData) {
       AuthUtils.setAuthenticationState(true);
       await sendAuthStateToRenderer(userData, source);
+
+      // Identify user for analytics - must happen before any events are tracked
+      if (externalAPIManager?.analytics && userData.user?.id) {
+        console.log(`[Main] Identifying user for analytics: ${userData.user.email} (${source})`);
+        externalAPIManager.analytics.identify(userData.user.id, {
+          email: userData.user.email,
+          onboarding_completed: userData.user.onboarding_completed,
+          source: source
+        });
+      }
 
       // Initialize authenticated services
       if (!windowManager.getRecordingWindow()) {
@@ -353,6 +406,12 @@ const handleAuthenticationFailure = (
   ) {
     console.log("[Main] Closing recording window due to logout");
     windowManager.getRecordingWindow().close();
+  }
+
+  // Track sign-out and clear analytics user context
+  if (externalAPIManager?.analytics) {
+    console.log(`[Main] Tracking user sign-out and clearing analytics context (${source})`);
+    externalAPIManager.analytics.trackUserSignOut();
   }
 
   // Clear all user data
@@ -1027,7 +1086,7 @@ app.whenReady().then(async () => {
 
     // Initialize display manager service
     displayManagerService = DisplayManagerService.getInstance();
-    
+
     // Connect display manager service to window manager
     windowManager.initializeDisplayTracking(displayManagerService);
 
@@ -1040,6 +1099,7 @@ app.whenReady().then(async () => {
     dataLoaderService = DataLoaderService.getInstance(
       externalAPIManager.supabase
     );
+    audioStorageService = new AudioStorageService(externalAPIManager.supabase);
 
     // Initialize system audio manager
     systemAudioManager = new SystemAudioManager();
@@ -1050,12 +1110,11 @@ app.whenReady().then(async () => {
     // Initialize auth utils with API manager
     AuthUtils.setAuthManager(externalAPIManager);
 
-    // Initialize STT service with analytics and dictionary support
-    const dictionaryService = DictionaryService.getInstance(
-      externalAPIManager.supabase
-    );
+    // Initialize STT service with analytics support
+    // Note: DictionaryService is initialized within TranslationService.getInstance()
     sttService = new STTService(
       dataLoaderService,
+      audioStorageService,
       async (
         metrics: SpeechMetrics,
         transcript?: string,
@@ -1091,30 +1150,14 @@ app.whenReady().then(async () => {
               confidence: translationMeta?.confidence,
               word_count: metrics.wordCount,
               wpm: metrics.wordsPerMinute,
+              audio_file_path: undefined,
               metadata: {
-                localId: Date.now().toString(),
                 detectedLanguage: translationMeta?.detectedLanguage,
                 wordCountRatio: translationMeta?.wordCountRatio,
               },
             };
 
             try {
-              // Create UI transcript for immediate renderer notification
-              const uiTranscript = {
-                id: transcriptData.metadata.localId,
-                text: transcript.trim(),
-                timestamp: new Date(),
-                wordCount: metrics.wordCount,
-                wpm: metrics.wordsPerMinute,
-                originalText: translationMeta?.originalText,
-                sourceLanguage: translationMeta?.sourceLanguage,
-                targetLanguage: translationMeta?.targetLanguage,
-                wasTranslated: translationMeta?.wasTranslated,
-                confidence: translationMeta?.confidence,
-                detectedLanguage: translationMeta?.detectedLanguage,
-                wordCountRatio: translationMeta?.wordCountRatio,
-              };
-
               // IMMEDIATE: Send processing-complete to recording window first
               if (
                 windowManager.getRecordingWindow() &&
@@ -1133,35 +1176,130 @@ app.whenReady().then(async () => {
                 windowManager.compactRecordingWindow();
               }
 
-              // PARALLEL: Run database operations and UI updates concurrently
-              const [transcriptSaveResult] = await Promise.allSettled([
-                // Save transcript using DataLoaderService
-                dataLoaderService.addTranscript(transcriptData),
-                // Pre-fetch current stats and update UI (runs in parallel)
+              // First: Save transcript to database
+              const transcriptSaveResult =
+                await dataLoaderService.addTranscript(transcriptData);
+
+              if (transcriptSaveResult.success && transcriptSaveResult.transcriptId) {
+                // Create UI transcript using database ID as source of truth
+                const uiTranscript = {
+                  id: transcriptSaveResult.transcriptId,
+                  text: transcript.trim(),
+                  timestamp: new Date(),
+                  wordCount: metrics.wordCount,
+                  wpm: metrics.wordsPerMinute,
+                  originalText: translationMeta?.originalText,
+                  sourceLanguage: translationMeta?.sourceLanguage,
+                  targetLanguage: translationMeta?.targetLanguage,
+                  wasTranslated: translationMeta?.wasTranslated,
+                  confidence: translationMeta?.confidence,
+                  detectedLanguage: translationMeta?.detectedLanguage,
+                  wordCountRatio: translationMeta?.wordCountRatio,
+                  audioFilePath: undefined as string | undefined,
+                };
+                console.log("[Main] Transcript saved to database successfully");
+
+                // Send immediate transcript update to UI with database ID
                 updateUIWithOptimization(
                   windowManager,
                   uiTranscript,
                   dataLoaderService
-                ),
-              ]);
-
-              // Handle transcript save result
-              if (
-                transcriptSaveResult.status === "fulfilled" &&
-                transcriptSaveResult.value.success
-              ) {
-                console.log("[Main] Transcript saved to database successfully");
-                // Debug: Log the full translationMeta structure
-                console.log(
-                  "[Main] Full translationMeta received:",
-                  JSON.stringify(translationMeta, null, 2)
                 );
+
+                // Start background audio upload in worker thread to avoid blocking
+                const cacheInfo = dataLoaderService.getCacheInfo();
+                if (cacheInfo.userId && audioStorageService) {
+                  console.log("[Main] Starting background audio upload");
+                  setImmediate(async () => {
+                    try {
+                      // Generate UUID for audio file
+                      const audioTranscriptId = uuidv4();
+
+                      const uploadResult =
+                        await audioStorageService.uploadStoredAudio(
+                          cacheInfo.userId,
+                          audioTranscriptId
+                        );
+
+                      if (uploadResult.success && uploadResult.audioFilePath) {
+                        console.log(
+                          "[Main] Audio upload successful:",
+                          uploadResult.audioFilePath
+                        );
+
+                        // Update database with audio path
+                        const updateResult = await dataLoaderService.updateTranscriptAudioPath(
+                          transcriptSaveResult.transcriptId,
+                          uploadResult.audioFilePath
+                        );
+
+                        if (updateResult.success) {
+                          console.log("[Main] Database updated with audio path successfully");
+
+                          // Update the UI transcript with audio path and send complete data
+                          const updatedUITranscript = {
+                            ...uiTranscript,
+                            audioFilePath: uploadResult.audioFilePath,
+                          };
+
+                          // Send complete transcript update with audio path
+                          updateUIWithOptimization(
+                            windowManager,
+                            updatedUITranscript,
+                            dataLoaderService
+                          );
+
+                          console.log(
+                            "[Main] Sent complete transcript update with audio to UI:",
+                            uiTranscript.id
+                          );
+                        } else {
+                          console.error("[Main] Failed to update database with audio path:", updateResult.error);
+                          // Send transcript update without audio path
+                          updateUIWithOptimization(
+                            windowManager,
+                            uiTranscript,
+                            dataLoaderService
+                          );
+                        }
+                      } else {
+                        console.log(
+                          "[Main] Audio upload failed, sending transcript without audio:",
+                          uploadResult.error
+                        );
+                        // Send transcript update without audio path
+                        updateUIWithOptimization(
+                          windowManager,
+                          uiTranscript,
+                          dataLoaderService
+                        );
+                      }
+                    } catch (error) {
+                      console.error(
+                        "[Main] Background audio upload failed:",
+                        error
+                      );
+                      // Send transcript update without audio path on error
+                      updateUIWithOptimization(
+                        windowManager,
+                        uiTranscript,
+                        dataLoaderService
+                      );
+                    }
+                  });
+                } else {
+                  // No audio service available, send transcript without audio
+                  updateUIWithOptimization(
+                    windowManager,
+                    uiTranscript,
+                    dataLoaderService
+                  );
+                }
               } else {
-                const error =
-                  transcriptSaveResult.status === "fulfilled"
-                    ? transcriptSaveResult.value.error
-                    : transcriptSaveResult.reason;
-                console.error("[Main] Failed to save transcript:", error);
+                console.error(
+                  "[Main] Failed to save transcript:",
+                  transcriptSaveResult.error
+                );
               }
 
               // Update tray with latest stats (runs in background)
@@ -1192,8 +1330,7 @@ app.whenReady().then(async () => {
         }
       },
       externalAPIManager.analytics,
-      windowManager,
-      dictionaryService
+      windowManager
     );
 
     // Register auth state callback with hybrid approach for renderer synchronization

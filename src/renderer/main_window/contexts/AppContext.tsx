@@ -24,6 +24,7 @@ interface AppState {
   // UI state
   activeView: ViewType;
   isLoading: boolean;
+  loadingMessage: string;
   error: string | null;
 
   // Data state
@@ -38,7 +39,7 @@ interface AppState {
 }
 
 type AppAction =
-  | { type: "SET_LOADING"; payload: boolean }
+  | { type: "SET_LOADING_STATE"; payload: { isLoading: boolean; message: string } }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "SET_USER"; payload: UserRecord | null }
   | { type: "SET_AUTHENTICATED"; payload: boolean }
@@ -61,6 +62,7 @@ const initialState: AppState = {
   isAuthenticated: false,
   activeView: "home",
   isLoading: true,
+  loadingMessage: "Starting up...",
   error: null,
   userStats: {
     totalWordCount: 0,
@@ -77,8 +79,12 @@ const initialState: AppState = {
 
 const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
-    case "SET_LOADING":
-      return { ...state, isLoading: action.payload };
+    case "SET_LOADING_STATE":
+      return {
+        ...state,
+        isLoading: action.payload.isLoading,
+        loadingMessage: action.payload.message
+      };
     case "SET_ERROR":
       return { ...state, error: action.payload };
     case "SET_USER":
@@ -114,6 +120,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...initialState,
         isLoading: false,
+        loadingMessage: "",
       };
     default:
       return state;
@@ -125,7 +132,7 @@ interface AppContextType {
   dispatch: React.Dispatch<AppAction>;
 
   // Convenience actions
-  setLoading: (loading: boolean) => void;
+  setLoadingState: (isLoading: boolean, message: string) => void;
   setError: (error: string | null) => void;
   setUser: (user: UserRecord | null) => void;
   setAuthenticated: (authenticated: boolean) => void;
@@ -195,7 +202,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const signOut = useCallback(async () => {
     try {
       console.log("AppContext: Signing out...");
-      dispatch({ type: "SET_LOADING", payload: true });
+      dispatch({ type: "SET_LOADING_STATE", payload: { isLoading: true, message: "Signing out..." } });
 
       await auth.signOut();
 
@@ -205,12 +212,28 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       console.error("AppContext: Error during sign out:", error);
       dispatch({ type: "SET_ERROR", payload: "Failed to sign out" });
     } finally {
-      dispatch({ type: "SET_LOADING", payload: false });
+      dispatch({ type: "SET_LOADING_STATE", payload: { isLoading: false, message: "" } });
     }
   }, []);
 
   // Listen for main process events
   useEffect(() => {
+    const handleLoadingStateChanged = (event: CustomEvent) => {
+      const { isLoading, message, source } = event.detail;
+
+      console.log("AppContext: Loading state changed event received:", {
+        isLoading,
+        message,
+        source,
+        timestamp: new Date().toISOString()
+      });
+
+      dispatch({
+        type: "SET_LOADING_STATE",
+        payload: { isLoading, message: message || "" }
+      });
+    };
+
     const handleAuthStateChanged = (event: CustomEvent) => {
       const {
         user,
@@ -285,8 +308,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         dispatch({ type: "SET_ERROR", payload: error });
       }
 
-      // Stop loading for all cases
-      dispatch({ type: "SET_LOADING", payload: false });
+      // Loading state is now handled by loading-state-changed events
+      // No need to manually set loading to false here
     };
 
     const handleStatisticsUpdated = (event: CustomEvent) => {
@@ -325,6 +348,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     };
 
     // Add event listeners
+    window.addEventListener("loading-state-changed", handleLoadingStateChanged);
     window.addEventListener("transcript-updated", handleTranscriptUpdated);
     window.addEventListener("auth-state-changed", handleAuthStateChanged);
     window.addEventListener("statistics-updated", handleStatisticsUpdated);
@@ -352,6 +376,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setTimeout(signalRendererReady, 100);
 
     return () => {
+      window.removeEventListener("loading-state-changed", handleLoadingStateChanged);
       window.removeEventListener("transcript-updated", handleTranscriptUpdated);
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);
       window.removeEventListener("statistics-updated", handleStatisticsUpdated);
@@ -365,8 +390,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     (): AppContextType => ({
       state,
       dispatch,
-      setLoading: (loading: boolean) =>
-        dispatch({ type: "SET_LOADING", payload: loading }),
+      setLoadingState: (isLoading: boolean, message: string) =>
+        dispatch({ type: "SET_LOADING_STATE", payload: { isLoading, message } }),
       setError: (error: string | null) =>
         dispatch({ type: "SET_ERROR", payload: error }),
       setUser: (user: UserRecord | null) =>
