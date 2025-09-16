@@ -60,6 +60,7 @@ Navigate to Repository Settings → Secrets and variables → Actions to configu
 
 #### GitHub Integration
 - `GITHUB_TOKEN` - Automatically provided by GitHub Actions (no setup required)
+- Workflows include proper permissions for releases and artifact management
 
 #### Optional: Code Signing (for production)
 - `WINDOWS_CERTIFICATE_FILE` - Windows code signing certificate
@@ -191,9 +192,10 @@ Each build workflow includes an artifact cleanup job that:
 3. **Timeout issues**: Check if build is taking longer than 30-minute limit
 
 #### Release Issues
-1. **Duplicate releases**: GitHub Actions skips if release version already exists
-2. **Missing artifacts**: Check that both Windows and macOS builds completed successfully
-3. **Permission errors**: Verify repository has Actions enabled
+1. **HTTP 403 errors**: Workflows include proper permissions (`contents: write` for releases)
+2. **Duplicate releases**: GitHub Actions skips if release version already exists
+3. **Missing artifacts**: Check that both Windows and macOS builds completed successfully
+4. **Permission errors**: Verify repository has Actions enabled and workflows have correct permissions
 
 #### Artifact Issues
 1. **Missing artifacts**: Check artifact retention period and cleanup logic

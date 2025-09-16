@@ -2,7 +2,6 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { clipboard } from "electron";
-import { DictionaryService } from "./dictionary_service";
 
 const execAsync = promisify(exec);
 
@@ -21,11 +20,9 @@ export interface TextInsertionOptions {
 
 export class TextInsertionService {
   private platform: string;
-  private dictionaryService?: DictionaryService;
 
-  constructor(dictionaryService?: DictionaryService) {
+  constructor() {
     this.platform = process.platform;
-    this.dictionaryService = dictionaryService;
     console.log(`[TextInsertion] Initialized for platform: ${this.platform}`);
   }
 
@@ -43,22 +40,8 @@ export class TextInsertionService {
       return false;
     }
 
-    // Step 1: Apply dictionary replacements if available
+    // Step 1: Convert literal \n strings to actual newlines
     let processedText = text;
-    if (this.dictionaryService) {
-      try {
-        processedText =
-          await this.dictionaryService.applyDictionaryReplacements(text);
-      } catch (error) {
-        console.warn(
-          "[TextInsertion] Dictionary replacement failed, using original text:",
-          error
-        );
-        processedText = text;
-      }
-    }
-
-    // Step 2: Convert literal \n strings to actual newlines
     processedText = processedText
       .replace(/\\n/g, "\n") // Convert \n to actual newlines
       .replace(/\\t/g, "\t") // Convert \t to actual tabs
