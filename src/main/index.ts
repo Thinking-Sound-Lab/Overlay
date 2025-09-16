@@ -186,7 +186,7 @@ const sendAuthStateToRenderer = async (
     windowManager.sendToMain("loading-state-changed", {
       isLoading: false,
       message: "",
-      source
+      source,
     });
 
     windowManager.sendToMain("auth-state-changed", eventData);
@@ -236,7 +236,7 @@ const sendUnauthenticatedStateToRenderer = (
     windowManager.sendToMain("loading-state-changed", {
       isLoading: false,
       message: "",
-      source
+      source,
     });
 
     windowManager.sendToMain("auth-state-changed", eventData);
@@ -274,7 +274,7 @@ const handleAuthenticationSuccess = async (
     windowManager.sendToMain("loading-state-changed", {
       isLoading: true,
       message: "Loading user data...",
-      source
+      source,
     });
   }
 
@@ -290,7 +290,7 @@ const handleAuthenticationSuccess = async (
         windowManager.sendToMain("loading-state-changed", {
           isLoading: true,
           message: "Refreshing user data...",
-          source
+          source,
         });
       }
       // Still refresh to ensure we have latest data, but log it as optimization opportunity
@@ -302,7 +302,7 @@ const handleAuthenticationSuccess = async (
         windowManager.sendToMain("loading-state-changed", {
           isLoading: true,
           message: "Initializing user data...",
-          source
+          source,
         });
       }
       userData = await dataLoaderService?.initializeUserData(user.id);
@@ -314,11 +314,13 @@ const handleAuthenticationSuccess = async (
 
       // Identify user for analytics - must happen before any events are tracked
       if (externalAPIManager?.analytics && userData.user?.id) {
-        console.log(`[Main] Identifying user for analytics: ${userData.user.email} (${source})`);
+        console.log(
+          `[Main] Identifying user for analytics: ${userData.user.email} (${source})`
+        );
         externalAPIManager.analytics.identify(userData.user.id, {
           email: userData.user.email,
           onboarding_completed: userData.user.onboarding_completed,
-          source: source
+          source: source,
         });
       }
 
@@ -410,7 +412,9 @@ const handleAuthenticationFailure = (
 
   // Track sign-out and clear analytics user context
   if (externalAPIManager?.analytics) {
-    console.log(`[Main] Tracking user sign-out and clearing analytics context (${source})`);
+    console.log(
+      `[Main] Tracking user sign-out and clearing analytics context (${source})`
+    );
     externalAPIManager.analytics.trackUserSignOut();
   }
 
@@ -1180,7 +1184,10 @@ app.whenReady().then(async () => {
               const transcriptSaveResult =
                 await dataLoaderService.addTranscript(transcriptData);
 
-              if (transcriptSaveResult.success && transcriptSaveResult.transcriptId) {
+              if (
+                transcriptSaveResult.success &&
+                transcriptSaveResult.transcriptId
+              ) {
                 // Create UI transcript using database ID as source of truth
                 const uiTranscript = {
                   id: transcriptSaveResult.transcriptId,
@@ -1199,102 +1206,83 @@ app.whenReady().then(async () => {
                 };
                 console.log("[Main] Transcript saved to database successfully");
 
-                // Send immediate transcript update to UI with database ID
-                updateUIWithOptimization(
-                  windowManager,
-                  uiTranscript,
-                  dataLoaderService
-                );
-
-                // Start background audio upload in worker thread to avoid blocking
+                // Process audio upload synchronously before sending to UI
+                let finalAudioPath: string | undefined = undefined;
                 const cacheInfo = dataLoaderService.getCacheInfo();
+
                 if (cacheInfo.userId && audioStorageService) {
-                  console.log("[Main] Starting background audio upload");
-                  setImmediate(async () => {
-                    try {
-                      // Generate UUID for audio file
-                      const audioTranscriptId = uuidv4();
+                  console.log("[Main] Starting synchronous audio upload");
+                  try {
+                    // Generate UUID for audio file
+                    const audioTranscriptId = uuidv4();
 
-                      const uploadResult =
-                        await audioStorageService.uploadStoredAudio(
-                          cacheInfo.userId,
-                          audioTranscriptId
-                        );
+                    const uploadResult =
+                      await audioStorageService.uploadStoredAudio(
+                        cacheInfo.userId,
+                        audioTranscriptId
+                      );
 
-                      if (uploadResult.success && uploadResult.audioFilePath) {
-                        console.log(
-                          "[Main] Audio upload successful:",
-                          uploadResult.audioFilePath
-                        );
+                    if (uploadResult.success && uploadResult.audioFilePath) {
+                      console.log(
+                        "[Main] Audio upload successful:",
+                        uploadResult.audioFilePath
+                      );
 
-                        // Update database with audio path
-                        const updateResult = await dataLoaderService.updateTranscriptAudioPath(
+                      // Update database with audio path
+                      const updateResult =
+                        await dataLoaderService.updateTranscriptAudioPath(
                           transcriptSaveResult.transcriptId,
                           uploadResult.audioFilePath
                         );
 
-                        if (updateResult.success) {
-                          console.log("[Main] Database updated with audio path successfully");
-
-                          // Update the UI transcript with audio path and send complete data
-                          const updatedUITranscript = {
-                            ...uiTranscript,
-                            audioFilePath: uploadResult.audioFilePath,
-                          };
-
-                          // Send complete transcript update with audio path
-                          updateUIWithOptimization(
-                            windowManager,
-                            updatedUITranscript,
-                            dataLoaderService
-                          );
-
-                          console.log(
-                            "[Main] Sent complete transcript update with audio to UI:",
-                            uiTranscript.id
-                          );
-                        } else {
-                          console.error("[Main] Failed to update database with audio path:", updateResult.error);
-                          // Send transcript update without audio path
-                          updateUIWithOptimization(
-                            windowManager,
-                            uiTranscript,
-                            dataLoaderService
-                          );
-                        }
-                      } else {
+                      if (updateResult.success) {
                         console.log(
-                          "[Main] Audio upload failed, sending transcript without audio:",
-                          uploadResult.error
+                          "[Main] Database updated with audio path successfully"
                         );
-                        // Send transcript update without audio path
-                        updateUIWithOptimization(
-                          windowManager,
-                          uiTranscript,
-                          dataLoaderService
+                        finalAudioPath = uploadResult.audioFilePath;
+                      } else {
+                        console.error(
+                          "[Main] Failed to update database with audio path:",
+                          updateResult.error
                         );
+                        // Continue without audio path
                       }
-                    } catch (error) {
-                      console.error(
-                        "[Main] Background audio upload failed:",
-                        error
+                    } else {
+                      console.log(
+                        "[Main] Audio upload failed, transcript will be saved without audio:",
+                        uploadResult.error
                       );
-                      // Send transcript update without audio path on error
-                      updateUIWithOptimization(
-                        windowManager,
-                        uiTranscript,
-                        dataLoaderService
-                      );
+                      // Continue without audio path
                     }
-                  });
+                  } catch (error) {
+                    console.error(
+                      "[Main] Audio upload failed:",
+                      error
+                    );
+                    // Continue without audio path
+                  }
                 } else {
-                  // No audio service available, send transcript without audio
-                  updateUIWithOptimization(
-                    windowManager,
-                    uiTranscript,
-                    dataLoaderService
-                  );
+                  console.log("[Main] No audio service available, transcript will be saved without audio");
                 }
+
+                // Create final UI transcript with complete data (including audio if successful)
+                const finalUITranscript = {
+                  ...uiTranscript,
+                  audioFilePath: finalAudioPath,
+                };
+
+                // SINGLE UI update with complete transcript data
+                updateUIWithOptimization(
+                  windowManager,
+                  finalUITranscript,
+                  dataLoaderService
+                );
+
+                console.log(
+                  "[Main] Sent complete transcript to UI:",
+                  finalUITranscript.id,
+                  finalAudioPath ? "with audio" : "without audio"
+                );
               } else {
                 console.error(
                   "[Main] Failed to save transcript:",
@@ -1806,4 +1794,4 @@ ipcMain.handle("renderer-ready-for-auth", async () => {
   }
 });
 
-export { sttService };
+export { sttService, apiHandlers };

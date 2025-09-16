@@ -5,12 +5,12 @@ import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
 import { ApplicationContextService } from "./application_context_service";
 import { DataLoaderService } from "./data_loader_service";
-import { DictionaryService } from "./dictionary_service";
 import { getLanguageDisplayName } from "../../shared/constants/languages";
 import {
   hasProAccess,
   canUseWords,
 } from "../../shared/utils/subscription-permissions";
+import { apiHandlers } from "../index";
 // robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
@@ -24,33 +24,25 @@ export class TranslationService {
   private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
 
   constructor(
-    dataLoaderService?: DataLoaderService,
-    dictionaryService?: DictionaryService
+    dataLoaderService?: DataLoaderService
   ) {
     this.applicationContextService = ApplicationContextService.getInstance();
     this.dataLoaderService = dataLoaderService || null;
-    this.textInsertionService = new TextInsertionService(dictionaryService);
+    this.textInsertionService = new TextInsertionService();
   }
 
   public static getInstance(
-    dataLoaderService?: DataLoaderService,
-    dictionaryService?: DictionaryService
+    dataLoaderService?: DataLoaderService
   ): TranslationService {
     if (!TranslationService.instance) {
       TranslationService.instance = new TranslationService(
-        dataLoaderService,
-        dictionaryService
+        dataLoaderService
       );
     } else if (
       dataLoaderService &&
       !TranslationService.instance.dataLoaderService
     ) {
       TranslationService.instance.dataLoaderService = dataLoaderService;
-      // Update TextInsertionService with DictionaryService if provided
-      if (dictionaryService) {
-        TranslationService.instance.textInsertionService =
-          new TextInsertionService(dictionaryService);
-      }
     }
     return TranslationService.instance;
   }
@@ -285,8 +277,25 @@ Text to process: "${transcript}"
         max_tokens: Math.max(300, this.countWords(transcript) * 2), // Optimized token limit
       });
 
-      const finalText = response.choices[0].message.content;
+      let finalText = response.choices[0].message.content;
       console.log("[Translation] Raw LLM response:", finalText);
+
+      // Apply dictionary replacements if available
+      if (apiHandlers?.dictionaryService) {
+        try {
+          const textWithReplacements = await apiHandlers.dictionaryService.applyDictionaryReplacements(finalText);
+          if (textWithReplacements !== finalText) {
+            console.log("[Translation] Dictionary replacements applied");
+            console.log("[Translation] Before replacements:", finalText);
+            console.log("[Translation] After replacements:", textWithReplacements);
+            finalText = textWithReplacements;
+          }
+        } catch (error) {
+          console.warn("[Translation] Dictionary replacement failed, using original text:", error);
+        }
+      } else {
+        console.log("[Translation] DictionaryService not available, skipping replacements");
+      }
 
       // Calculate metrics and build metadata (can be done in parallel)
       const metrics = calculateSpeechMetrics(finalText, recordingDuration);

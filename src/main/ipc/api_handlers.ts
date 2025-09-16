@@ -15,7 +15,7 @@ export class APIHandlers {
   private apiManager: ExternalAPIManager;
   private microphoneService: MicrophoneService;
   private dataLoaderService: DataLoaderService;
-  private dictionaryService: DictionaryService;
+  public dictionaryService: DictionaryService;
   private windowManager: WindowManager;
 
   constructor(apiManager: ExternalAPIManager, windowManager: WindowManager) {
