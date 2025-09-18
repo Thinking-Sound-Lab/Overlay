@@ -13,6 +13,22 @@ export class SystemAudioManager {
     console.log(`[AudioManager] Initialized for platform: ${this.platform}`);
   }
 
+  async stop(): Promise<void> {
+    console.log("[SystemAudioManager] Stopping system audio manager...");
+    // Restore audio if muted
+    if (this.isMuted) {
+      await this.restoreSystemAudio();
+    }
+  }
+
+  async dispose(): Promise<void> {
+    console.log("[SystemAudioManager] Disposing system audio manager...");
+    // Ensure audio is restored
+    if (this.isMuted) {
+      await this.restoreSystemAudio();
+    }
+  }
+
   /**
    * Mute system audio and store original volume for restoration
    */

@@ -28,24 +28,12 @@ export interface AuthStateEventData {
 }
 
 export class DataLoaderService {
-  private static instance: DataLoaderService | null = null;
-  private cacheService: CacheService;
-  private supabaseService: SupabaseService;
-
-  private constructor(supabaseService: SupabaseService) {
-    this.cacheService = CacheService.getInstance();
-    this.supabaseService = supabaseService;
+  constructor(
+    private cacheService: CacheService,
+    private supabaseService: SupabaseService
+  ) {
   }
 
-  public static getInstance(
-    supabaseService: SupabaseService
-  ): DataLoaderService {
-    if (!DataLoaderService.instance) {
-      DataLoaderService.instance = new DataLoaderService(supabaseService);
-      console.log("DataLoaderService: Instance created");
-    }
-    return DataLoaderService.instance;
-  }
 
   /**
    * Load complete user data using cache-first strategy
@@ -391,7 +379,7 @@ export class DataLoaderService {
    */
   async getTranscripts(limit = 20, offset = 0): Promise<{
     data: { transcripts: UITranscriptEntry[]; totalCount: number } | null;
-    error: any;
+    error: string | null;
   }> {
     try {
       console.log(`[DataLoader] Getting paginated transcripts: limit=${limit}, offset=${offset}`);
@@ -462,10 +450,10 @@ export class DataLoaderService {
         };
       }
 
-      return { data: null, error: new Error("No data returned from database") };
+      return { data: null, error: "No data returned from database" };
     } catch (error) {
       console.error(`[DataLoader] Error getting transcripts:`, error);
-      return { data: null, error };
+      return { data: null, error: error instanceof Error ? error.message : "Unknown error" };
     }
   }
 
@@ -863,6 +851,110 @@ export class DataLoaderService {
       return {
         success: false,
         error: `Failed to reset word usage: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Dictionary management methods (DB-first approach)
+   * All dictionary operations go through DataLoaderService to maintain consistency
+   */
+
+  /**
+   * Get dictionary entries from cache first, DB on miss
+   */
+  getDictionaryEntries(): DictionaryEntry[] {
+    return this.cacheService.getDictionaryEntries();
+  }
+
+  /**
+   * Add dictionary entry (DB-first)
+   */
+  async addDictionaryEntry(key: string, value: string): Promise<{
+    success: boolean;
+    error?: string;
+    data?: DictionaryEntry;
+  }> {
+    try {
+      console.log(`[DataLoader] Adding dictionary entry (DB-first): ${key} -> ${value}`);
+
+      // Step 1: Save to database first
+      const result = await this.supabaseService.addDictionaryEntry(key.trim(), value.trim());
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Step 2: Update cache after successful DB save
+      this.cacheService.addDictionaryEntry(result.data);
+
+      console.log(`[DataLoader] Dictionary entry added successfully`);
+      return { success: true, data: result.data };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to add dictionary entry:`, error);
+      return {
+        success: false,
+        error: `Failed to add dictionary entry: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Update dictionary entry (DB-first)
+   */
+  async updateDictionaryEntry(id: string, key: string, value: string): Promise<{
+    success: boolean;
+    error?: string;
+    data?: DictionaryEntry;
+  }> {
+    try {
+      console.log(`[DataLoader] Updating dictionary entry (DB-first): ${id}`);
+
+      // Step 1: Save to database first
+      const result = await this.supabaseService.updateDictionaryEntry(id, key.trim(), value.trim());
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Step 2: Update cache after successful DB save
+      this.cacheService.updateDictionaryEntry(result.data);
+
+      console.log(`[DataLoader] Dictionary entry updated successfully`);
+      return { success: true, data: result.data };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to update dictionary entry:`, error);
+      return {
+        success: false,
+        error: `Failed to update dictionary entry: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
+  /**
+   * Delete dictionary entry (DB-first)
+   */
+  async deleteDictionaryEntry(id: string): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      console.log(`[DataLoader] Deleting dictionary entry (DB-first): ${id}`);
+
+      // Step 1: Delete from database first
+      const result = await this.supabaseService.deleteDictionaryEntry(id);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Step 2: Update cache after successful DB deletion
+      this.cacheService.removeDictionaryEntry(id);
+
+      console.log(`[DataLoader] Dictionary entry deleted successfully`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[DataLoader] Failed to delete dictionary entry:`, error);
+      return {
+        success: false,
+        error: `Failed to delete dictionary entry: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }

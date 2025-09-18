@@ -460,6 +460,7 @@ export const RecordingWindow: React.FC = () => {
         setIsProcessing(true);
       }
       setIsRecording(false);
+      await window.electronAPI.startProcessingAudio();
     } catch (err) {
       console.error("Error stopping media recording:", err);
       setIsProcessing(false);
@@ -521,9 +522,9 @@ export const RecordingWindow: React.FC = () => {
 
   const getBorderClasses = () => {
     if (isRecording || isProcessing || windowState === "processing") {
-      return "border border-gray-100/60"; // Reduced opacity for expanded states
+      return "border border-gray-100/30"; // Reduced opacity for expanded states
     } else if (hovered) {
-      return "border border-gray-100/60"; // Reduced opacity for hover
+      return "border border-gray-100/30"; // Reduced opacity for hover
     } else {
       return "border border-white/90"; // More visible border for compact
     }
@@ -573,11 +574,15 @@ export const RecordingWindow: React.FC = () => {
       >
         {expanded && !isRecording && !isProcessing && (
           <div className="flex gap-1 items-center justify-center">
-            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
-            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
-            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
-            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
-            <span className="w-1 h-1 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
+            <span className="w-0.5 h-0.5 rounded-full bg-white/85 opacity-60" />
           </div>
         )}
         {isRecording && (

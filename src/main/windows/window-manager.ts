@@ -93,12 +93,26 @@ export class WindowManager {
       transparent: true,
       resizable: false,
       hasShadow: false,
+      focusable: false,
+      type: "panel",
+      hiddenInMissionControl: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         preload: RECORDING_WINDOW_PRELOAD_WEBPACK_ENTRY,
       },
     });
+
+    // Set properties for macOS to ensure it stays on top of full-screen apps
+    if (process.platform === "darwin") {
+      this.recordingWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      this.recordingWindow.setFullScreenable(false);
+
+      this.recordingWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    }
 
     this.recordingWindow.loadURL(RECORDING_WINDOW_WEBPACK_ENTRY);
     // Don't automatically show - will be shown when onboarding is completed
@@ -135,6 +149,8 @@ export class WindowManager {
       transparent: true,
       resizable: false,
       hasShadow: false,
+      type: "panel",
+      focusable: false,
       show: false, // Don't show by default
       webPreferences: {
         nodeIntegration: false,
@@ -144,6 +160,17 @@ export class WindowManager {
     });
 
     this.informationWindow.loadURL(INFORMATION_WINDOW_WEBPACK_ENTRY);
+
+    // Set properties for macOS to ensure it stays on top of full-screen apps
+    if (process.platform === "darwin") {
+      this.informationWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      this.informationWindow.setFullScreenable(false);
+
+      this.informationWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    }
 
     return this.informationWindow;
   }
@@ -191,8 +218,12 @@ export class WindowManager {
 
   // Information Window Methods
   showInformation(message: InformationMessage): void {
-    const window =
-      this.getInformationWindow() || this.createInformationWindow();
+    const window = this.getInformationWindow();
+
+    if (!window) {
+      console.error("[WindowManager] Information window not initialized");
+      return;
+    }
 
     // Send message to information window
     this.sendToInformation("show-message", message);

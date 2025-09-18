@@ -6,10 +6,9 @@ export class AnalyticsService {
   private isInitialized = false;
 
   constructor() {
-    this.initialize();
   }
 
-  private initialize() {
+  async initialize(): Promise<void> {
     // Only initialize analytics in production
     if (process.env.NODE_ENV !== "production") {
       console.log(
@@ -207,12 +206,12 @@ export class AnalyticsService {
     this.track("subscription_cancelled");
   }
 
-  // Flush events before shutdown
-  async shutdown() {
+  async dispose(): Promise<void> {
+    console.log('[AnalyticsService] Disposing analytics service...');
     if (this.posthog && this.isInitialized) {
       try {
         await this.posthog.shutdown();
-        console.log("AnalyticsService: Successfully shut down");
+        console.log("AnalyticsService: Successfully shut down PostHog client");
       } catch (error) {
         console.error("AnalyticsService: Shutdown error:", error);
       }

@@ -74,7 +74,7 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
           ref={ref}
           type="checkbox"
           checked={isChecked}
-          onChange={() => {}} // eslint-disable-line @typescript-eslint/no-empty-function -- Handled by onClick
+          onChange={() => {}}  
           className="sr-only"
           {...props}
         />

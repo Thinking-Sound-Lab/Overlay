@@ -23,13 +23,6 @@ export class SupabaseService {
   private isInitialRestorationComplete = false;
 
   constructor() {
-    console.log("SupabaseService: Initializing with config:", {
-      url: process.env.REACT_APP_SUPABASE_URL,
-      keyLength: process.env.REACT_APP_SUPABASE_ANON_KEY?.length,
-      hasUrl: !!process.env.REACT_APP_SUPABASE_URL,
-      hasKey: !!process.env.REACT_APP_SUPABASE_ANON_KEY,
-    });
-
     if (
       !process.env.REACT_APP_SUPABASE_URL ||
       !process.env.REACT_APP_SUPABASE_ANON_KEY
@@ -50,6 +43,18 @@ export class SupabaseService {
         user: null,
       },
     });
+  }
+
+  async initialize(): Promise<void> {
+    console.log("SupabaseService: Initializing with config:", {
+      url: process.env.REACT_APP_SUPABASE_URL,
+      keyLength: process.env.REACT_APP_SUPABASE_ANON_KEY?.length,
+      hasUrl: !!process.env.REACT_APP_SUPABASE_URL,
+      hasKey: !!process.env.REACT_APP_SUPABASE_ANON_KEY,
+    });
+
+    // Try to restore session from storage on startup
+    await this.attemptSessionRestore();
 
     // Set up native Supabase auth state change listener
     this.supabase.auth.onAuthStateChange((event, session) => {
@@ -73,9 +78,15 @@ export class SupabaseService {
         this.notifyAuthStateChange(null);
       }
     });
+  }
 
-    // Try to restore session from storage on startup
-    this.attemptSessionRestore();
+  async dispose(): Promise<void> {
+    console.log("[SupabaseService] Disposing Supabase service...");
+    // Clear session and cleanup
+    this.clearStoredSession();
+    this.currentUser = null;
+    this.currentSession = null;
+    this.authStateChangeCallback = undefined;
   }
 
   public getClient(): SupabaseClient {
@@ -603,14 +614,23 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.error("SupabaseService: Update transcript audio path error:", error);
+        console.error(
+          "SupabaseService: Update transcript audio path error:",
+          error
+        );
       } else {
-        console.log("SupabaseService: Transcript audio path updated successfully:", data);
+        console.log(
+          "SupabaseService: Transcript audio path updated successfully:",
+          data
+        );
       }
 
       return { data, error };
     } catch (error) {
-      console.error("SupabaseService: Update transcript audio path error:", error);
+      console.error(
+        "SupabaseService: Update transcript audio path error:",
+        error
+      );
       return { data: null as any, error };
     }
   }
@@ -1077,9 +1097,7 @@ export class SupabaseService {
     }
   }
 
-  async deleteDictionaryEntry(
-    id: string
-  ): Promise<{ data: any; error: any }> {
+  async deleteDictionaryEntry(id: string): Promise<{ data: any; error: any }> {
     if (!this.currentUser) {
       return { data: null, error: new Error("User not authenticated") };
     }
@@ -1156,8 +1174,12 @@ export class SupabaseService {
       console.log("[SupabaseService] Word usage updated successfully");
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("[SupabaseService] Failed to update word usage:", errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        "[SupabaseService] Failed to update word usage:",
+        errorMessage
+      );
       return { success: false, error: errorMessage };
     }
   }
@@ -1211,8 +1233,12 @@ export class SupabaseService {
       console.log("[SupabaseService] Subscription updated successfully");
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("[SupabaseService] Failed to update subscription:", errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        "[SupabaseService] Failed to update subscription:",
+        errorMessage
+      );
       return { success: false, error: errorMessage };
     }
   }
@@ -1242,14 +1268,20 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        console.error("[SupabaseService] Error fetching subscription info:", error);
+        console.error(
+          "[SupabaseService] Error fetching subscription info:",
+          error
+        );
         return { data: null, error };
       }
 
       console.log("[SupabaseService] Subscription info fetched successfully");
       return { data, error: null };
     } catch (error) {
-      console.error("[SupabaseService] Failed to fetch subscription info:", error);
+      console.error(
+        "[SupabaseService] Failed to fetch subscription info:",
+        error
+      );
       return { data: null, error };
     }
   }

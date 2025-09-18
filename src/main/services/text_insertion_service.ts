@@ -26,6 +26,7 @@ export class TextInsertionService {
     console.log(`[TextInsertion] Initialized for platform: ${this.platform}`);
   }
 
+
   /**
    * Insert text using cross-platform clipboard method
    */
@@ -33,7 +34,7 @@ export class TextInsertionService {
     text: string,
     options: TextInsertionOptions = {}
   ): Promise<boolean> {
-    const { delay = 100, preserveClipboard = true } = options;
+    const { delay = 0, preserveClipboard = true } = options;
 
     if (!text || text.trim().length === 0) {
       console.warn("[TextInsertion] No text provided for insertion");
@@ -74,7 +75,6 @@ export class TextInsertionService {
     console.error("[TextInsertion] All text insertion methods failed");
     return false;
   }
-
 
   /**
    * Clipboard method for text insertion
@@ -128,17 +128,24 @@ export class TextInsertionService {
               try {
                 await nutjs.keyboard.pressKey(nutjs.Key.LeftCmd, nutjs.Key.V);
                 macOSSuccess = true;
-                console.log("[TextInsertion] macOS: nut.js automation successful");
+                console.log(
+                  "[TextInsertion] macOS: nut.js automation successful"
+                );
               } catch (nutjsError) {
-                console.warn("[TextInsertion] macOS: nut.js failed, falling back to AppleScript:", nutjsError);
+                console.warn(
+                  "[TextInsertion] macOS: nut.js failed, falling back to AppleScript:",
+                  nutjsError
+                );
               }
             }
-            
+
             if (!macOSSuccess) {
               await execAsync(
                 'osascript -e "tell application \\"System Events\\" to keystroke \\"v\\" using command down"'
               );
-              console.log("[TextInsertion] macOS: AppleScript automation successful");
+              console.log(
+                "[TextInsertion] macOS: AppleScript automation successful"
+              );
             }
             break;
           }
@@ -147,22 +154,38 @@ export class TextInsertionService {
             if (nutjs && nutjs.keyboard) {
               try {
                 // Press Ctrl+V
-                await nutjs.keyboard.pressKey(nutjs.Key.LeftControl, nutjs.Key.V);
-                
+                await nutjs.keyboard.pressKey(
+                  nutjs.Key.LeftControl,
+                  nutjs.Key.V
+                );
+
                 // Small delay to ensure paste operation completes
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
+                await new Promise((resolve) => setTimeout(resolve, 50));
+
                 // Explicitly release the keys to prevent them from getting stuck
-                await nutjs.keyboard.releaseKey(nutjs.Key.LeftControl, nutjs.Key.V);
-                
-                console.log("[TextInsertion] Windows: Keys pressed and released successfully");
+                await nutjs.keyboard.releaseKey(
+                  nutjs.Key.LeftControl,
+                  nutjs.Key.V
+                );
+
+                console.log(
+                  "[TextInsertion] Windows: Keys pressed and released successfully"
+                );
               } catch (keyError) {
                 // Ensure keys are released even if paste operation fails
                 try {
-                  await nutjs.keyboard.releaseKey(nutjs.Key.LeftControl, nutjs.Key.V);
-                  console.log("[TextInsertion] Windows: Keys released after error");
+                  await nutjs.keyboard.releaseKey(
+                    nutjs.Key.LeftControl,
+                    nutjs.Key.V
+                  );
+                  console.log(
+                    "[TextInsertion] Windows: Keys released after error"
+                  );
                 } catch (releaseError) {
-                  console.warn("[TextInsertion] Windows: Failed to release keys after error:", releaseError);
+                  console.warn(
+                    "[TextInsertion] Windows: Failed to release keys after error:",
+                    releaseError
+                  );
                 }
                 throw keyError;
               }

@@ -1,30 +1,39 @@
-import { ipcMain } from "electron";
-import { ExternalAPIManager } from "../services/external_api_manager";
+import { ipcMain, shell, app } from "electron";
 import { IPCResponse, Settings } from "../../shared/types";
-import MicrophoneService from "../services/microphone_service";
+import { MicrophoneService } from "../services/microphone_service";
 import { DataLoaderService } from "../services/data_loader_service";
-import { DictionaryService } from "../services/dictionary_service";
+import { SupabaseService } from "../services/supabase_service";
+import { AnalyticsService } from "../services/analytics_service";
 import { WindowManager } from "../windows/window-manager";
-import { sttService } from "../index";
+import { PermissionsService } from "../services/permissions_service";
+import { STTService } from "../services/stt_service";
+import { AutoUpdateService } from "../services/auto_update_service";
+import { AuthService } from "../services/auth_service";
 import { filterSettingsByAccess } from "../../shared/utils/subscription-permissions";
 
-// Re-export IPCResponse type for compatibility
-// export { IPCResponse } from "../utils/ipc-handler";
-
 export class APIHandlers {
-  private apiManager: ExternalAPIManager;
-  private microphoneService: MicrophoneService;
-  private dataLoaderService: DataLoaderService;
-  public dictionaryService: DictionaryService;
-  private windowManager: WindowManager;
+  constructor(
+    private supabaseService: SupabaseService,
+    private analyticsService: AnalyticsService,
+    private microphoneService: MicrophoneService,
+    private dataLoaderService: DataLoaderService,
+    private windowManager: WindowManager,
+    private permissionsService: PermissionsService,
+    private sttService: STTService,
+    private autoUpdateService: AutoUpdateService,
+    private authService: AuthService,
+    private setHotkeyTestMode: (enabled: boolean) => void
+  ) {}
 
-  constructor(apiManager: ExternalAPIManager, windowManager: WindowManager) {
-    this.apiManager = apiManager;
-    this.microphoneService = MicrophoneService.getInstance();
-    this.dataLoaderService = DataLoaderService.getInstance(apiManager.supabase);
-    this.dictionaryService = DictionaryService.getInstance(apiManager.supabase, apiManager.analytics);
-    this.windowManager = windowManager;
+  async initialize(): Promise<void> {
+    console.log("[APIHandlers] Initializing API handlers...");
     this.setupHandlers();
+  }
+
+  async stop(): Promise<void> {
+    console.log("[APIHandlers] Stopping API handlers...");
+    // Remove IPC handlers
+    this.removeAllHandlers();
   }
 
   private setupHandlers() {
@@ -77,15 +86,33 @@ export class APIHandlers {
     ipcMain.handle("db:getUserStats", this.handleGetUserStats.bind(this));
 
     // Dictionary handlers
-    ipcMain.handle("dictionary:getDictionaryEntries", this.handleGetDictionaryEntries.bind(this));
-    ipcMain.handle("dictionary:addDictionaryEntry", this.handleAddDictionaryEntry.bind(this));
-    ipcMain.handle("dictionary:updateDictionaryEntry", this.handleUpdateDictionaryEntry.bind(this));
-    ipcMain.handle("dictionary:deleteDictionaryEntry", this.handleDeleteDictionaryEntry.bind(this));
+    ipcMain.handle(
+      "dictionary:getDictionaryEntries",
+      this.handleGetDictionaryEntries.bind(this)
+    );
+    ipcMain.handle(
+      "dictionary:addDictionaryEntry",
+      this.handleAddDictionaryEntry.bind(this)
+    );
+    ipcMain.handle(
+      "dictionary:updateDictionaryEntry",
+      this.handleUpdateDictionaryEntry.bind(this)
+    );
+    ipcMain.handle(
+      "dictionary:deleteDictionaryEntry",
+      this.handleDeleteDictionaryEntry.bind(this)
+    );
 
     // Pro feature handlers
     ipcMain.handle("pro:startTrial", this.handleStartProTrial.bind(this));
-    ipcMain.handle("pro:updateSubscription", this.handleUpdateSubscription.bind(this));
-    ipcMain.handle("pro:getSubscriptionInfo", this.handleGetSubscriptionInfo.bind(this));
+    ipcMain.handle(
+      "pro:updateSubscription",
+      this.handleUpdateSubscription.bind(this)
+    );
+    ipcMain.handle(
+      "pro:getSubscriptionInfo",
+      this.handleGetSubscriptionInfo.bind(this)
+    );
 
     // Analytics handlers
     ipcMain.handle("analytics:track", this.handleTrackEvent.bind(this));
@@ -150,6 +177,83 @@ export class APIHandlers {
       this.handleCheckMicrophonePermissions.bind(this)
     );
 
+    // Recording and Audio handlers
+    ipcMain.handle("audio-recorded", this.handleAudioRecorded.bind(this));
+    ipcMain.handle(
+      "start-processing-audio",
+      this.handleStartProcessingAudio.bind(this)
+    );
+    ipcMain.handle("recording:start", this.handleRecordingStart.bind(this));
+    ipcMain.handle("recording:stop", this.handleRecordingStop.bind(this));
+    ipcMain.handle("recording:cancel", this.handleRecordingCancel.bind(this));
+
+    // Window Management handlers
+    ipcMain.handle(
+      "expand-recording-window",
+      this.handleExpandRecordingWindow.bind(this)
+    );
+    ipcMain.handle(
+      "compact-recording-window",
+      this.handleCompactRecordingWindow.bind(this)
+    );
+    ipcMain.handle(
+      "show-recording-tooltip",
+      this.handleShowRecordingTooltip.bind(this)
+    );
+
+    // System/App handlers
+    ipcMain.handle(
+      "open-external-link",
+      this.handleOpenExternalLink.bind(this)
+    );
+    ipcMain.handle("get-app-version", this.handleGetAppVersion.bind(this));
+
+    // Auto-updater handlers
+    ipcMain.handle("check-for-updates", this.handleCheckForUpdates.bind(this));
+    ipcMain.handle("download-update", this.handleDownloadUpdate.bind(this));
+    ipcMain.handle("install-update", this.handleInstallUpdate.bind(this));
+
+    // Permission handlers
+    ipcMain.handle(
+      "check-accessibility-permission",
+      this.handleCheckAccessibilityPermission.bind(this)
+    );
+    ipcMain.handle(
+      "check-microphone-permission",
+      this.handleCheckMicrophonePermission.bind(this)
+    );
+    ipcMain.handle(
+      "request-accessibility-permission",
+      this.handleRequestAccessibilityPermission.bind(this)
+    );
+    ipcMain.handle(
+      "request-microphone-permission",
+      this.handleRequestMicrophonePermission.bind(this)
+    );
+
+    // Authentication/Flow handlers
+    ipcMain.handle(
+      "on-authentication-complete",
+      this.handleAuthenticationComplete.bind(this)
+    );
+    ipcMain.handle(
+      "renderer-ready-for-auth",
+      this.handleRendererReadyForAuth.bind(this)
+    );
+
+    // Window control handlers
+    ipcMain.handle("window:close", this.handleWindowClose.bind(this));
+    ipcMain.handle("window:minimize", this.handleWindowMinimize.bind(this));
+    ipcMain.handle("window:maximize", this.handleWindowMaximize.bind(this));
+    ipcMain.handle(
+      "window:get-maximized-state",
+      this.handleGetMaximizedState.bind(this)
+    );
+
+    // Testing/Debug handlers
+    ipcMain.handle("start-hotkey-test", this.handleStartHotkeyTest.bind(this));
+    ipcMain.handle("end-hotkey-test", this.handleEndHotkeyTest.bind(this));
+
     console.log("APIHandlers: All IPC handlers registered");
   }
 
@@ -189,7 +293,7 @@ export class APIHandlers {
         return this.createResponse(null, new Error("Email is required"));
       }
 
-      const result = await this.apiManager.supabase.signInWithMagicLink(
+      const result = await this.authService.signInWithMagicLink(
         credentials.email
       );
       return this.createResponse(result);
@@ -214,7 +318,7 @@ export class APIHandlers {
         );
       }
 
-      const result = await this.apiManager.supabase.signUpWithMagicLink(
+      const result = await this.authService.signUpWithMagicLink(
         credentials.email,
         credentials.name
       );
@@ -230,7 +334,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.signOut();
+      const result = await this.authService.signOut();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -244,9 +348,9 @@ export class APIHandlers {
 
     try {
       console.log("APIHandlers: Handling Google sign-in request...");
-      const result = await this.apiManager.supabase.signInWithGoogle();
+      const result = await this.authService.signInWithGoogle();
 
-      if (result.data?.url) {
+      if (result.success && result.data?.url) {
         console.log(
           "APIHandlers: Opening Google OAuth URL in external browser..."
         );
@@ -261,10 +365,10 @@ export class APIHandlers {
             "Google OAuth initiated - please complete authentication in your browser",
         });
       } else {
-        console.error("APIHandlers: No OAuth URL received from Supabase");
+        console.error("APIHandlers: No OAuth URL received from AuthService");
         return this.createResponse(
           null,
-          new Error("Failed to initiate Google OAuth")
+          new Error(result.error || "Failed to initiate Google OAuth")
         );
       }
     } catch (error) {
@@ -279,7 +383,7 @@ export class APIHandlers {
     }
 
     try {
-      const user = this.apiManager.supabase.getCurrentUser();
+      const user = this.authService.getCurrentSession();
       return this.createResponse({ data: { user } });
     } catch (error) {
       return this.createResponse(null, error);
@@ -292,7 +396,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.deleteAccount();
+      const result = await this.authService.deleteAccount();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -305,7 +409,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.getUserProfile();
+      const result = this.authService.getUserProfile();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -318,18 +422,19 @@ export class APIHandlers {
     }
 
     try {
-      // Use DataLoaderService for DB-first onboarding completion
-      const result = await this.dataLoaderService.completeOnboarding();
-      if (result.success && result.data) {
+      const result = await this.authService.completeOnboarding();
+      if (result.success) {
         console.log(
-          "[APIHandlers] Onboarding completed successfully via DataLoaderService"
+          "[APIHandlers] Onboarding completed successfully via AuthService"
         );
 
         // Show recording window now that onboarding is completed
-        console.log("[APIHandlers] Showing recording window after onboarding completion");
+        console.log(
+          "[APIHandlers] Showing recording window after onboarding completion"
+        );
         this.windowManager.showRecordingWindow();
 
-        return this.createResponse({ success: true, data: result.data });
+        return this.createResponse({ success: true });
       } else {
         console.error(
           "[APIHandlers] Failed to complete onboarding:",
@@ -356,7 +461,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.saveTranscript(transcript);
+      const result = await this.supabaseService.saveTranscript(transcript);
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -389,7 +494,10 @@ export class APIHandlers {
     }
 
     if (!audioFilePath) {
-      return this.createResponse(null, new Error("Audio file path is required"));
+      return this.createResponse(
+        null,
+        new Error("Audio file path is required")
+      );
     }
 
     try {
@@ -411,29 +519,26 @@ export class APIHandlers {
     try {
       // Get user data for Pro access validation
       const userData = this.dataLoaderService.getCurrentUser();
-      
+
       // Filter settings to remove Pro features user doesn't have access to
       const validatedSettings = filterSettingsByAccess(userData, settings);
-      
+
       // Log any settings that were filtered out
-      const filteredKeys = Object.keys(settings).filter(key => 
-        settings[key] !== validatedSettings[key]
+      const filteredKeys = Object.keys(settings).filter(
+        (key) => settings[key] !== validatedSettings[key]
       );
       if (filteredKeys.length > 0) {
-        console.warn("[API] Filtered Pro settings user doesn't have access to:", filteredKeys);
+        console.warn(
+          "[API] Filtered Pro settings user doesn't have access to:",
+          filteredKeys
+        );
       }
-      
-      // Use DataLoaderService for DB-first settings update with validated settings
-      const result = await this.dataLoaderService.updateUserSettings(validatedSettings as Settings);
-      if (result.success) {
-        // Reinitialize STT service if realtime mode changed
-        if (Object.prototype.hasOwnProperty.call(validatedSettings, "enableRealtimeMode") && sttService) {
-          console.log(
-            "[API] Realtime mode setting changed, reinitializing STT service"
-          );
-          await sttService.reinitialize();
-        }
 
+      // Use DataLoaderService for DB-first settings update with validated settings
+      const result = await this.dataLoaderService.updateUserSettings(
+        validatedSettings as Settings
+      );
+      if (result.success) {
         return this.createResponse({ success: true });
       } else {
         throw new Error(result.error || "Failed to save settings");
@@ -475,7 +580,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.getUserStats();
+      const result = await this.supabaseService.getUserStats();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -492,7 +597,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.track(data.event, data.properties);
+      this.analyticsService.track(data.event, data.properties);
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -508,7 +613,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.identify(data.userId, data.properties);
+      this.analyticsService.identify(data.userId, data.properties);
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -524,7 +629,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackUserSignUp(method);
+      this.analyticsService.trackUserSignUp(method);
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -540,7 +645,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackUserSignIn(method);
+      this.analyticsService.trackUserSignIn(method);
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -553,7 +658,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackUserSignOut();
+      this.analyticsService.trackUserSignOut();
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -566,7 +671,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackRecordingStarted();
+      this.analyticsService.trackRecordingStarted();
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -582,7 +687,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackRecordingStopped(duration);
+      this.analyticsService.trackRecordingStopped(duration);
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -598,7 +703,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackTranscriptionCompleted(
+      this.analyticsService.trackTranscriptionCompleted(
         data.wordCount,
         data.wpm,
         data.wasTranslated
@@ -615,7 +720,7 @@ export class APIHandlers {
     }
 
     try {
-      this.apiManager.analytics.trackAppLaunched();
+      this.analyticsService.trackAppLaunched();
       return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
@@ -795,7 +900,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.dictionaryService.getDictionaryEntries();
+      const result = await this.dataLoaderService.getDictionaryEntries();
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -812,7 +917,10 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.dictionaryService.addDictionaryEntry(key, value);
+      const result = await this.dataLoaderService.addDictionaryEntry(
+        key,
+        value
+      );
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -830,7 +938,11 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.dictionaryService.updateDictionaryEntry(id, key, value);
+      const result = await this.dataLoaderService.updateDictionaryEntry(
+        id,
+        key,
+        value
+      );
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -846,7 +958,7 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.dictionaryService.deleteDictionaryEntry(id);
+      const result = await this.dataLoaderService.deleteDictionaryEntry(id);
       return this.createResponse(result);
     } catch (error) {
       return this.createResponse(null, error);
@@ -889,8 +1001,408 @@ export class APIHandlers {
     }
 
     try {
-      const result = await this.apiManager.supabase.getUserSubscriptionInfo();
+      const result = await this.supabaseService.getUserSubscriptionInfo();
       return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Recording and Audio handlers
+  private handleAudioRecorded(
+    event: any,
+    audioData: { data: string; mimeType: string }
+  ): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      console.log(
+        "[APIHandlers] Received audio chunk:",
+        audioData.data.length,
+        "bytes"
+      );
+      if (this.sttService.isRecording()) {
+        this.sttService.receiveAudioData(audioData.data);
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleStartProcessingAudio(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      await this.sttService.startProcessing();
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRecordingStart(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      await this.sttService.startRecording();
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRecordingStop(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      await this.sttService.stopRecording();
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRecordingCancel(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      await this.sttService.cancelRecording();
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Window Management handlers
+  private handleExpandRecordingWindow(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      if (
+        this.windowManager.getRecordingWindow() &&
+        !this.windowManager.getRecordingWindow().isDestroyed()
+      ) {
+        this.windowManager.expandRecordingWindow();
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleCompactRecordingWindow(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      if (
+        this.windowManager.getRecordingWindow() &&
+        !this.windowManager.getRecordingWindow().isDestroyed()
+      ) {
+        this.windowManager.compactRecordingWindow();
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleShowRecordingTooltip(
+    event: any,
+    type: string,
+    message: string
+  ): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const tooltipMessage = {
+        type: type as any,
+        title: "",
+        message,
+        duration: 500,
+      };
+      this.windowManager.showInformation(tooltipMessage);
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // System/App handlers
+  private handleOpenExternalLink(event: any, url: string): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      shell.openExternal(url);
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleGetAppVersion(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      return this.createResponse({ version: app.getVersion() });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Auto-updater handlers
+  private async handleCheckForUpdates(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    const result = await this.autoUpdateService.checkForUpdates();
+    if (result.success) {
+      return this.createResponse({ success: true });
+    } else {
+      return this.createResponse(null, new Error(result.error));
+    }
+  }
+
+  private async handleDownloadUpdate(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    const result = await this.autoUpdateService.downloadUpdate();
+    if (result.success) {
+      return this.createResponse({ success: true });
+    } else {
+      return this.createResponse(null, new Error(result.error));
+    }
+  }
+
+  private async handleInstallUpdate(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    const result = await this.autoUpdateService.installUpdate();
+    if (result.success) {
+      return this.createResponse({ success: true });
+    } else {
+      return this.createResponse(null, new Error(result.error));
+    }
+  }
+
+  // Permission handlers
+  private async handleCheckAccessibilityPermission(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result =
+        await this.permissionsService.checkAccessibilityPermission();
+      return this.createResponse({ granted: result.granted });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleCheckMicrophonePermission(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result = await this.permissionsService.checkMicrophonePermission();
+      return this.createResponse({ granted: result.granted });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRequestAccessibilityPermission(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result =
+        await this.permissionsService.requestAccessibilityPermission();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRequestMicrophonePermission(
+    event: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const result =
+        await this.permissionsService.requestMicrophonePermission();
+      return this.createResponse(result);
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Authentication/Flow handlers (only the ones actually used)
+  private async handleAuthenticationComplete(
+    event: any,
+    user: any
+  ): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      if (!user) {
+        return this.createResponse(null, new Error("No user data provided"));
+      }
+      // Just return success - main authentication handling is done elsewhere
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private async handleRendererReadyForAuth(event: any): Promise<IPCResponse> {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      // Signal AuthService that renderer is ready
+      this.authService.setRendererReady(true);
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Window control handlers
+  private handleWindowClose(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const mainWindow = this.windowManager.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.close();
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleWindowMinimize(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const mainWindow = this.windowManager.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.minimize();
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleWindowMaximize(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const mainWindow = this.windowManager.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMaximized()) {
+          mainWindow.unmaximize();
+          return this.createResponse({ success: true, action: "unmaximized" });
+        } else {
+          mainWindow.maximize();
+          return this.createResponse({ success: true, action: "maximized" });
+        }
+      }
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleGetMaximizedState(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      const mainWindow = this.windowManager.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        return this.createResponse({ isMaximized: mainWindow.isMaximized() });
+      }
+      return this.createResponse({ isMaximized: false });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  // Testing/Debug handlers (only the ones actually used)
+  private handleStartHotkeyTest(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      console.log("[APIHandlers] Starting hotkey test mode");
+      this.setHotkeyTestMode(true);
+      return this.createResponse({ success: true });
+    } catch (error) {
+      return this.createResponse(null, error);
+    }
+  }
+
+  private handleEndHotkeyTest(event: any): IPCResponse {
+    if (!this.validateSender(event.sender)) {
+      return this.createResponse(null, new Error("Unauthorized"));
+    }
+
+    try {
+      console.log("[APIHandlers] Ending hotkey test mode");
+      this.setHotkeyTestMode(false);
+      return this.createResponse({ success: true });
     } catch (error) {
       return this.createResponse(null, error);
     }
@@ -937,5 +1449,32 @@ export class APIHandlers {
     ipcMain.removeAllListeners("pro:startTrial");
     ipcMain.removeAllListeners("pro:updateSubscription");
     ipcMain.removeAllListeners("pro:getSubscriptionInfo");
+
+    // Remove new handlers
+    ipcMain.removeAllListeners("audio-recorded");
+    ipcMain.removeAllListeners("start-processing-audio");
+    ipcMain.removeAllListeners("recording:start");
+    ipcMain.removeAllListeners("recording:stop");
+    ipcMain.removeAllListeners("recording:cancel");
+    ipcMain.removeAllListeners("expand-recording-window");
+    ipcMain.removeAllListeners("compact-recording-window");
+    ipcMain.removeAllListeners("show-recording-tooltip");
+    ipcMain.removeAllListeners("open-external-link");
+    ipcMain.removeAllListeners("get-app-version");
+    ipcMain.removeAllListeners("check-for-updates");
+    ipcMain.removeAllListeners("download-update");
+    ipcMain.removeAllListeners("install-update");
+    ipcMain.removeAllListeners("check-accessibility-permission");
+    ipcMain.removeAllListeners("check-microphone-permission");
+    ipcMain.removeAllListeners("request-accessibility-permission");
+    ipcMain.removeAllListeners("request-microphone-permission");
+    ipcMain.removeAllListeners("on-authentication-complete");
+    ipcMain.removeAllListeners("renderer-ready-for-auth");
+    ipcMain.removeAllListeners("window:close");
+    ipcMain.removeAllListeners("window:minimize");
+    ipcMain.removeAllListeners("window:maximize");
+    ipcMain.removeAllListeners("window:get-maximized-state");
+    ipcMain.removeAllListeners("start-hotkey-test");
+    ipcMain.removeAllListeners("end-hotkey-test");
   }
 }
