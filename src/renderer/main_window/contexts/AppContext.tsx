@@ -11,6 +11,7 @@ import type {
   Settings,
   UserStats,
   UITranscriptEntry,
+  DictionaryEntry,
 } from "../../../shared/types";
 import type { UserRecord } from "../../../shared/types/database";
 import { auth } from "../lib/api_client";
@@ -30,6 +31,7 @@ interface AppState {
   // Data state
   userStats: UserStats;
   transcripts: UITranscriptEntry[];
+  dictionaryEntries: DictionaryEntry[];
   totalTranscripts: number;
   settings: Settings;
 
@@ -39,7 +41,10 @@ interface AppState {
 }
 
 type AppAction =
-  | { type: "SET_LOADING_STATE"; payload: { isLoading: boolean; message: string } }
+  | {
+      type: "SET_LOADING_STATE";
+      payload: { isLoading: boolean; message: string };
+    }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "SET_USER"; payload: UserRecord | null }
   | { type: "SET_AUTHENTICATED"; payload: boolean }
@@ -55,6 +60,7 @@ type AppAction =
       type: "SET_RECORDING_STATE";
       payload: { isRecording: boolean; isProcessing: boolean };
     }
+  | { type: "SET_DICTIONARY_ENTRIES"; payload: DictionaryEntry[] }
   | { type: "RESET_APP_STATE" };
 
 const initialState: AppState = {
@@ -71,6 +77,7 @@ const initialState: AppState = {
     streakDays: 0,
   },
   transcripts: [],
+  dictionaryEntries: [],
   totalTranscripts: 0,
   settings: DEFAULT_SETTINGS,
   isRecording: false,
@@ -83,7 +90,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         isLoading: action.payload.isLoading,
-        loadingMessage: action.payload.message
+        loadingMessage: action.payload.message,
       };
     case "SET_ERROR":
       return { ...state, error: action.payload };
@@ -115,6 +122,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         isRecording: action.payload.isRecording,
         isProcessing: action.payload.isProcessing,
       };
+    case "SET_DICTIONARY_ENTRIES":
+      return { ...state, dictionaryEntries: action.payload };
     case "RESET_APP_STATE":
       console.log("AppContext: Resetting app state to initial values");
       return {
@@ -144,6 +153,7 @@ interface AppContextType {
   ) => void;
   addTranscript: (transcript: UITranscriptEntry) => void;
   setSettings: (settings: Settings) => void;
+  setDictionaryEntries: (entries: DictionaryEntry[]) => void;
   setRecordingState: (isRecording: boolean, isProcessing: boolean) => void;
   resetAppState: () => void;
 
@@ -202,7 +212,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const signOut = useCallback(async () => {
     try {
       console.log("AppContext: Signing out...");
-      dispatch({ type: "SET_LOADING_STATE", payload: { isLoading: true, message: "Signing out..." } });
+      dispatch({
+        type: "SET_LOADING_STATE",
+        payload: { isLoading: true, message: "Signing out..." },
+      });
 
       await auth.signOut();
 
@@ -212,7 +225,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       console.error("AppContext: Error during sign out:", error);
       dispatch({ type: "SET_ERROR", payload: "Failed to sign out" });
     } finally {
-      dispatch({ type: "SET_LOADING_STATE", payload: { isLoading: false, message: "" } });
+      dispatch({
+        type: "SET_LOADING_STATE",
+        payload: { isLoading: false, message: "" },
+      });
     }
   }, []);
 
@@ -225,12 +241,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         isLoading,
         message,
         source,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
       dispatch({
         type: "SET_LOADING_STATE",
-        payload: { isLoading, message: message || "" }
+        payload: { isLoading, message: message || "" },
       });
     };
 
@@ -242,6 +258,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         settings,
         recentTranscripts,
         totalTranscriptCount,
+        dictionaryEntries,
         error,
       } = event.detail;
 
@@ -252,6 +269,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         hasStatistics: !!statistics,
         hasSettings: !!settings,
         transcriptCount: recentTranscripts?.length || 0,
+        dictionaryEntriesCount: dictionaryEntries?.length || 0,
         error,
       });
 
@@ -299,6 +317,15 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
           enableTranslation: settings.enableTranslation,
           targetLanguage: settings.targetLanguage,
           privacyMode: settings.privacyMode,
+        });
+      }
+
+      // Update dictionary entries if provided (NEW FIX!)
+      if (dictionaryEntries && Array.isArray(dictionaryEntries)) {
+        dispatch({ type: "SET_DICTIONARY_ENTRIES", payload: dictionaryEntries });
+        console.log("AppContext: Dictionary entries updated from auth state:", {
+          dictionaryEntriesCount: dictionaryEntries.length,
+          entries: dictionaryEntries.map(e => ({ key: e.key, value: e.value })),
         });
       }
 
@@ -376,7 +403,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setTimeout(signalRendererReady, 100);
 
     return () => {
-      window.removeEventListener("loading-state-changed", handleLoadingStateChanged);
+      window.removeEventListener(
+        "loading-state-changed",
+        handleLoadingStateChanged
+      );
       window.removeEventListener("transcript-updated", handleTranscriptUpdated);
       window.removeEventListener("auth-state-changed", handleAuthStateChanged);
       window.removeEventListener("statistics-updated", handleStatisticsUpdated);
@@ -391,7 +421,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       state,
       dispatch,
       setLoadingState: (isLoading: boolean, message: string) =>
-        dispatch({ type: "SET_LOADING_STATE", payload: { isLoading, message } }),
+        dispatch({
+          type: "SET_LOADING_STATE",
+          payload: { isLoading, message },
+        }),
       setError: (error: string | null) =>
         dispatch({ type: "SET_ERROR", payload: error }),
       setUser: (user: UserRecord | null) =>
@@ -414,6 +447,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         dispatch({ type: "ADD_TRANSCRIPT", payload: transcript }),
       setSettings: (settings: Settings) =>
         dispatch({ type: "SET_SETTINGS", payload: settings }),
+      setDictionaryEntries: (entries: DictionaryEntry[]) =>
+        dispatch({ type: "SET_DICTIONARY_ENTRIES", payload: entries }),
       setRecordingState: (isRecording: boolean, isProcessing: boolean) =>
         dispatch({
           type: "SET_RECORDING_STATE",

@@ -9,21 +9,26 @@ export interface MicrophoneDevice {
 }
 
 export class MicrophoneService {
-  private static instance: MicrophoneService;
   private availableDevices: MicrophoneDevice[] = [];
   private mainWindow: BrowserWindow | null = null;
   private currentDeviceId = "default";
   private deviceChangeCallbacks: Set<(deviceId: string) => void> = new Set();
 
-  private constructor() {
-    // Private constructor for singleton
+  constructor() {
   }
 
-  public static getInstance(): MicrophoneService {
-    if (!MicrophoneService.instance) {
-      MicrophoneService.instance = new MicrophoneService();
-    }
-    return MicrophoneService.instance;
+  async stop(): Promise<void> {
+    console.log("[MicrophoneService] Stopping microphone service...");
+    // Clear callbacks and references
+    this.deviceChangeCallbacks.clear();
+  }
+
+  async dispose(): Promise<void> {
+    console.log("[MicrophoneService] Disposing microphone service...");
+    // Clean up all resources
+    this.deviceChangeCallbacks.clear();
+    this.mainWindow = null;
+    this.availableDevices = [];
   }
 
   public setMainWindow(window: BrowserWindow | null): void {
@@ -108,7 +113,7 @@ export class MicrophoneService {
         this.availableDevices = devices;
         console.log(
           `[MicrophoneService] Found ${devices.length} audio input devices:`,
-          devices.map((d: any) => d.label)
+          devices.map((d: MicrophoneDevice) => d.label)
         );
         return devices;
       } else {

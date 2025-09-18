@@ -20,12 +20,15 @@ export interface AudioDownloadProgress {
 }
 
 export class AudioStorageService {
-  private supabaseService: SupabaseService;
   private readonly bucketName = "audio-recordings";
   private tempAudioBuffer: Buffer | null = null;
 
-  constructor(supabaseService: SupabaseService) {
-    this.supabaseService = supabaseService;
+  constructor(private supabaseService: SupabaseService) {
+
+  }
+
+  async initialize(): Promise<void> {
+    console.log("[AudioStorageService] Initializing audio storage service...");
 
     // Configure ffmpeg with proper path resolution
     let resolvedFfmpegPath = ffmpegPath;
@@ -58,6 +61,18 @@ export class AudioStorageService {
         "[AudioStorage] No ffmpeg binary found, falling back to system PATH"
       );
     }
+  }
+
+  async stop(): Promise<void> {
+    console.log("[AudioStorageService] Stopping audio storage service...");
+    // Clear temp audio on stop
+    this.clearTempAudio();
+  }
+
+  async dispose(): Promise<void> {
+    console.log("[AudioStorageService] Disposing audio storage service...");
+    // Clean up any resources
+    this.clearTempAudio();
   }
 
   storeTempAudio(audioChunks: string[]): void {

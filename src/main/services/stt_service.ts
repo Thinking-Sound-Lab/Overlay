@@ -1,15 +1,21 @@
-// STTService.ts - Real-time Speech-to-Text Service (Real-time STT Only)
-import RealtimeSTTProvider, {
-  RealtimeConfig,
-  RealtimeSTTCallback,
-} from "../providers/realtime_stt";
-import TranslationService from "./translation_service";
+// STTService.ts - Speech-to-Text Service (Pre-recorded STT)
+// REAL-TIME STT COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+// import RealtimeSTTProvider, {
+//   RealtimeConfig,
+//   RealtimeSTTCallback,
+// } from "../providers/realtime_stt";
+import PrerecordedSTTProvider, {
+  PrerecordedConfig,
+  PrerecordedSTTCallback,
+} from "../providers/deepgram";
+import { TranslationService } from "./translation_service";
 import { AnalyticsService } from "./analytics_service";
+import { ApplicationDetectionService } from "./application_detection_service";
 import { ApplicationMappingsConfig } from "../config/application_mappings";
 import { DataLoaderService } from "./data_loader_service";
 import { WindowManager } from "../windows/window-manager";
 import { InformationMessage } from "../windows/types";
-import { Settings, SpeechMetrics, TranslationResult } from "../../shared/types";
+import { Settings } from "../../shared/types";
 import {
   hasProAccess,
   canUseWords,
@@ -20,45 +26,49 @@ import {
   isLanguageProfessionSupported,
 } from "../../shared/constants/professions";
 import { AudioStorageService } from "./audio_storage_service";
+import { SystemAudioManager } from "./system_audio_manager";
 
 class STTService {
-  private realtimeProvider: RealtimeSTTProvider | null = null;
+  // REAL-TIME PROVIDER COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+  // private realtimeProvider: RealtimeSTTProvider | null = null;
+  private prerecordedProvider: PrerecordedSTTProvider | null = null;
   private audioBuffer: string[] = [];
-  private isRecording = false;
+  private recordingState = false;
   private lastRecordingDuration = 0;
   private recordingStartTime = 0;
-  private onMetricsUpdate?: (
-    metrics: SpeechMetrics,
-    transcript?: string,
-    translationMeta?: TranslationResult
-  ) => void;
-  private translationService: TranslationService;
-  private analyticsService?: AnalyticsService;
-  private dataLoaderService: DataLoaderService;
   private accumulatedTranscript = "";
   private isProcessingTranscript = false;
-  private windowManager: WindowManager | null = null;
   private finalizeTimeout: NodeJS.Timeout | null = null;
-  private audioStorageService: AudioStorageService | null = null;
 
   constructor(
-    dataLoaderService: DataLoaderService,
-    audioStorageService: AudioStorageService,
-    onMetricsUpdate?: (
-      metrics: SpeechMetrics,
-      transcript?: string,
-      translationMeta?: TranslationResult
-    ) => void,
-    analyticsService?: AnalyticsService,
-    windowManager?: WindowManager
+    private dataLoaderService: DataLoaderService,
+    private audioStorageService: AudioStorageService,
+    private translationService: TranslationService,
+    private analyticsService: AnalyticsService,
+    private windowManager: WindowManager,
+    private systemAudioManager: SystemAudioManager,
+    private applicationDetectionService: ApplicationDetectionService
   ) {
-    this.realtimeProvider = null;
-    this.dataLoaderService = dataLoaderService;
-    this.audioStorageService = audioStorageService;
-    this.onMetricsUpdate = onMetricsUpdate;
-    this.translationService = TranslationService.getInstance(dataLoaderService);
-    this.analyticsService = analyticsService;
-    this.windowManager = windowManager || null;
+    // REAL-TIME PROVIDER COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+    // this.realtimeProvider = null;
+    this.prerecordedProvider = null;
+  }
+
+  private async cleanup(): Promise<void> {
+    // REAL-TIME PROVIDER CLEANUP COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+    // if (this.realtimeProvider) {
+    //   this.realtimeProvider.disconnect();
+    //   this.realtimeProvider = null;
+    // }
+    this.prerecordedProvider = null;
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
+    }
+    this.audioBuffer = [];
+    this.accumulatedTranscript = "";
+    this.recordingState = false;
+    this.isProcessingTranscript = false;
   }
 
   /**
@@ -82,10 +92,10 @@ class STTService {
   }
 
   /**
-   * Check if user is authenticated (real-time STT is the only supported mode)
+   * Check if user is authenticated (pre-recorded STT is the current supported mode)
    * Returns true only if user is authenticated
    */
-  private isRealtimeModeEnabled(): boolean {
+  private isPrerecordedModeEnabled(): boolean {
     // Check if user is authenticated
     const cacheInfo = this.dataLoaderService.getCacheInfo();
     if (!cacheInfo.hasUser || !cacheInfo.userId) {
@@ -93,9 +103,9 @@ class STTService {
       return false;
     }
 
-    // Real-time STT is the only supported mode for all authenticated users
+    // Pre-recorded STT is the current supported mode for all authenticated users
     console.log(
-      `[STT] User authenticated (${cacheInfo.userId}) - real-time STT enabled`
+      `[STT] User authenticated (${cacheInfo.userId}) - pre-recorded STT enabled`
     );
     return true;
   }
@@ -113,12 +123,15 @@ class STTService {
       `[STT] Initializing STT service for authenticated user: ${cacheInfo.userId}`
     );
 
-    // Real-time STT is the only supported mode - initialize real-time provider
-    console.log("[STT] User authenticated - initializing real-time STT");
-    await this.initializeRealtime();
+    // Pre-recorded STT is the current supported mode - initialize pre-recorded provider
+    console.log("[STT] User authenticated - initializing pre-recorded STT");
+    await this.initializePrerecorded();
   }
 
-  async initializeRealtime(): Promise<void> {
+  // REAL-TIME INITIALIZATION COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+  // async initializeRealtime(): Promise<void> { ... }
+
+  async initializePrerecorded(): Promise<void> {
     const language: string = this.getCurrentLanguage();
     const profession: string = this.getCurrentProfession();
 
@@ -153,29 +166,19 @@ class STTService {
     }
 
     console.log(
-      `[STT] Initializing realtime mode with language: ${language}, profession: ${profession}, model: ${selectedModel}`
+      `[STT] Initializing pre-recorded mode with language: ${language}, profession: ${profession}, model: ${selectedModel}`
     );
 
-    const config: RealtimeConfig = {
+    const config: PrerecordedConfig = {
       language: language,
       apiKey: process.env.DEEPGRAM_API_KEY || "",
       model: selectedModel,
     };
 
-    const realtimeCallback: RealtimeSTTCallback = {
-      onTranscriptDelta: (delta: string, isFinal: boolean) => {
-        console.log(
-          "[STT] Realtime transcript delta:",
-          delta,
-          "isFinal:",
-          isFinal
-        );
-        // In transcription-only mode, we only process final results for insertion
-        // Deltas are just accumulated for completeness
-        this.processStreamingTranscript(delta, isFinal, language);
-      },
-      onFinalizeResponse: async (transcript: string, language: string) => {
-        console.log("[STT] Immediate Finalize response received:", transcript);
+    const prerecordedCallback: PrerecordedSTTCallback = {
+      onTranscriptResult: async (transcript: string, confidence: number) => {
+        console.log("[STT] Pre-recorded transcript received:", transcript);
+        console.log("[STT] Confidence:", confidence);
 
         // Clear the error timeout since we got a response
         if (this.finalizeTimeout) {
@@ -183,59 +186,37 @@ class STTService {
           this.finalizeTimeout = null;
         }
 
-        // Process transcript immediately when Finalize response is received
+        // Process transcript when pre-recorded response is received
         if (!this.isProcessingTranscript) {
           console.log(
-            "[STT] Processing transcript immediately from Finalize response:",
+            "[STT] Processing transcript from pre-recorded response:",
             transcript.length,
             "chars"
           );
           this.isProcessingTranscript = true;
-          this.accumulatedTranscript =
-            this.accumulatedTranscript + transcript.trim();
 
           try {
-            await this.processTranscript(this.accumulatedTranscript, language);
-            // Clear after successful processing
-            this.accumulatedTranscript = "";
+            await this.processTranscript(transcript, language);
           } finally {
             this.isProcessingTranscript = false;
           }
-        } else if (this.isProcessingTranscript) {
-          console.log(
-            "[STT] Transcript processing already in progress, skipping immediate processing"
-          );
         } else {
-          console.log("[STT] Empty transcript from Finalize response");
-
-          // Handle empty transcript case
-          if (this.windowManager) {
-            const message: InformationMessage = {
-              type: "empty-transcript",
-              title: "Empty Transcript",
-              message: "No speech was detected in the recording",
-              duration: 3000,
-            };
-            this.windowManager.showInformation(message);
-            this.windowManager.sendToRecording("processing-complete");
-            this.windowManager.compactRecordingWindow();
-          }
+          console.log(
+            "[STT] Transcript processing already in progress, skipping"
+          );
         }
       },
       onError: (error: Error) => {
-        console.error("[STT] Realtime error:", error);
-        this.handleRealtimeError(error);
-      },
-      onConnectionOpen: () => {
-        console.log("[STT] Realtime connection opened");
-      },
-      onConnectionClose: () => {
-        console.log("[STT] Realtime connection closed");
+        console.error("[STT] Pre-recorded error:", error);
+        this.handlePrerecordedError(error);
       },
     };
 
-    this.realtimeProvider = new RealtimeSTTProvider(config, realtimeCallback);
-    await this.realtimeProvider.connect();
+    this.prerecordedProvider = new PrerecordedSTTProvider(
+      config,
+      prerecordedCallback
+    );
+    console.log("[STT] Pre-recorded STT provider initialized");
   }
 
   async reinitialize(): Promise<void> {
@@ -257,24 +238,29 @@ class STTService {
     const newLanguage: string = this.getCurrentLanguage();
 
     console.log(
-      `[STT] Reinitializing for authenticated user ${cacheInfo.userId} with language: ${newLanguage} (real-time mode)`
+      `[STT] Reinitializing for authenticated user ${cacheInfo.userId} with language: ${newLanguage} (pre-recorded mode)`
     );
 
     // Close existing sessions first
-    if (this.realtimeProvider) {
-      console.log(
-        "[STT] Cleaning up existing realtime provider and stopping all reconnections"
-      );
-      this.realtimeProvider.disconnect();
-      this.realtimeProvider = null;
-
-      // Add a small delay to ensure complete cleanup before proceeding
-      await new Promise((resolve) => setTimeout(resolve, 200));
+    // REAL-TIME PROVIDER CLEANUP COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+    // if (this.realtimeProvider) {
+    //   console.log(
+    //     "[STT] Cleaning up existing realtime provider and stopping all reconnections"
+    //   );
+    //   this.realtimeProvider.disconnect();
+    //   this.realtimeProvider = null;
+    //
+    //   // Add a small delay to ensure complete cleanup before proceeding
+    //   await new Promise((resolve) => setTimeout(resolve, 200));
+    // }
+    if (this.prerecordedProvider) {
+      console.log("[STT] Cleaning up existing pre-recorded provider");
+      this.prerecordedProvider = null;
     }
 
     // Clear any audio buffer and reset state
     this.audioBuffer = [];
-    this.isRecording = false;
+    this.recordingState = false;
     this.accumulatedTranscript = "";
     this.isProcessingTranscript = false;
 
@@ -282,7 +268,7 @@ class STTService {
     await this.initialize();
 
     console.log(
-      `[STT] Successfully reinitialized with language: ${newLanguage} (real-time mode)`
+      `[STT] Successfully reinitialized with language: ${newLanguage} (pre-recorded mode)`
     );
   }
 
@@ -295,22 +281,13 @@ class STTService {
       return;
     }
 
-    if (!this.isRecording) return;
+    if (!this.recordingState) return;
 
-    // Buffer audio and send to real-time provider
+    // Buffer audio for pre-recorded processing (no real-time streaming)
     this.audioBuffer.push(audioData);
-
-    if (this.realtimeProvider?.isReady()) {
-      // Send audio chunk immediately to realtime provider
-      this.realtimeProvider.sendAudioChunk(audioData);
-      console.log(
-        `[STT] Streaming audio chunk to realtime for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
-      );
-    } else {
-      console.log(
-        `[STT] Real-time provider not ready, buffering audio chunk for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
-      );
-    }
+    console.log(
+      `[STT] Buffering audio chunk for pre-recorded processing for user ${cacheInfo.userId}, buffer size: ${this.audioBuffer.length}`
+    );
   }
 
   startDictation() {
@@ -342,13 +319,13 @@ class STTService {
       return;
     }
 
-    if (this.isRecording) return; // Already recording
+    if (this.recordingState) return; // Already recording
 
     console.log(
       `[STT] Starting dictation for authenticated user: ${cacheInfo.userId}`
     );
 
-    this.isRecording = true;
+    this.recordingState = true;
     this.audioBuffer = [];
     this.recordingStartTime = Date.now();
 
@@ -388,7 +365,7 @@ class STTService {
       return;
     }
 
-    this.isRecording = false;
+    this.recordingState = false;
 
     const recordingEndTime = Date.now();
     const recordingDuration =
@@ -415,52 +392,52 @@ class STTService {
         this.audioStorageService.storeTempAudio(this.audioBuffer);
       }
 
-      // Real-time mode - send Finalize message and wait for response
-      console.log("[STT] Real-time mode - sending Finalize message");
+      // Pre-recorded mode - process buffered audio chunks
+      console.log("[STT] Pre-recorded mode - processing buffered audio");
 
-      if (this.realtimeProvider) {
-        this.realtimeProvider.commitAudio();
+      if (this.prerecordedProvider && this.audioBuffer.length > 0) {
+        await this.prerecordedProvider.processAudioChunks(this.audioBuffer);
       }
 
-      // Set timeout to handle case where onFinalizeResponse never gets called
-      this.finalizeTimeout = setTimeout(async () => {
-        console.log("[STT] Finalize timeout - no response from Deepgram");
+      // Set timeout to handle case where pre-recorded response never arrives
+      //   this.finalizeTimeout = setTimeout(async () => {
+      //     console.log("[STT] Pre-recorded timeout - no response from Deepgram");
 
-        if (
-          this.accumulatedTranscript &&
-          this.accumulatedTranscript.trim().length > 0
-        ) {
-          try {
-            await this.processTranscript(
-              this.accumulatedTranscript,
-              "auto-detected"
-            );
-          } finally {
-            this.isProcessingTranscript = false;
-            this.finalizeTimeout = null;
-            this.isRecording = false;
-          }
+      //     if (
+      //       this.accumulatedTranscript &&
+      //       this.accumulatedTranscript.trim().length > 0
+      //     ) {
+      //       try {
+      //         await this.processTranscript(
+      //           this.accumulatedTranscript,
+      //           "auto-detected"
+      //         );
+      //       } finally {
+      //         this.isProcessingTranscript = false;
+      //         this.finalizeTimeout = null;
+      //         this.recordingState = false;
+      //       }
 
-          return;
-        }
+      //       return;
+      //     }
 
-        // Show "transcript not found" error and reset UI
-        if (this.windowManager) {
-          const message: InformationMessage = {
-            type: "empty-transcript",
-            title: "Transcript Not Found",
-            message: "Unable to process the recording. Please try again.",
-            duration: 3000,
-          };
-          this.windowManager.showInformation(message);
-          this.windowManager.sendToRecording("processing-complete");
-          this.windowManager.compactRecordingWindow();
-        }
+      //     // Show "transcript not found" error and reset UI
+      //     if (this.windowManager) {
+      //       const message: InformationMessage = {
+      //         type: "empty-transcript",
+      //         title: "Transcript Not Found",
+      //         message: "Unable to process the recording. Please try again.",
+      //         duration: 3000,
+      //       };
+      //       this.windowManager.showInformation(message);
+      //       this.windowManager.sendToRecording("processing-complete");
+      //       this.windowManager.compactRecordingWindow();
+      //     }
 
-        // Reset state
-        this.isProcessingTranscript = false;
-        this.finalizeTimeout = null;
-      }, 2000); // 2 second timeout for error case
+      //     // Reset state
+      //     this.isProcessingTranscript = false;
+      //     this.finalizeTimeout = null;
+      //   }, 10000); // 10 second timeout for pre-recorded processing
     } catch (error) {
       console.error("[STT] Error processing audio:", error);
     }
@@ -470,25 +447,13 @@ class STTService {
   }
 
   stopDictation(shouldProcess = true) {
-    if (!this.isRecording) return;
+    if (!this.recordingState) return;
 
     console.log(
       `[STT] Stopping dictation manually (shouldProcess: ${shouldProcess})`
     );
 
-    this.isRecording = false;
-
-    if (shouldProcess && this.audioBuffer.length > 0) {
-      // Normal stop: process remaining audio
-      this.finalizeDictation();
-    } else {
-      // Cancel: clear buffers without processing
-      console.log(
-        "[STT] Canceling recording - clearing buffers without processing"
-      );
-      this.audioBuffer = [];
-      this.accumulatedTranscript = "";
-    }
+    this.recordingState = false;
   }
 
   async processTranscript(transcript: string, language: string) {
@@ -524,8 +489,7 @@ class STTService {
       // Pass the transcript to Translation Service for processing
       await this.translationService.processText(
         transcript,
-        this.lastRecordingDuration,
-        this.onMetricsUpdate
+        this.lastRecordingDuration
       );
     } catch (error) {
       console.error(
@@ -584,7 +548,7 @@ class STTService {
   closeSession() {
     console.log("[STT] Closing STT session and cleaning up all connections...");
 
-    this.isRecording = false;
+    this.recordingState = false;
 
     // Clear finalize timeout
     if (this.finalizeTimeout) {
@@ -592,19 +556,24 @@ class STTService {
       this.finalizeTimeout = null;
     }
 
-    // Real-time STT is the only mode - no regular STT session to close
+    // Pre-recorded STT is the current mode - no regular STT session to close
 
-    // Close realtime provider with explicit cleanup
-    if (this.realtimeProvider) {
-      console.log(
-        "[STT] Disconnecting realtime provider and stopping all reconnection attempts"
-      );
-      try {
-        this.realtimeProvider.disconnect();
-      } catch (error) {
-        console.warn("[STT] Error disconnecting realtime provider:", error);
-      }
-      this.realtimeProvider = null;
+    // Close pre-recorded provider with explicit cleanup
+    // REAL-TIME PROVIDER CLEANUP COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+    // if (this.realtimeProvider) {
+    //   console.log(
+    //     "[STT] Disconnecting realtime provider and stopping all reconnection attempts"
+    //   );
+    //   try {
+    //     this.realtimeProvider.disconnect();
+    //   } catch (error) {
+    //     console.warn("[STT] Error disconnecting realtime provider:", error);
+    //   }
+    //   this.realtimeProvider = null;
+    // }
+    if (this.prerecordedProvider) {
+      console.log("[STT] Cleaning up pre-recorded provider");
+      this.prerecordedProvider = null;
     }
 
     // Clear audio buffer
@@ -615,15 +584,101 @@ class STTService {
 
   // Getter for recording status (useful for UI indicators)
   get recordingStatus(): boolean {
-    return this.isRecording;
+    return this.recordingState;
+  }
+
+  // Public recording state methods
+  public isRecording(): boolean {
+    return this.recordingState;
+  }
+
+  public isProcessing(): boolean {
+    return this.isProcessingTranscript;
+  }
+
+  public async startRecording(): Promise<void> {
+    // Don't allow recording if already recording or processing
+    if (this.recordingState || this.isProcessingTranscript) return;
+
+    // Capture application context in background for efficient translation
+    await this.applicationDetectionService.captureCurrentContext();
+
+    // Mute system audio during recording
+    if (this.systemAudioManager) {
+      await this.systemAudioManager.muteSystemAudio();
+    }
+
+    // Expand recording window
+    if (this.windowManager.getRecordingWindow()) {
+      this.windowManager.expandRecordingWindow();
+    }
+
+    // Send recording started signal
+    this.windowManager.sendToRecording("recording-started");
+
+    this.startDictation();
+    console.log("[STTService] Recording session started");
+  }
+
+  public async stopRecording(): Promise<void> {
+    if (!this.recordingState) return;
+
+    // Send recording stopped signal
+    this.windowManager.sendToRecording("recording-stopped");
+
+    // Stop recording but don't process yet - wait for renderer to request processing
+    this.stopDictation(false);
+
+    // Restore system audio after recording
+    if (this.systemAudioManager) {
+      await this.systemAudioManager.restoreSystemAudio();
+    }
+  }
+
+  /**
+   * Start processing the recorded audio - called from IPC handler when renderer is ready
+   */
+  public async startProcessing(): Promise<void> {
+    if (this.isProcessingTranscript) {
+      console.log("[STTService] Already processing, skipping");
+      return;
+    }
+
+    try {
+      // Start the finalization process - timeout now handled by Translation Service
+      await this.finalizeDictation();
+      console.log("[STTService] Audio processing completed successfully");
+    } catch (error) {
+      console.error("[STTService] Error during audio processing:", error);
+      throw error;
+    }
+  }
+
+  public async cancelRecording(): Promise<void> {
+    if (!this.recordingState) return;
+
+    this.stopDictation(false);
+
+    // Reset window state
+    if (this.windowManager.getRecordingWindow()) {
+      this.windowManager.compactRecordingWindow();
+      this.windowManager.sendToRecording("processing-complete");
+    }
+
+    // Restore system audio after canceling
+    if (this.systemAudioManager) {
+      await this.systemAudioManager.restoreSystemAudio();
+    }
   }
 
   get isRealtime(): boolean {
-    return this.isRealtimeModeEnabled();
+    // Return false since we're using pre-recorded mode
+    return false;
   }
 
   get realtimeConnectionStatus(): boolean {
-    return this.realtimeProvider?.isReady() || false;
+    // Return true if pre-recorded provider is ready
+    return this.prerecordedProvider?.isReady() || false;
   }
 
   get currentAccumulatedTranscript(): string {
@@ -635,6 +690,7 @@ class STTService {
     console.log("[STT] Streaming transcript cleared");
   }
 
+  // REAL-TIME ERROR HANDLER COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
   private async handleRealtimeError(error: Error): Promise<void> {
     console.error(
       "[STT] Realtime error occurred, attempting fallback:",
@@ -642,8 +698,8 @@ class STTService {
     );
 
     // Stop recording to prevent data loss
-    const wasRecording = this.isRecording;
-    this.isRecording = false;
+    const wasRecording = this.recordingState;
+    this.recordingState = false;
 
     // If we have accumulated audio and were recording, process it with fallback
     if (wasRecording && this.audioBuffer.length > 0) {
@@ -659,51 +715,82 @@ class STTService {
       }
     }
 
+    // REAL-TIME RECONNECTION COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
     // Try to reconnect realtime after a delay
-    setTimeout(() => {
-      this.attemptRealtimeReconnection();
-    }, 5000);
+    // setTimeout(() => {
+    //   this.attemptRealtimeReconnection();
+    // }, 5000);
   }
 
-  private async attemptRealtimeReconnection(): Promise<void> {
-    // CRITICAL: Check authentication first - never attempt to reconnect for unauthenticated users
-    const cacheInfo = this.dataLoaderService.getCacheInfo();
-    if (!cacheInfo.hasUser || !cacheInfo.userId) {
-      console.log(
-        "[STT] User not authenticated - aborting realtime reconnection attempt"
-      );
-      return;
+  private async handlePrerecordedError(error: Error): Promise<void> {
+    console.error("[STT] Pre-recorded error occurred:", error.message);
+
+    // Clear the processing flag
+    this.isProcessingTranscript = false;
+
+    // Clear finalize timeout
+    if (this.finalizeTimeout) {
+      clearTimeout(this.finalizeTimeout);
+      this.finalizeTimeout = null;
     }
 
-    // Real-time mode is always enabled for authenticated users
-    // No need to check isRealtimeModeEnabled() since we already checked authentication above
-
-    console.log(
-      `[STT] Attempting realtime reconnection for authenticated user: ${cacheInfo.userId}`
-    );
-
-    try {
-      // Close existing provider if it exists
-      if (this.realtimeProvider) {
-        this.realtimeProvider.disconnect();
-        this.realtimeProvider = null;
-      }
-
-      // Attempt to reinitialize realtime
-      await this.initializeRealtime();
-      console.log("[STT] Realtime reconnection successful");
-    } catch (error) {
-      console.error("[STT] Realtime reconnection failed:", error);
-      console.log(
-        "[STT] Real-time reconnection failed - no fallback available"
-      );
-
-      // No fallback mode available - real-time STT is the only supported mode
-      console.error(
-        "[STT] Cannot fall back to regular STT - real-time mode is required"
-      );
+    // Show error message to user
+    if (this.windowManager) {
+      const message: InformationMessage = {
+        type: "processing-error",
+        title: "Transcription Error",
+        message: "Unable to process the recording. Please try again.",
+        duration: 5000,
+      };
+      this.windowManager.showInformation(message);
+      this.windowManager.sendToRecording("processing-complete");
+      this.windowManager.compactRecordingWindow();
     }
+
+    // Reset recording state
+    this.recordingState = false;
   }
+
+  // REAL-TIME RECONNECTION COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+  // private async attemptRealtimeReconnection(): Promise<void> {
+  //   // CRITICAL: Check authentication first - never attempt to reconnect for unauthenticated users
+  //   const cacheInfo = this.dataLoaderService.getCacheInfo();
+  //   if (!cacheInfo.hasUser || !cacheInfo.userId) {
+  //     console.log(
+  //       "[STT] User not authenticated - aborting realtime reconnection attempt"
+  //     );
+  //     return;
+  //   }
+  //
+  //   // Real-time mode is always enabled for authenticated users
+  //   // No need to check isRealtimeModeEnabled() since we already checked authentication above
+  //
+  //   console.log(
+  //     `[STT] Attempting realtime reconnection for authenticated user: ${cacheInfo.userId}`
+  //   );
+  //
+  //   try {
+  //     // Close existing provider if it exists
+  //     if (this.realtimeProvider) {
+  //       this.realtimeProvider.disconnect();
+  //       this.realtimeProvider = null;
+  //     }
+  //
+  //     // Attempt to reinitialize realtime
+  //     await this.initializeRealtime();
+  //     console.log("[STT] Realtime reconnection successful");
+  //   } catch (error) {
+  //     console.error("[STT] Realtime reconnection failed:", error);
+  //     console.log(
+  //       "[STT] Real-time reconnection failed - no fallback available"
+  //     );
+  //
+  //     // No fallback mode available - real-time STT is the only supported mode
+  //     console.error(
+  //       "[STT] Cannot fall back to regular STT - real-time mode is required"
+  //     );
+  //   }
+  // }
 
   /**
    * Reset STTService runtime data (for cache clearing and logout)
@@ -717,7 +804,7 @@ class STTService {
     // Reset all runtime state
     this.audioBuffer = [];
     this.accumulatedTranscript = "";
-    this.isRecording = false;
+    this.recordingState = false;
     this.isProcessingTranscript = false;
     this.lastRecordingDuration = 0;
     this.recordingStartTime = 0;
@@ -729,22 +816,29 @@ class STTService {
     }
 
     // Close any active connections with explicit cleanup
-    if (this.realtimeProvider) {
+    // REAL-TIME PROVIDER CLEANUP COMMENTED OUT FOR PRE-RECORDED EXPERIMENT
+    // if (this.realtimeProvider) {
+    //   console.log(
+    //     "[STT] Disconnecting realtime provider during runtime data reset"
+    //   );
+    //   try {
+    //     this.realtimeProvider.disconnect();
+    //   } catch (error) {
+    //     console.warn(
+    //       "[STT] Error disconnecting realtime provider during reset:",
+    //       error
+    //     );
+    //   }
+    //   this.realtimeProvider = null;
+    // }
+    if (this.prerecordedProvider) {
       console.log(
-        "[STT] Disconnecting realtime provider during runtime data reset"
+        "[STT] Cleaning up pre-recorded provider during runtime data reset"
       );
-      try {
-        this.realtimeProvider.disconnect();
-      } catch (error) {
-        console.warn(
-          "[STT] Error disconnecting realtime provider during reset:",
-          error
-        );
-      }
-      this.realtimeProvider = null;
+      this.prerecordedProvider = null;
     }
 
-    // Real-time STT is the only mode - no regular STT session to close
+    // Pre-recorded STT is the current mode - no regular STT session to close
 
     console.log("[STT] Runtime data reset completed - all connections closed");
   }
@@ -770,4 +864,4 @@ class STTService {
   }
 }
 
-export default STTService;
+export { STTService };

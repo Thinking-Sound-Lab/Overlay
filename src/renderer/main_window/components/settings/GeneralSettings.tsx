@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Select } from "../ui/select";
 import { SettingsComponentProps, SelectOption } from "./types";
 import { SUPPORTED_PROFESSIONS, requiresProAccess, isLanguageProfessionSupported } from "../../../../shared/constants/professions";
+import { SUPPORTED_LANGUAGES } from "../../../../shared/constants/languages";
 import { useAppContext } from "../../contexts/AppContext";
 import { hasProAccess } from "../../../../shared/utils/subscription-permissions";
 
@@ -81,19 +82,12 @@ export const GeneralSettings: React.FC<SettingsComponentProps> = ({
     }
   };
 
-  const languageOptions: SelectOption[] = [
-    { value: "en", label: "English" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "ru", label: "Russian" },
-    { value: "ja", label: "Japanese" },
-    { value: "ko", label: "Korean" },
-    { value: "zh", label: "Chinese" },
-    { value: "hi", label: "Hindi" },
-  ];
+  const languageOptions: SelectOption[] = SUPPORTED_LANGUAGES.map(language => ({
+    value: language.code,
+    label: language.name === language.nativeName
+      ? language.name
+      : `${language.name} (${language.nativeName})`
+  }));
 
   // Create profession options with Pro access consideration
   const professionOptions: SelectOption[] = SUPPORTED_PROFESSIONS.map(profession => {

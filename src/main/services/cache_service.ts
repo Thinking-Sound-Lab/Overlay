@@ -30,10 +30,9 @@ interface CacheData {
 }
 
 export class CacheService {
-  private static instance: CacheService | null = null;
   private store: Store<CacheData>;
 
-  private constructor() {
+  constructor() {
     this.store = new Store<CacheData>({
       name: "user-cache",
       defaults: {
@@ -54,12 +53,6 @@ export class CacheService {
     });
   }
 
-  public static getInstance(): CacheService {
-    if (!CacheService.instance) {
-      CacheService.instance = new CacheService();
-    }
-    return CacheService.instance;
-  }
 
   /**
    * Get cached user

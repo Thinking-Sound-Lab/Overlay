@@ -6,16 +6,7 @@ export interface PermissionStatus {
 }
 
 export class PermissionsService {
-  private static instance: PermissionsService;
-
-  private constructor() {}
-
-  public static getInstance(): PermissionsService {
-    if (!PermissionsService.instance) {
-      PermissionsService.instance = new PermissionsService();
-    }
-    return PermissionsService.instance;
-  }
+  constructor() {}
 
   /**
    * Check if accessibility permissions are granted
@@ -24,11 +15,14 @@ export class PermissionsService {
     try {
       if (process.platform === "darwin") {
         // macOS: Use Electron's built-in accessibility check
-        const hasAccessibility = systemPreferences.isTrustedAccessibilityClient(false);
+        const hasAccessibility =
+          systemPreferences.isTrustedAccessibilityClient(false);
         return { granted: hasAccessibility };
       } else if (process.platform === "win32") {
         // Windows: No accessibility permissions required for SendInput API
-        console.log("[PermissionsService] Windows: No accessibility permission required for native text insertion");
+        console.log(
+          "[PermissionsService] Windows: No accessibility permission required for native text insertion"
+        );
         return { granted: true };
       } else {
         return {
@@ -37,7 +31,10 @@ export class PermissionsService {
         };
       }
     } catch (error) {
-      console.error("[PermissionsService] Error checking accessibility permission:", error);
+      console.error(
+        "[PermissionsService] Error checking accessibility permission:",
+        error
+      );
       return {
         granted: false,
         error: error.message,
@@ -52,10 +49,10 @@ export class PermissionsService {
     try {
       if (process.platform === "darwin" || process.platform === "win32") {
         // macOS and Windows: Use Electron's built-in media access check
-        const status = systemPreferences.getMediaAccessStatus('microphone');
-        return { 
-          granted: status === 'granted',
-          error: status === 'denied' ? 'Microphone access denied' : undefined
+        const status = systemPreferences.getMediaAccessStatus("microphone");
+        return {
+          granted: status === "granted",
+          error: status === "denied" ? "Microphone access denied" : undefined,
         };
       } else {
         return {
@@ -64,7 +61,10 @@ export class PermissionsService {
         };
       }
     } catch (error) {
-      console.error("[PermissionsService] Error checking microphone permission:", error);
+      console.error(
+        "[PermissionsService] Error checking microphone permission:",
+        error
+      );
       return {
         granted: false,
         error: error.message,
@@ -84,14 +84,21 @@ export class PermissionsService {
         return { success: granted };
       } else if (process.platform === "win32") {
         // Windows: No accessibility permission required for native text insertion
-        console.log("[PermissionsService] Windows: No accessibility permission required");
+        console.log(
+          "[PermissionsService] Windows: No accessibility permission required"
+        );
         return { success: true };
       } else {
-        console.error(`[PermissionsService] Platform ${process.platform} is not supported`);
+        console.error(
+          `[PermissionsService] Platform ${process.platform} is not supported`
+        );
         return { success: false };
       }
     } catch (error) {
-      console.error("[PermissionsService] Error requesting accessibility permission:", error);
+      console.error(
+        "[PermissionsService] Error requesting accessibility permission:",
+        error
+      );
       return { success: false };
     }
   }
@@ -103,16 +110,20 @@ export class PermissionsService {
     try {
       if (process.platform === "darwin" || process.platform === "win32") {
         // macOS and Windows: Use Electron's built-in media access request
-        const granted = await systemPreferences.askForMediaAccess('microphone');
+        const granted = await systemPreferences.askForMediaAccess("microphone");
         return { success: granted };
       } else {
-        console.error(`[PermissionsService] Platform ${process.platform} is not supported`);
+        console.error(
+          `[PermissionsService] Platform ${process.platform} is not supported`
+        );
         return { success: false };
       }
     } catch (error) {
-      console.error("[PermissionsService] Error requesting microphone permission:", error);
+      console.error(
+        "[PermissionsService] Error requesting microphone permission:",
+        error
+      );
       return { success: false };
     }
   }
-
 }

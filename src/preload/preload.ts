@@ -42,13 +42,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("audio-recorded", data),
   windowHoverEnter: () => ipcRenderer.invoke("window-hover-enter"),
   windowHoverLeave: () => ipcRenderer.invoke("window-hover-leave"),
+  startProcessingAudio: () => ipcRenderer.invoke("start-processing-audio"),
 
   // Direct window control methods
   expandRecordingWindow: () => ipcRenderer.invoke("expand-recording-window"),
   compactRecordingWindow: () => ipcRenderer.invoke("compact-recording-window"),
-  
+
   // Information window tooltip methods
-  showRecordingTooltip: (type: string, message: string) => 
+  showRecordingTooltip: (type: string, message: string) =>
     ipcRenderer.invoke("show-recording-tooltip", type, message),
 
   // Authentication handlers
@@ -211,7 +212,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Recording controls
   recording: {
     start: () => ipcRenderer.invoke("recording:start"),
-    stop: () => ipcRenderer.invoke("recording:stop"), 
+    stop: () => ipcRenderer.invoke("recording:stop"),
     cancel: () => ipcRenderer.invoke("recording:cancel"),
   },
 });
@@ -309,6 +310,7 @@ declare global {
       }) => Promise<{ success: boolean }>;
       windowHoverEnter: () => Promise<void>;
       windowHoverLeave: () => Promise<void>;
+      startProcessingAudio: () => Promise<void>;
       openExternalLink: (url: string) => Promise<void>;
       onStatisticsUpdate: (callback: (stats: any) => void) => () => void;
       onActivityUpdate: (callback: (activity: any) => void) => () => void;
@@ -316,9 +318,12 @@ declare global {
       // Direct window control methods
       expandRecordingWindow: () => Promise<{ success: boolean }>;
       compactRecordingWindow: () => Promise<{ success: boolean }>;
-      
+
       // Information window tooltip methods
-      showRecordingTooltip: (type: string, message: string) => Promise<{ success: boolean }>;
+      showRecordingTooltip: (
+        type: string,
+        message: string
+      ) => Promise<{ success: boolean }>;
 
       // Authentication handlers
       onAuthenticationComplete: (user: any) => Promise<{ success: boolean }>;
@@ -427,20 +432,26 @@ declare global {
       dictionary: {
         getDictionaryEntries: () => Promise<any>;
         addDictionaryEntry: (key: string, value: string) => Promise<any>;
-        updateDictionaryEntry: (id: string, key: string, value: string) => Promise<any>;
+        updateDictionaryEntry: (
+          id: string,
+          key: string,
+          value: string
+        ) => Promise<any>;
         deleteDictionaryEntry: (id: string) => Promise<any>;
       };
 
       pro: {
         startTrial: () => Promise<any>;
-        updateSubscription: (tier: "free" | "pro_trial" | "pro") => Promise<any>;
+        updateSubscription: (
+          tier: "free" | "pro_trial" | "pro"
+        ) => Promise<any>;
         getSubscriptionInfo: () => Promise<any>;
       };
 
       // Recording controls
       recording: {
         start: () => Promise<{ success: boolean; error?: string }>;
-        stop: () => Promise<{ success: boolean; error?: string }>; 
+        stop: () => Promise<{ success: boolean; error?: string }>;
         cancel: () => Promise<{ success: boolean; error?: string }>;
       };
 

@@ -1,71 +1,113 @@
 // translation_service.ts - Translation service using OpenAI
 import { openai } from "../providers/openai";
-import { Settings, SpeechMetrics } from "../../shared/types";
+import { Settings } from "../../shared/types";
 import TextInsertionService from "./text_insertion_service";
 import { calculateSpeechMetrics } from "../helpers/speech_analytics";
-import { ApplicationContextService } from "./application_context_service";
+import { ApplicationDetectionService } from "./application_detection_service";
+import { getApplicationPrompt } from "../../shared/config/application_prompts";
 import { DataLoaderService } from "./data_loader_service";
+import { WindowManager } from "../windows/window-manager";
+import { TranscriptCompletionService } from "./transcript_completion_service";
 import { getLanguageDisplayName } from "../../shared/constants/languages";
 import {
   hasProAccess,
   canUseWords,
 } from "../../shared/utils/subscription-permissions";
-import { apiHandlers } from "../index";
+import { countWords } from "../utils/text-utils";
+import { InformationMessage } from "../windows";
 // robotjs removed - using TextInsertionService clipboard method for better Unicode support
 
 export class TranslationService {
-  private static instance: TranslationService;
-
-  private applicationContextService: ApplicationContextService;
-  private dataLoaderService: DataLoaderService | null = null;
-  private textInsertionService: TextInsertionService;
-
   // Single language model configuration
   private readonly LANGUAGE_MODEL = "deepseek-ai/DeepSeek-V3.1";
+  private processingTimeout: NodeJS.Timeout | null = null;
 
   constructor(
-    dataLoaderService?: DataLoaderService
-  ) {
-    this.applicationContextService = ApplicationContextService.getInstance();
-    this.dataLoaderService = dataLoaderService || null;
-    this.textInsertionService = new TextInsertionService();
+    private dataLoaderService: DataLoaderService,
+    private applicationDetectionService: ApplicationDetectionService,
+    private textInsertionService: TextInsertionService,
+    private windowManager: WindowManager,
+    private transcriptCompletionService: TranscriptCompletionService
+  ) {}
+
+  /**
+   * Clear processing timeout when processing completes successfully
+   */
+  private clearProcessingTimeout(): void {
+    if (this.processingTimeout) {
+      clearTimeout(this.processingTimeout);
+      this.processingTimeout = null;
+    }
   }
 
-  public static getInstance(
-    dataLoaderService?: DataLoaderService
-  ): TranslationService {
-    if (!TranslationService.instance) {
-      TranslationService.instance = new TranslationService(
-        dataLoaderService
-      );
-    } else if (
-      dataLoaderService &&
-      !TranslationService.instance.dataLoaderService
+  /**
+   * Handle immediate actions after text insertion completes
+   * This provides instant feedback to user while background processing continues
+   */
+  private handleTextInsertionComplete(): void {
+    // Clear processing timeout - text insertion is the critical UX milestone
+    this.clearProcessingTimeout();
+
+    // Send processing-complete to recording window immediately
+    if (
+      this.windowManager.getRecordingWindow() &&
+      !this.windowManager.getRecordingWindow().isDestroyed()
     ) {
-      TranslationService.instance.dataLoaderService = dataLoaderService;
+      this.windowManager.sendToRecording("processing-complete");
+      this.windowManager.compactRecordingWindow();
     }
-    return TranslationService.instance;
+
+    console.log("[Translation] Text insertion complete - window state updated");
+  }
+
+  /**
+   * Handle processing timeout - recovery function for stuck processing states
+   */
+  private handleProcessingTimeout(): void {
+    console.error(
+      "[Translation] Processing timeout reached - forcing recovery"
+    );
+
+    // Clear timeout
+    this.clearProcessingTimeout();
+
+    // Send processing-complete to recording window to reset UI
+    if (
+      this.windowManager.getRecordingWindow() &&
+      !this.windowManager.getRecordingWindow().isDestroyed()
+    ) {
+      this.windowManager.sendToRecording("processing-complete");
+      this.windowManager.compactRecordingWindow();
+    }
+
+    // Show timeout message to user
+    const message: InformationMessage = {
+      type: "processing-error",
+      title: "Processing Timeout",
+      message: "Text processing took too long and was canceled",
+      duration: 4000,
+    };
+    this.windowManager.showInformation(message);
   }
 
   /**
    * Main text processing pipeline - handles complete language model processing
    * @param transcript Raw transcript from STT service
    * @param recordingDuration Duration of the recording for metrics
-   * @param onComplete Callback when processing and insertion is complete
    */
   async processText(
     transcript: string,
-    recordingDuration: number,
-    onComplete?: (
-      metrics: SpeechMetrics,
-      finalText: string,
-      metadata: any
-    ) => void
+    recordingDuration: number
   ): Promise<void> {
     if (!transcript || transcript.trim().length === 0) {
       console.log("[Translation] Empty transcript received");
       return;
     }
+
+    // Set up processing timeout (30 seconds) - moved from STT Service
+    this.processingTimeout = setTimeout(() => {
+      this.handleProcessingTimeout();
+    }, 30000);
 
     // Get current settings from DataLoaderService
     if (!this.dataLoaderService) {
@@ -81,14 +123,14 @@ export class TranslationService {
     const canUseAI = hasProAccess(userData, "ai_enhancement");
     const canTranslate = hasProAccess(userData, "translation");
     const canUseCustomModes = hasProAccess(userData, "custom_modes");
-    const wordUsage = canUseWords(userData, this.countWords(transcript));
+    const wordUsage = canUseWords(userData, countWords(transcript));
 
     console.log("[Translation] Pro access check:", {
       canUseAI,
       canTranslate,
       canUseCustomModes,
       wordUsage: wordUsage.allowed,
-      wordsInTranscript: this.countWords(transcript),
+      wordsInTranscript: countWords(transcript),
     });
 
     // Stop processing if word limit exceeded
@@ -108,96 +150,45 @@ export class TranslationService {
     console.log("[Translation] Source language:", sourceLanguage);
 
     try {
-      // Get auto-detected application mode if enabled and user has Pro access
+      // Get cached application context once and use for both app mode and prompt
       let selectedApplicationMode =
         settings.selectedApplicationMode || "default";
-      if (settings.enableAutoDetection && canUseCustomModes) {
-        try {
-          const applicationContext =
-            await this.applicationContextService.getCurrentApplicationContext();
-          if (applicationContext && applicationContext.confidence > 0.3) {
-            selectedApplicationMode = applicationContext.applicationId;
-            console.log("[Translation] Auto-detected application:", {
-              applicationId: applicationContext.applicationId,
-              displayName: applicationContext.displayName,
-              confidence: applicationContext.confidence,
-            });
-          } else {
-            console.log(
-              "[Translation] Low confidence detection, using fallback application:",
-              selectedApplicationMode
-            );
-          }
-        } catch (error) {
-          console.warn(
-            "[Translation] Application auto-detection failed, using fallback:",
-            selectedApplicationMode,
-            error
-          );
-        }
-      }
-
-      // Get application-specific prompt (only when auto-detection is enabled and user has Pro access)
       let applicationSpecificPrompt: string | null = null;
+
       if (settings.enableAutoDetection && canUseCustomModes) {
         if (selectedApplicationMode === "custom") {
           applicationSpecificPrompt = settings.customPrompt;
-        } else if (selectedApplicationMode) {
-          const applicationPromptMap = {
-            slack: settings.slackPrompt,
-            discord: settings.discordPrompt,
-            whatsapp: settings.whatsappPrompt,
-            telegram: settings.telegramPrompt,
-            teams: settings.teamsPrompt,
-            messages: settings.messagesPrompt,
-            notion: settings.notionPrompt,
-            obsidian: settings.obsidianPrompt,
-            logseq: settings.logseqPrompt,
-            roam: settings.roamPrompt,
-            notes: settings.notesPrompt,
-            evernote: settings.evernotePrompt,
-            bear: settings.bearPrompt,
-            gmail: settings.gmailPrompt,
-            outlook: settings.outlookPrompt,
-            mail: settings.mailPrompt,
-            vscode: settings.vscodePrompt,
-            xcode: settings.xcodePrompt,
-            webstorm: settings.webstormPrompt,
-            sublime: settings.sublimePrompt,
-            word: settings.wordPrompt,
-            pages: settings.pagesPrompt,
-            docs: settings.docsPrompt,
-            "browser-github": settings.browserGithubPrompt,
-            "browser-stackoverflow": settings.browserStackoverflowPrompt,
-            "browser-twitter": settings.browserTwitterPrompt,
-            "browser-linkedin": settings.browserLinkedinPrompt,
-          };
-          const promptForApplication =
-            applicationPromptMap[
-              selectedApplicationMode as keyof typeof applicationPromptMap
-            ];
-          console.log(
-            "[Translation] Application-specific prompt for",
-            selectedApplicationMode,
-            ":",
-            promptForApplication
-          );
+        } else {
+          try {
+            const cachedContext =
+              this.applicationDetectionService.getCachedApplicationContext();
+            if (cachedContext && cachedContext.confidence > 0.3) {
+              selectedApplicationMode = cachedContext.applicationId;
 
-          if (promptForApplication && promptForApplication.trim()) {
-            applicationSpecificPrompt = promptForApplication;
-          } else {
-            // Fallback to getting default prompt from application context service
-            const appContext =
-              this.applicationContextService.getApplicationContextById(
-                selectedApplicationMode
+              // Resolve prompt live from settings or static config
+              applicationSpecificPrompt = this.resolveApplicationPrompt(
+                selectedApplicationMode,
+                settings
               );
-            if (appContext) {
-              applicationSpecificPrompt = appContext.prompt;
+
+              console.log("[Translation] Using cached application context:", {
+                applicationId: cachedContext.applicationId,
+                displayName: cachedContext.displayName,
+                confidence: cachedContext.confidence,
+                promptResolved: !!applicationSpecificPrompt,
+              });
+            } else {
               console.log(
-                "[Translation] Using default prompt for",
+                "[Translation] No cached context or low confidence, using fallback application:",
                 selectedApplicationMode
               );
             }
+          } catch (error) {
+            console.warn(
+              "[Translation] Error retrieving cached application context, using fallback:",
+              selectedApplicationMode,
+              error
+            );
           }
         }
       } else {
@@ -206,44 +197,50 @@ export class TranslationService {
         );
       }
 
-      // Build optimized prompt for better LLM performance
-      let activePrompt = `You are an expert transcript post-processor. Process the following transcript according to these instructions:
+      // Build optimized prompt with correct priority order
+      let activePrompt = `You are an expert transcript post-processor. Process the following transcript in this specific order:
 
-## WHAT TO CHANGE:
-${settings.language !== settings.targetLanguage && settings.enableTranslation && canTranslate ? `- Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
+## STEP 1 - PRIMARY PROCESSING (MANDATORY):
+${settings.language !== settings.targetLanguage && settings.enableTranslation && canTranslate ? `- First: Translate from ${getLanguageDisplayName(settings.language)} to ${getLanguageDisplayName(settings.targetLanguage)}` : "- Keep original language"}
 - Fix spelling errors and typos
-- Correct grammar mistakes
+- Correct grammar mistakes contextually based on intended meaning
 - Add proper punctuation and capitalization
 - Convert emoji words to actual emojis (e.g., "fire emoji" → "🔥", "heart emoji" → "❤️")
-- Convert it to the target language ${getLanguageDisplayName(settings.targetLanguage)} without changing the original meaning and intent
-- Restructure the text to make it more sensible by changing or removing repeated words or phrases.
-- Understand the context of the transcript and correct the words to make it more sensible.
+- Restructure and clean up the text to make it more sensible by removing/changing repeated words or phrases
+- Understand the transcript context and correct words to make them contextually appropriate
+- Keep it simple and clean
 
-## WHAT TO PRESERVE:
+## STEP 2 - APPLICATION FORMATTING (SECONDARY):`;
+
+      // Add application-specific formatting if available
+      if (applicationSpecificPrompt && applicationSpecificPrompt.trim()) {
+        activePrompt += `
+After completing Step 1, apply this application-specific formatting for ${selectedApplicationMode?.toUpperCase()}:
+
+${applicationSpecificPrompt}
+
+**Important**: Apply this formatting ONLY after completing Step 1 cleanup. Questions must remain questions.`;
+      } else {
+        activePrompt += `
+No specific application formatting detected. Use general professional formatting.`;
+      }
+
+      activePrompt += `
+
+## PRESERVATION RULES (ALWAYS MAINTAIN):
 - Original meaning and intent
 - Question format (questions stay as questions)
 - Statement format (statements stay as statements)
 - Technical terms and proper nouns
 - Numbers and dates exactly as spoken
 
-## WHAT NOT TO CHANGE:
+## STRICT LIMITATIONS:
 - Never answer questions - only fix their grammar/punctuation
 - Never add information not in the original
 - Never change the core message or tone
 - Never convert statements to questions or vice versa
 
-## OUTPUT FORMAT:
-Return ONLY the processed text. No explanations, no additional comments.`;
-
-      // Add application-specific formatting if available
-      if (applicationSpecificPrompt && applicationSpecificPrompt.trim()) {
-        activePrompt += `
-
-## APPLICATION-SPECIFIC FORMATTING (${selectedApplicationMode?.toUpperCase()} MODE):
-${applicationSpecificPrompt}
-
-Note: Apply above formatting ONLY to statements. Questions must remain questions with proper punctuation.`;
-      }
+`;
 
       activePrompt += `
 
@@ -261,40 +258,47 @@ Input: "umm, I will be there at 5, sorry no 6."
 Output: "I will be there at 6."
 
 ---
-
-Text to process: "${transcript}"
+## OUTPUT FORMAT (IMPORTANT):
+Return ONLY the processed text. No explanations.
 `;
 
       const response = await openai().chat.completions.create({
         model: this.LANGUAGE_MODEL,
         messages: [
-          {
-            role: "user",
-            content: activePrompt,
-          },
+          { role: "user", content: transcript },
+          { role: "system", content: activePrompt },
         ],
-        temperature: 0.1,
-        max_tokens: Math.max(300, this.countWords(transcript) * 2), // Optimized token limit
+        temperature: 0.2,
+        max_tokens: Math.max(300, countWords(transcript) * 2), // Optimized token limit
       });
 
-      let finalText = response.choices[0].message.content;
-      console.log("[Translation] Raw LLM response:", finalText);
+      console.log(
+        "[Translation] Raw response:",
+        response.choices[0].message.content
+      );
 
-      // Apply dictionary replacements if available
-      if (apiHandlers?.dictionaryService) {
-        try {
-          const textWithReplacements = await apiHandlers.dictionaryService.applyDictionaryReplacements(finalText);
-          if (textWithReplacements !== finalText) {
-            console.log("[Translation] Dictionary replacements applied");
-            console.log("[Translation] Before replacements:", finalText);
-            console.log("[Translation] After replacements:", textWithReplacements);
-            finalText = textWithReplacements;
-          }
-        } catch (error) {
-          console.warn("[Translation] Dictionary replacement failed, using original text:", error);
+      // Parse the text response with error handling
+      let finalText = "";
+      finalText = response.choices[0].message.content || "";
+
+      // Apply dictionary replacements
+      try {
+        const textWithReplacements =
+          this.applyDictionaryReplacements(finalText);
+        if (textWithReplacements !== finalText) {
+          console.log("[Translation] Dictionary replacements applied");
+          console.log("[Translation] Before replacements:", finalText);
+          console.log(
+            "[Translation] After replacements:",
+            textWithReplacements
+          );
+          finalText = textWithReplacements;
         }
-      } else {
-        console.log("[Translation] DictionaryService not available, skipping replacements");
+      } catch (error) {
+        console.warn(
+          "[Translation] Dictionary replacement failed, using original text:",
+          error
+        );
       }
 
       // Calculate metrics and build metadata (can be done in parallel)
@@ -325,9 +329,9 @@ Text to process: "${transcript}"
             targetLanguage: settings.targetLanguage,
             confidence: 0.9, // High confidence for unified LLM approach
             wordCountRatio:
-              this.countWords(transcript) === 0
+              countWords(transcript) === 0
                 ? 1.0
-                : this.countWords(finalText) / this.countWords(transcript),
+                : countWords(finalText) / countWords(transcript),
             detectedLanguage: sourceLanguage,
           }
         : { wasTranslated: false, detectedLanguage: sourceLanguage };
@@ -355,190 +359,75 @@ Text to process: "${transcript}"
       };
 
       // PRIORITY: Insert text immediately with minimal delay
-      this.insertTextNative(finalText, () => {
-        // Fire callback immediately after text insertion
-        if (onComplete) {
-          onComplete(metrics, finalText, combinedMeta);
-        }
-      });
+      await this.insertTextNative(finalText);
 
-      // PARALLEL: Run background operations concurrently (don't await)
-      this.runBackgroundOperations(userData, finalText).catch((error) => {
-        console.error("[Translation] Background operations failed:", error);
-      });
+      // IMMEDIATE: Handle window state and clear timeout after text insertion
+      this.handleTextInsertionComplete();
+
+      this.applicationDetectionService.clearCache();
+
+      // BACKGROUND: Start transcript completion processing (includes word usage updates)
+      this.transcriptCompletionService.handleCompletion(
+        metrics,
+        finalText,
+        combinedMeta
+      );
     } catch (error) {
       console.error("[Translation] Error in text processing pipeline:", error);
     }
   }
 
   /**
-   * Run background operations in parallel (word usage updates, etc.)
+   * Apply dictionary replacements to text
+   * Gets dictionary entries from DataLoaderService and applies replacements locally
    */
-  private async runBackgroundOperations(
-    userData: any,
-    finalText: string
-  ): Promise<void> {
-    const wordCount = this.countWords(finalText);
+  private applyDictionaryReplacements(text: string): string {
+    try {
+      console.log("[TranslationService] Applying dictionary replacements");
 
-    if (userData && userData.subscription_tier === "free" && wordCount > 0) {
-      try {
-        // This runs in background - no need to block text insertion
-        await this.dataLoaderService.updateWordUsage(wordCount);
+      // Get dictionary entries from DataLoaderService (synchronous cache operation)
+      const dictionaryEntries = this.dataLoaderService.getDictionaryEntries();
+
+      if (!dictionaryEntries || dictionaryEntries.length === 0) {
+        console.log("[TranslationService] No dictionary entries available");
+        return text; // No replacements needed
+      }
+
+      let processedText = text;
+
+      // Apply each dictionary replacement
+      // Sort by key length (descending) to handle longer keys first
+      const sortedEntries = [...dictionaryEntries].sort(
+        (a, b) => b.key.length - a.key.length
+      );
+
+      for (const entry of sortedEntries) {
+        // Case-insensitive replacement, but preserve original case of the replacement value
+        const regex = new RegExp(`\\b${entry.key}\\b`, "gi");
+        processedText = processedText.replace(regex, entry.value);
+      }
+
+      if (processedText !== text) {
         console.log(
-          `[Translation] Background: Updated word usage: +${wordCount} words`
-        );
-      } catch (error) {
-        console.error(
-          "[Translation] Background: Failed to update word usage:",
-          error
+          `[TranslationService] Applied ${sortedEntries.length} dictionary entries`
         );
       }
-    }
-  }
 
-  private countWords(text: string): number {
-    // Handle null, undefined, or empty strings
-    if (!text || typeof text !== "string" || !text.trim()) {
-      return 0;
-    }
-
-    try {
-      // Handle different languages appropriately
-      const cleanText = text
-        .trim()
-        .replace(
-          /[^\w\s\u00C0-\u024F\u1E00-\u1EFF\u0100-\u017F\u0400-\u04FF\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g,
-          " "
-        );
-
-      // For CJK characters, count each character as a word
-      const cjkRegex = /[\u4E00-\u9FAF\u3040-\u309F\u30A0-\u30FF]/g;
-      const cjkMatches = cleanText.match(cjkRegex);
-      const cjkCount = cjkMatches ? cjkMatches.length : 0;
-
-      // For other languages, split by spaces
-      const nonCjkText = cleanText.replace(cjkRegex, " ");
-      const wordMatches = nonCjkText.match(/\S+/g);
-      const wordCount = wordMatches ? wordMatches.length : 0;
-
-      const totalWords = cjkCount + wordCount;
-
-      // Ensure we never return negative numbers or NaN
-      return isNaN(totalWords) || totalWords < 0 ? 0 : totalWords;
+      return processedText;
     } catch (error) {
-      console.error("[Translation] Error counting words:", error);
-      return 0; // Fallback to 0 on any error
+      console.error(
+        "[TranslationService] Error applying dictionary replacements:",
+        error
+      );
+      // Return original text if replacement fails
+      return text;
     }
-  }
-
-  private getLanguageNames(): Record<string, string> {
-    return {
-      en: "English",
-      es: "Spanish",
-      fr: "French",
-      de: "German",
-      it: "Italian",
-      pt: "Portuguese",
-      ru: "Russian",
-      ja: "Japanese",
-      ko: "Korean",
-      zh: "Chinese",
-      hi: "Hindi",
-      ur: "Urdu",
-      ta: "Tamil",
-      te: "Telugu",
-      bn: "Bengali",
-      gu: "Gujarati",
-      kn: "Kannada",
-      ml: "Malayalam",
-      pa: "Punjabi",
-      ar: "Arabic",
-      he: "Hebrew",
-      th: "Thai",
-      vi: "Vietnamese",
-      nl: "Dutch",
-      sv: "Swedish",
-      no: "Norwegian",
-      da: "Danish",
-      fi: "Finnish",
-      pl: "Polish",
-      cs: "Czech",
-      hu: "Hungarian",
-      ro: "Romanian",
-      bg: "Bulgarian",
-      hr: "Croatian",
-      sk: "Slovak",
-      sl: "Slovenian",
-      et: "Estonian",
-      lv: "Latvian",
-      lt: "Lithuanian",
-      mt: "Maltese",
-      cy: "Welsh",
-      ga: "Irish",
-      is: "Icelandic",
-      mk: "Macedonian",
-      sq: "Albanian",
-      sr: "Serbian",
-      bs: "Bosnian",
-      me: "Montenegrin",
-      tr: "Turkish",
-      fa: "Persian",
-      sw: "Swahili",
-      zu: "Zulu",
-      af: "Afrikaans",
-      am: "Amharic",
-      az: "Azerbaijani",
-      be: "Belarusian",
-      ca: "Catalan",
-      eu: "Basque",
-      gl: "Galician",
-      ka: "Georgian",
-      hy: "Armenian",
-      id: "Indonesian",
-      ms: "Malay",
-      tl: "Filipino",
-      mn: "Mongolian",
-      ne: "Nepali",
-      si: "Sinhala",
-      my: "Myanmar",
-      km: "Khmer",
-      lo: "Lao",
-      kk: "Kazakh",
-      ky: "Kyrgyz",
-      tg: "Tajik",
-      tk: "Turkmen",
-      uz: "Uzbek",
-    };
-  }
-
-  /**
-   * Get grammar instructions for specific language
-   */
-  private getGrammarInstructions(language: string): string {
-    const instructions: Record<string, string> = {
-      hi: "The text is in Hindi. Maintain proper Devanagari script and Hindi grammar rules.",
-      ur: "The text is in Urdu. Maintain proper Urdu script and grammar rules.",
-      en: "The text is in English. Use proper English grammar and punctuation.",
-      es: "The text is in Spanish. Maintain proper Spanish script and grammar rules.",
-      fr: "The text is in French. Maintain proper French script and grammar rules.",
-      ta: "The text is in Tamil. Maintain proper Tamil script and grammar rules.",
-      te: "The text is in Telugu. Maintain proper Telugu script and grammar rules.",
-      bn: "The text is in Bengali. Maintain proper Bengali script and grammar rules.",
-      gu: "The text is in Gujarati. Maintain proper Gujarati script and grammar rules.",
-      kn: "The text is in Kannada. Maintain proper Kannada script and grammar rules.",
-      ml: "The text is in Malayalam. Maintain proper Malayalam script and grammar rules.",
-      pa: "The text is in Punjabi. Maintain proper Punjabi script and grammar rules.",
-    };
-
-    return (
-      instructions[language] || "Maintain the original language of the text."
-    );
   }
 
   /**
    * Insert text using native platform APIs
    */
-  private async insertTextNative(text: string, onComplete?: () => void) {
+  private async insertTextNative(text: string): Promise<void> {
     try {
       console.log(
         "[Translation] Inserting text via clipboard method (better Unicode support):",
@@ -547,7 +436,7 @@ Text to process: "${transcript}"
 
       // Use TextInsertionService which will use clipboard method for better Unicode support
       const success = await this.textInsertionService.insertText(text, {
-        delay: 50, // Reduced delay for faster insertion
+        delay: 0, // Reduced delay for faster insertion
         preserveClipboard: true, // Preserve user's clipboard content
       });
 
@@ -560,17 +449,75 @@ Text to process: "${transcript}"
           "[Translation] Text insertion failed via clipboard method"
         );
       }
-
-      // Fire callback when text insertion is complete (success or failure)
-      onComplete?.();
     } catch (error) {
       console.error(
         "[Translation] Error inserting text with native APIs:",
         error
       );
-      // Still fire callback even if there's an error
-      onComplete?.();
     }
+  }
+
+  /**
+   * Resolve application prompt from user settings with fallback to static config
+   */
+  private resolveApplicationPrompt(
+    applicationId: string,
+    settings: Settings
+  ): string | null {
+    console.log(
+      "[Translation] Resolving prompt for applicationId:",
+      applicationId
+    );
+
+    // Check if user has a custom prompt for this application in settings
+    // This will respect user customizations
+    const settingsPromptMap: Record<string, string | undefined> = {
+      gmail: settings.gmailPrompt,
+      outlook: settings.outlookPrompt,
+      mail: settings.mailPrompt,
+      slack: settings.slackPrompt,
+      discord: settings.discordPrompt,
+      whatsapp: settings.whatsappPrompt,
+      telegram: settings.telegramPrompt,
+      teams: settings.teamsPrompt,
+      messages: settings.messagesPrompt,
+      notion: settings.notionPrompt,
+      obsidian: settings.obsidianPrompt,
+      logseq: settings.logseqPrompt,
+      roam: settings.roamPrompt,
+      notes: settings.notesPrompt,
+      evernote: settings.evernotePrompt,
+      bear: settings.bearPrompt,
+      vscode: settings.vscodePrompt,
+      xcode: settings.xcodePrompt,
+      webstorm: settings.webstormPrompt,
+      sublime: settings.sublimePrompt,
+      word: settings.wordPrompt,
+      pages: settings.pagesPrompt,
+      docs: settings.docsPrompt,
+      figma: settings.figmaPrompt,
+      "browser-github": settings.browserGithubPrompt,
+      "browser-stackoverflow": settings.browserStackoverflowPrompt,
+      "browser-twitter": settings.browserTwitterPrompt,
+      "browser-linkedin": settings.browserLinkedinPrompt,
+    };
+
+    // First priority: User custom prompt from settings
+    const userPrompt = settingsPromptMap[applicationId];
+    if (userPrompt && userPrompt.trim()) {
+      console.log("[Translation] Using user custom prompt for", applicationId);
+      return userPrompt;
+    }
+
+    // Second priority: Static application prompt from config
+    const staticPrompt = getApplicationPrompt(applicationId);
+    if (staticPrompt && staticPrompt.prompt) {
+      console.log("[Translation] Using static prompt for", applicationId);
+      return staticPrompt.prompt;
+    }
+
+    console.log("[Translation] No prompt found for", applicationId);
+    return null;
   }
 }
 

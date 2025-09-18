@@ -43,7 +43,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     const fetchVersion = async () => {
       try {
         const version = await window.electronAPI.getVersion();
-        setAppVersion(version);
+        console.log("App version:", version);
+        setAppVersion((version as any)?.data?.version);
       } catch (error) {
         console.error("Failed to fetch app version:", error);
         // Keep default version on error
@@ -70,7 +71,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           `Setting ${key} updated successfully via DataLoaderService:`,
           value
         );
-        
+
         // Track analytics for setting changes
         if (shouldTrackAnalytics()) {
           await analytics.trackSettingChanged(key, value);

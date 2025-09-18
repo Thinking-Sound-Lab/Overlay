@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -20,37 +20,15 @@ interface EditingEntry {
 }
 
 export const DictionaryPage: React.FC = () => {
-  const { state } = useAppContext();
-  void state; // Acknowledged unused state from context
-  const [entries, setEntries] = useState<DictionaryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { state, setDictionaryEntries } = useAppContext();
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
 
-  // Load dictionary entries on component mount
-  useEffect(() => {
-    loadDictionaryEntries();
-  }, []);
+  // Use dictionary entries from AppContext instead of separate loading
+  const entries = state.dictionaryEntries;
+  const isLoading = state.isLoading;
 
-  const loadDictionaryEntries = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await window.electronAPI.dictionary.getDictionaryEntries();
-      
-      if (response.success && response.data) {
-        setEntries(response.data.data || []);
-      } else {
-        setError(response.error || "Failed to load dictionary entries");
-      }
-    } catch (error) {
-      console.error("Error loading dictionary entries:", error);
-      setError("Failed to load dictionary entries");
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleAddEntry = async () => {
     if (!editingEntry?.key.trim() || !editingEntry?.value.trim()) {
@@ -66,7 +44,14 @@ export const DictionaryPage: React.FC = () => {
       );
 
       if (response.success) {
-        await loadDictionaryEntries(); // Refresh the list
+        // Update local state immediately after successful backend operation
+        // Check response structure: response.data contains the DataLoader result
+        const dataLoaderResult = response.data;
+        if (dataLoaderResult?.success && dataLoaderResult?.data) {
+          const newEntry = dataLoaderResult.data;
+          const updatedEntries = [...entries, newEntry];
+          setDictionaryEntries(updatedEntries);
+        }
         setEditingEntry(null);
         setIsAddingNew(false);
       } else {
@@ -79,21 +64,35 @@ export const DictionaryPage: React.FC = () => {
   };
 
   const handleUpdateEntry = async () => {
-    if (!editingEntry?.id || !editingEntry?.key.trim() || !editingEntry?.value.trim()) {
+    if (
+      !editingEntry?.id ||
+      !editingEntry?.key.trim() ||
+      !editingEntry?.value.trim()
+    ) {
       setError("Both key and value are required");
       return;
     }
 
     try {
       setError(null);
-      const response = await window.electronAPI.dictionary.updateDictionaryEntry(
-        editingEntry.id,
-        editingEntry.key.trim(),
-        editingEntry.value.trim()
-      );
+      const response =
+        await window.electronAPI.dictionary.updateDictionaryEntry(
+          editingEntry.id,
+          editingEntry.key.trim(),
+          editingEntry.value.trim()
+        );
 
       if (response.success) {
-        await loadDictionaryEntries(); // Refresh the list
+        // Update local state immediately after successful backend operation
+        // Check response structure: response.data contains the DataLoader result
+        const dataLoaderResult = response.data;
+        if (dataLoaderResult?.success && dataLoaderResult?.data) {
+          const updatedEntry = dataLoaderResult.data;
+          const updatedEntries = entries.map(entry =>
+            entry.id === updatedEntry.id ? updatedEntry : entry
+          );
+          setDictionaryEntries(updatedEntries);
+        }
         setEditingEntry(null);
       } else {
         setError(response.error || "Failed to update dictionary entry");
@@ -111,10 +110,17 @@ export const DictionaryPage: React.FC = () => {
 
     try {
       setError(null);
-      const response = await window.electronAPI.dictionary.deleteDictionaryEntry(id);
+      const response =
+        await window.electronAPI.dictionary.deleteDictionaryEntry(id);
 
       if (response.success) {
-        await loadDictionaryEntries(); // Refresh the list
+        // Update local state immediately after successful backend operation
+        // For delete, we just need to verify the operation succeeded
+        const dataLoaderResult = response.data;
+        if (dataLoaderResult?.success) {
+          const updatedEntries = entries.filter(entry => entry.id !== id);
+          setDictionaryEntries(updatedEntries);
+        }
       } else {
         setError(response.error || "Failed to delete dictionary entry");
       }
@@ -162,15 +168,16 @@ export const DictionaryPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <BookOpen className="h-8 w-8 text-blue-600" />
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">
-              Dictionary
-            </h1>
+            <h1 className="text-2xl font-semibold text-gray-900">Dictionary</h1>
             <p className="text-sm text-gray-600">
               Create shortcuts that replace words when you dictate
             </p>
           </div>
         </div>
-        <Button onClick={startAddingNew} disabled={isAddingNew || !!editingEntry}>
+        <Button
+          onClick={startAddingNew}
+          disabled={isAddingNew || !!editingEntry}
+        >
           <Plus className="h-4 w-4" />
           Add Entry
         </Button>
@@ -180,9 +187,9 @@ export const DictionaryPage: React.FC = () => {
         <Card className="mb-6 border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <p className="text-red-800">{error}</p>
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setError(null)}
               className="mt-2 text-red-600 hover:text-red-700"
             >
@@ -212,8 +219,10 @@ export const DictionaryPage: React.FC = () => {
                 <Input
                   placeholder="e.g., Calendar"
                   value={editingEntry?.key || ""}
-                  onChange={(e) => 
-                    setEditingEntry(prev => prev ? { ...prev, key: e.target.value } : null)
+                  onChange={(e) =>
+                    setEditingEntry((prev) =>
+                      prev ? { ...prev, key: e.target.value } : null
+                    )
                   }
                   autoFocus
                 />
@@ -225,8 +234,10 @@ export const DictionaryPage: React.FC = () => {
                 <Input
                   placeholder="e.g., https://calendar.google.com"
                   value={editingEntry?.value || ""}
-                  onChange={(e) => 
-                    setEditingEntry(prev => prev ? { ...prev, value: e.target.value } : null)
+                  onChange={(e) =>
+                    setEditingEntry((prev) =>
+                      prev ? { ...prev, value: e.target.value } : null
+                    )
                   }
                 />
               </div>
@@ -265,7 +276,8 @@ export const DictionaryPage: React.FC = () => {
                 No dictionary entries yet
               </h3>
               <p className="text-gray-600 mb-4">
-                Create your first entry to start using text shortcuts while dictating.
+                Create your first entry to start using text shortcuts while
+                dictating.
               </p>
               <Button onClick={startAddingNew}>
                 <Plus className="h-4 w-4" />
@@ -289,8 +301,10 @@ export const DictionaryPage: React.FC = () => {
                         </label>
                         <Input
                           value={editingEntry.key}
-                          onChange={(e) => 
-                            setEditingEntry(prev => prev ? { ...prev, key: e.target.value } : null)
+                          onChange={(e) =>
+                            setEditingEntry((prev) =>
+                              prev ? { ...prev, key: e.target.value } : null
+                            )
                           }
                           autoFocus
                         />
@@ -301,8 +315,10 @@ export const DictionaryPage: React.FC = () => {
                         </label>
                         <Input
                           value={editingEntry.value}
-                          onChange={(e) => 
-                            setEditingEntry(prev => prev ? { ...prev, value: e.target.value } : null)
+                          onChange={(e) =>
+                            setEditingEntry((prev) =>
+                              prev ? { ...prev, value: e.target.value } : null
+                            )
                           }
                         />
                       </div>
@@ -312,7 +328,11 @@ export const DictionaryPage: React.FC = () => {
                         <Save className="h-4 w-4" />
                         Save
                       </Button>
-                      <Button variant="outline" onClick={cancelEditing} size="sm">
+                      <Button
+                        variant="outline"
+                        onClick={cancelEditing}
+                        size="sm"
+                      >
                         <X className="h-4 w-4" />
                         Cancel
                       </Button>
@@ -337,18 +357,18 @@ export const DictionaryPage: React.FC = () => {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => startEditing(entry)}
                         disabled={!!editingEntry || isAddingNew}
                       >
                         <Edit2 className="h-4 w-4" />
                         Edit
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleDeleteEntry(entry.id)}
                         disabled={!!editingEntry || isAddingNew}
                         className="text-red-600 hover:text-red-700"
@@ -371,12 +391,11 @@ export const DictionaryPage: React.FC = () => {
             <div className="flex items-start gap-3">
               <BookOpen className="h-5 w-5 text-blue-600 mt-0.5" />
               <div>
-                <h3 className="font-medium text-blue-900 mb-1">
-                  How it works
-                </h3>
+                <h3 className="font-medium text-blue-900 mb-1">How it works</h3>
                 <p className="text-sm text-blue-800">
-                  When you dictate, saying the key word will automatically be replaced with the value. 
-                  For example, saying "Calendar" will be replaced with your calendar link.
+                  When you dictate, saying the key word will automatically be
+                  replaced with the value. For example, saying "Calendar" will
+                  be replaced with your calendar link.
                 </p>
               </div>
             </div>

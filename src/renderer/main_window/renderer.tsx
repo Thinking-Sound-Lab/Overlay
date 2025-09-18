@@ -18,7 +18,7 @@ let App: React.ComponentType = () => {
 
 // Try to load the main app, fall back to simple UI if it fails
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const { App: MainApp } = require("./components/app");
   App = MainApp;
   console.log("Main app component loaded successfully");
